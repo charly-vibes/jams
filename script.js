@@ -3,7 +3,8 @@
 const APPS = [
     'url-cleaner',
     'device-info',
-    'ip-info'
+    'ip-info',
+    'piano'
 ];
 
 document.addEventListener('DOMContentLoaded', async () => {
