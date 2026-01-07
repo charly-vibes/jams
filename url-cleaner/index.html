@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>URL Cleaner</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <main>
+        <h1>URL Cleaner</h1>
+        <p class="subtitle">Remove tracking parameters from URLs</p>
+
+        <div class="input-group">
+            <label for="url-input">Paste URL:</label>
+            <textarea id="url-input" placeholder="https://example.com/?utm_source=twitter&utm_medium=social" rows="3"></textarea>
+        </div>
+
+        <div class="output-group">
+            <label for="url-output">Cleaned URL:</label>
+            <textarea id="url-output" readonly rows="3" placeholder="Cleaned URL will appear here..."></textarea>
+            <button id="copy-btn" disabled>Copy</button>
+            <span id="copy-feedback" class="feedback"></span>
+        </div>
+    </main>
+    <script src="script.js"></script>
+</body>
+</html>
