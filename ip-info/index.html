@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IP Info</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <main>
+        <h1>IP Info</h1>
+        <p class="subtitle">IP address, geolocation, and network information</p>
+
+        <div class="actions">
+            <button id="refresh-btn">Refresh</button>
+            <button id="copy-all-btn">Copy All Info</button>
+            <span id="copy-feedback" class="feedback"></span>
+        </div>
+
+        <div id="info-container">
+            <p class="loading">Loading IP information...</p>
+        </div>
+    </main>
+    <script src="script.js"></script>
+</body>
+</html>
