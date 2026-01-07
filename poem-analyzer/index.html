@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Poem Analyzer</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <main>
+        <h1>Poem Analyzer</h1>
+        <p class="subtitle">Paste a poem to split into syllables and count them</p>
+
+        <div class="input-section">
+            <label for="poem-input">Enter your poem:</label>
+            <textarea id="poem-input" placeholder="Roses are red
+Violets are blue
+Sugar is sweet
+And so are you" rows="8"></textarea>
+        </div>
+
+        <div class="controls">
+            <button id="toggle-display">Center Dots Mode</button>
+        </div>
+
+        <div class="output-section">
+            <div class="output-header">
+                <h2>Analysis</h2>
+                <span id="total-count" class="total-count"></span>
+            </div>
+            <div id="output"></div>
+        </div>
+    </main>
+    <script src="script.js"></script>
+</body>
+</html>
