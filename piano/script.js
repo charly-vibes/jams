@@ -16,12 +16,46 @@ const NOTE_FREQUENCIES = {
     'C5': 523.25
 };
 
+const NOTE_NAMES_LETTER = {
+    'C4': 'C',
+    'C#4': 'C#',
+    'D4': 'D',
+    'D#4': 'D#',
+    'E4': 'E',
+    'F4': 'F',
+    'F#4': 'F#',
+    'G4': 'G',
+    'G#4': 'G#',
+    'A4': 'A',
+    'A#4': 'A#',
+    'B4': 'B',
+    'C5': 'C'
+};
+
+const NOTE_NAMES_SOLFEGE = {
+    'C4': 'Do',
+    'C#4': 'Do#',
+    'D4': 'Re',
+    'D#4': 'Re#',
+    'E4': 'Mi',
+    'F4': 'Fa',
+    'F#4': 'Fa#',
+    'G4': 'Sol',
+    'G#4': 'Sol#',
+    'A4': 'La',
+    'A#4': 'La#',
+    'B4': 'Si',
+    'C5': 'Do'
+};
+
 let audioContext;
 let activeKeys = new Set();
 
 document.addEventListener('DOMContentLoaded', () => {
     initAudio();
     setupKeyListeners();
+    setupNotationSelector();
+    updateNoteNames('letter');
 });
 
 function initAudio() {
@@ -96,4 +130,24 @@ function playNote(note) {
 
     oscillator.start(now);
     oscillator.stop(now + 1.5);
+}
+
+function setupNotationSelector() {
+    const selector = document.getElementById('notation-selector');
+    selector.addEventListener('change', (e) => {
+        updateNoteNames(e.target.value);
+    });
+}
+
+function updateNoteNames(notation) {
+    const noteNames = notation === 'solfege' ? NOTE_NAMES_SOLFEGE : NOTE_NAMES_LETTER;
+    const keys = document.querySelectorAll('.key');
+
+    keys.forEach(key => {
+        const note = key.dataset.note;
+        const noteNameElement = key.querySelector('.note-name');
+        if (noteNameElement && noteNames[note]) {
+            noteNameElement.textContent = noteNames[note];
+        }
+    });
 }
