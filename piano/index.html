@@ -11,47 +11,68 @@
         <h1>Piano</h1>
         <p class="subtitle">Click keys or use your keyboard to play</p>
 
+        <div class="controls">
+            <label for="notation-selector">Note names:</label>
+            <select id="notation-selector">
+                <option value="letter">C D E F G A B</option>
+                <option value="solfege">Do Re Mi Fa Sol La Si</option>
+            </select>
+        </div>
+
         <div class="piano">
             <div class="white-keys">
                 <div class="key white" data-note="C4" data-key="a">
+                    <span class="note-name"></span>
                     <span class="key-label">A</span>
                 </div>
                 <div class="key white" data-note="D4" data-key="s">
+                    <span class="note-name"></span>
                     <span class="key-label">S</span>
                 </div>
                 <div class="key white" data-note="E4" data-key="d">
+                    <span class="note-name"></span>
                     <span class="key-label">D</span>
                 </div>
                 <div class="key white" data-note="F4" data-key="f">
+                    <span class="note-name"></span>
                     <span class="key-label">F</span>
                 </div>
                 <div class="key white" data-note="G4" data-key="g">
+                    <span class="note-name"></span>
                     <span class="key-label">G</span>
                 </div>
                 <div class="key white" data-note="A4" data-key="h">
+                    <span class="note-name"></span>
                     <span class="key-label">H</span>
                 </div>
                 <div class="key white" data-note="B4" data-key="j">
+                    <span class="note-name"></span>
                     <span class="key-label">J</span>
                 </div>
                 <div class="key white" data-note="C5" data-key="k">
+                    <span class="note-name"></span>
                     <span class="key-label">K</span>
                 </div>
             </div>
             <div class="black-keys">
                 <div class="key black" data-note="C#4" data-key="w" style="left: 7.5%">
+                    <span class="note-name"></span>
                     <span class="key-label">W</span>
                 </div>
                 <div class="key black" data-note="D#4" data-key="e" style="left: 20%">
+                    <span class="note-name"></span>
                     <span class="key-label">E</span>
                 </div>
                 <div class="key black" data-note="F#4" data-key="t" style="left: 45%">
+                    <span class="note-name"></span>
                     <span class="key-label">T</span>
                 </div>
                 <div class="key black" data-note="G#4" data-key="y" style="left: 57.5%">
+                    <span class="note-name"></span>
                     <span class="key-label">Y</span>
                 </div>
                 <div class="key black" data-note="A#4" data-key="u" style="left: 70%">
+                    <span class="note-name"></span>
                     <span class="key-label">U</span>
                 </div>
             </div>
