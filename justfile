@@ -19,6 +19,7 @@ new PAGE_NAME:
         <link rel="stylesheet" href="style.css">
     </head>
     <body>
+        <a href="../" class="home-link">←</a>
         <main>
             <h1>{{PAGE_NAME}}</h1>
         </main>
@@ -56,6 +57,22 @@ new PAGE_NAME:
     h1 {
         margin-bottom: 1rem;
         font-weight: 600;
+    }
+
+    .home-link {
+        position: fixed;
+        top: 1rem;
+        left: 1rem;
+        color: #ddd;
+        text-decoration: none;
+        font-size: 1.25rem;
+        line-height: 1;
+        opacity: 0.3;
+        transition: opacity 0.2s;
+    }
+
+    .home-link:hover {
+        opacity: 0.6;
     }
 
     footer {
