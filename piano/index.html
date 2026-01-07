@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Piano</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <main>
+        <h1>Piano</h1>
+        <p class="subtitle">Click keys or use your keyboard to play</p>
+
+        <div class="piano">
+            <div class="white-keys">
+                <div class="key white" data-note="C4" data-key="a">
+                    <span class="key-label">A</span>
+                </div>
+                <div class="key white" data-note="D4" data-key="s">
+                    <span class="key-label">S</span>
+                </div>
+                <div class="key white" data-note="E4" data-key="d">
+                    <span class="key-label">D</span>
+                </div>
+                <div class="key white" data-note="F4" data-key="f">
+                    <span class="key-label">F</span>
+                </div>
+                <div class="key white" data-note="G4" data-key="g">
+                    <span class="key-label">G</span>
+                </div>
+                <div class="key white" data-note="A4" data-key="h">
+                    <span class="key-label">H</span>
+                </div>
+                <div class="key white" data-note="B4" data-key="j">
+                    <span class="key-label">J</span>
+                </div>
+                <div class="key white" data-note="C5" data-key="k">
+                    <span class="key-label">K</span>
+                </div>
+            </div>
+            <div class="black-keys">
+                <div class="key black" data-note="C#4" data-key="w" style="left: 7.5%">
+                    <span class="key-label">W</span>
+                </div>
+                <div class="key black" data-note="D#4" data-key="e" style="left: 20%">
+                    <span class="key-label">E</span>
+                </div>
+                <div class="key black" data-note="F#4" data-key="t" style="left: 45%">
+                    <span class="key-label">T</span>
+                </div>
+                <div class="key black" data-note="G#4" data-key="y" style="left: 57.5%">
+                    <span class="key-label">Y</span>
+                </div>
+                <div class="key black" data-note="A#4" data-key="u" style="left: 70%">
+                    <span class="key-label">U</span>
+                </div>
+            </div>
+        </div>
+
+        <p class="instructions">Use keys A-K for white keys, W-E-T-Y-U for black keys</p>
+    </main>
+    <script src="script.js"></script>
+</body>
+</html>
