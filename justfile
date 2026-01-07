@@ -22,6 +22,9 @@ new PAGE_NAME:
         <main>
             <h1>{{PAGE_NAME}}</h1>
         </main>
+        <footer>
+            <a href="https://github.com/charly-vibes/jams/tree/main/{{PAGE_NAME}}" target="_blank" rel="noopener noreferrer">View source on GitHub</a>
+        </footer>
         <script src="script.js"></script>
     </body>
     </html>
@@ -53,6 +56,26 @@ new PAGE_NAME:
     h1 {
         margin-bottom: 1rem;
         font-weight: 600;
+    }
+
+    footer {
+        max-width: 800px;
+        margin: 2rem auto 0;
+        text-align: center;
+        padding: 1rem;
+        color: #666;
+        font-size: 0.875rem;
+    }
+
+    footer a {
+        color: #666;
+        text-decoration: none;
+        border-bottom: 1px solid #ccc;
+    }
+
+    footer a:hover {
+        color: #333;
+        border-bottom-color: #333;
     }
     EOF
 
