@@ -21,6 +21,41 @@ app-name/
     └── session-YYYY-MM-DD.md
 ```
 
+### Adding a New App
+
+To create a new app in the repository:
+
+1. **Create scaffolding** using the justfile command:
+   ```bash
+   just new app-name
+   ```
+   This creates the directory structure with template files.
+
+2. **Develop the app** by editing:
+   - `app-name/spec/functionality.md` - Define the app's purpose and requirements
+   - `app-name/index.html` - Build the HTML structure
+   - `app-name/style.css` - Add minimalist grayscale styling
+   - `app-name/script.js` - Implement functionality
+
+3. **Register the app** in the root index page:
+   - Open `script.js` in the repository root
+   - Add the app name to the `APPS` array:
+     ```javascript
+     const APPS = [
+         'url-cleaner',
+         'app-name'  // Add your new app here
+     ];
+     ```
+
+4. **Document the session** by creating a session file in `app-name/sessions/` with:
+   - Implementation decisions
+   - Insights and issues encountered
+   - Code structure explanation
+
+5. **Commit changes** following Conventional Commits format (see Git Workflow section)
+
+The app will automatically appear on the index page with its description pulled from the spec file.
+
 ### Technical Constraints
 
 - **No frameworks**: Use vanilla JavaScript and CSS only
