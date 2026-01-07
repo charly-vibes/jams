@@ -96,16 +96,16 @@ button:disabled {
     position: fixed;
     top: 1rem;
     left: 1rem;
-    color: #ddd;
+    color: #999;
     text-decoration: none;
     font-size: 1.25rem;
     line-height: 1;
-    opacity: 0.3;
+    opacity: 0.5;
     transition: opacity 0.2s;
 }
 
 .home-link:hover {
-    opacity: 0.6;
+    opacity: 0.8;
 }
 
 footer {
