@@ -4,7 +4,8 @@ const APPS = [
     'url-cleaner',
     'device-info',
     'ip-info',
-    'piano'
+    'piano',
+    'poem-analyzer'
 ];
 
 document.addEventListener('DOMContentLoaded', async () => {
