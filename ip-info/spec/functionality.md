@@ -61,21 +61,25 @@ Display public IP address, geolocation, ISP information, and network details usi
 
 ## API Choice
 
-Use **ip-api.com** free tier:
+**Primary: ipapi.co** (HTTPS):
 - No API key required
-- Comprehensive data
-- 45 requests per minute
-- JSON response format
-- Supports batch queries
+- HTTPS support (works on GitHub Pages)
+- Good geolocation data
+- Free tier available
 
-Fallback: Use **ipapi.co** if primary fails
+**Fallback: ip-api.com** (HTTP):
+- More comprehensive data
+- Mobile/proxy/hosting detection
+- Reverse DNS lookup
+- 45 requests per minute
+- Used when HTTPS API fails
 
 ## Behavior
 
 1. On page load, show loading indicator
-2. Fetch IP and geolocation data from API
+2. Try HTTPS API first, fallback to HTTP if needed
 3. Display data organized by category
-4. Show error message if API fails
+4. Show error message if both APIs fail
 5. Provide "Copy All" button for sharing info
-6. Display map link to coordinates (Google Maps)
+6. Display map link to coordinates (OpenStreetMap)
 7. Handle missing/unavailable fields gracefully
