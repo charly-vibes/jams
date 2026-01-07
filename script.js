@@ -2,7 +2,8 @@
 // Add new apps to this array when creating them
 const APPS = [
     'url-cleaner',
-    'device-info'
+    'device-info',
+    'ip-info'
 ];
 
 document.addEventListener('DOMContentLoaded', async () => {
