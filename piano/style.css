@@ -28,8 +28,34 @@ h1 {
 
 .subtitle {
     color: #666;
-    margin-bottom: 2rem;
+    margin-bottom: 1rem;
     font-size: 0.9rem;
+}
+
+.controls {
+    margin-bottom: 2rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.controls label {
+    font-size: 0.9rem;
+    color: #666;
+}
+
+.controls select {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.9rem;
+    border: 1px solid #ccc;
+    background: #fff;
+    color: #333;
+    cursor: pointer;
+}
+
+.controls select:focus {
+    outline: none;
+    border-color: #666;
 }
 
 .piano {
@@ -52,8 +78,10 @@ h1 {
     cursor: pointer;
     user-select: none;
     display: flex;
-    align-items: flex-end;
-    justify-content: center;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 1rem;
     transition: background 0.05s;
 }
 
@@ -92,16 +120,27 @@ h1 {
     background: #666;
 }
 
+.note-name {
+    font-weight: 500;
+    font-size: 0.85rem;
+    color: #333;
+}
+
+.key.black .note-name {
+    color: #fff;
+    font-size: 0.75rem;
+}
+
 .key-label {
     padding-bottom: 1rem;
-    font-weight: 600;
-    font-size: 0.9rem;
-    color: #666;
+    font-weight: 500;
+    font-size: 0.75rem;
+    color: #bbb;
 }
 
 .key.black .key-label {
-    color: #ccc;
-    font-size: 0.75rem;
+    color: #888;
+    font-size: 0.65rem;
     padding-bottom: 0.5rem;
 }
 
