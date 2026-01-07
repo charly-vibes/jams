@@ -44,21 +44,83 @@ async function loadIpInfo() {
 }
 
 async function fetchIpInfo() {
-    const API_URL = 'http://ip-api.com/json/?fields=status,message,continent,continentCode,country,countryCode,region,regionName,city,district,zip,lat,lon,timezone,offset,currency,isp,org,as,asname,reverse,mobile,proxy,hosting,query';
+    try {
+        return await fetchFromIpApiCo();
+    } catch (httpsError) {
+        console.warn('HTTPS API failed, trying HTTP fallback:', httpsError);
+        try {
+            return await fetchFromIpApi();
+        } catch (httpError) {
+            console.error('Both APIs failed:', httpError);
+            throw new Error('Failed to fetch IP information from all sources');
+        }
+    }
+}
 
+async function fetchFromIpApiCo() {
+    const API_URL = 'https://ipapi.co/json/';
     const response = await fetch(API_URL);
 
     if (!response.ok) {
-        throw new Error('API request failed');
+        throw new Error('HTTPS API request failed');
+    }
+
+    const data = await response.json();
+
+    if (data.error) {
+        throw new Error(data.reason || 'HTTPS API returned error');
+    }
+
+    return {
+        query: data.ip,
+        continent: data.continent_code,
+        country: data.country_name,
+        countryCode: data.country_code,
+        region: data.region_code,
+        regionName: data.region,
+        city: data.city,
+        district: null,
+        zip: data.postal,
+        lat: data.latitude,
+        lon: data.longitude,
+        timezone: data.timezone,
+        offset: data.utc_offset ? parseUtcOffset(data.utc_offset) : undefined,
+        currency: data.currency,
+        isp: data.org,
+        org: data.org,
+        as: data.asn,
+        asname: data.org,
+        reverse: null,
+        mobile: false,
+        proxy: false,
+        hosting: false
+    };
+}
+
+async function fetchFromIpApi() {
+    const API_URL = 'http://ip-api.com/json/?fields=status,message,continent,continentCode,country,countryCode,region,regionName,city,district,zip,lat,lon,timezone,offset,currency,isp,org,as,asname,reverse,mobile,proxy,hosting,query';
+    const response = await fetch(API_URL);
+
+    if (!response.ok) {
+        throw new Error('HTTP API request failed');
     }
 
     const data = await response.json();
 
     if (data.status === 'fail') {
-        throw new Error(data.message || 'Failed to fetch IP information');
+        throw new Error(data.message || 'HTTP API returned error');
     }
 
     return data;
+}
+
+function parseUtcOffset(offsetString) {
+    const match = offsetString.match(/([+-])(\d{2})(\d{2})/);
+    if (!match) return 0;
+    const sign = match[1] === '+' ? 1 : -1;
+    const hours = parseInt(match[2]);
+    const minutes = parseInt(match[3]);
+    return sign * (hours * 3600 + minutes * 60);
 }
 
 function displayIpInfo(info, container) {
@@ -135,7 +197,7 @@ function displayIpInfo(info, container) {
                 valueDiv.textContent = value;
             } else if (key === 'Map' && value !== 'N/A') {
                 const link = document.createElement('a');
-                link.href = `https://www.google.com/maps?q=${info.lat},${info.lon}`;
+                link.href = `https://www.openstreetmap.org/?mlat=${info.lat}&mlon=${info.lon}&zoom=12`;
                 link.target = '_blank';
                 link.textContent = value;
                 valueDiv.appendChild(link);
