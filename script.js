@@ -1,7 +1,8 @@
 // List of app directories
 // Add new apps to this array when creating them
 const APPS = [
-    'url-cleaner'
+    'url-cleaner',
+    'device-info'
 ];
 
 document.addEventListener('DOMContentLoaded', async () => {
