@@ -5,7 +5,8 @@ const APPS = [
     'device-info',
     'ip-info',
     'piano',
-    'poem-analyzer'
+    'poem-analyzer',
+    'postit-wall'
 ];
 
 document.addEventListener('DOMContentLoaded', async () => {
