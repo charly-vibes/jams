@@ -13,7 +13,10 @@
         <p class="subtitle">Remove tracking parameters from URLs</p>
 
         <div class="input-group">
-            <label for="url-input">Paste URL:</label>
+            <div class="label-row">
+                <label for="url-input">Paste URL:</label>
+                <button id="paste-btn" type="button" title="Paste from clipboard, clean, and copy result">Paste & Copy Cleaned</button>
+            </div>
             <textarea id="url-input" placeholder="https://example.com/?utm_source=twitter&utm_medium=social" rows="3"></textarea>
         </div>
 
@@ -22,6 +25,23 @@
             <textarea id="url-output" readonly rows="3" placeholder="Cleaned URL will appear here..."></textarea>
             <button id="copy-btn" disabled>Copy</button>
             <span id="copy-feedback" class="feedback"></span>
+        </div>
+
+        <div id="removed-params-section" class="hidden">
+            <h3>Removed Parameters</h3>
+            <div class="table-container">
+                <table id="removed-params-table">
+                    <thead>
+                        <tr>
+                            <th>Parameter</th>
+                            <th>Value</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- params will be inserted here -->
+                    </tbody>
+                </table>
+            </div>
         </div>
     </main>
     <footer>

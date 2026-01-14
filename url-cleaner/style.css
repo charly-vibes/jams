@@ -44,6 +44,26 @@ label {
     font-size: 0.9rem;
 }
 
+.label-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.label-row label {
+    margin-bottom: 0;
+}
+
+.label-row button {
+    margin-top: 0;
+    font-size: 0.8rem;
+    padding: 0.3rem 0.8rem;
+    min-width: 160px;
+    text-align: center;
+    transition: all 0.2s;
+}
+
 textarea {
     width: 100%;
     padding: 0.75rem;
@@ -126,4 +146,55 @@ footer a {
 footer a:hover {
     color: #333;
     border-bottom-color: #333;
+}
+
+/* Removed params table styles */
+.hidden {
+    display: none;
+}
+
+#removed-params-section {
+    margin-top: 2rem;
+    border-top: 1px solid #eee;
+    padding-top: 1.5rem;
+}
+
+#removed-params-section h3 {
+    font-size: 1.1rem;
+    margin-bottom: 1rem;
+    color: #333;
+}
+
+.table-container {
+    overflow-x: auto;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+    border: 1px solid #eee;
+}
+
+th, td {
+    text-align: left;
+    padding: 0.75rem;
+    border-bottom: 1px solid #eee;
+}
+
+th {
+    background-color: #f9f9f9;
+    font-weight: 600;
+    color: #555;
+    width: 30%;
+}
+
+td {
+    font-family: monospace;
+    color: #444;
+    word-break: break-all;
+}
+
+tr:last-child td {
+    border-bottom: none;
 }
