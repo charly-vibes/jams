@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Signal Heatmap</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <a href="../" class="home-link">&larr;</a>
+    <main>
+        <h1>Signal Heatmap</h1>
+
+        <div id="ios-permission" hidden>
+            <button id="btn-permission" class="btn btn-primary">Enable Motion Sensors</button>
+            <p class="hint">Required on iOS to detect steps and compass heading.</p>
+        </div>
+
+        <div id="status-bar" class="status-bar">
+            <span id="status-signal">Signal: --</span>
+            <span id="status-steps">Steps: 0</span>
+            <span id="status-measurements">Points: 0</span>
+        </div>
+
+        <div class="canvas-container">
+            <canvas id="heatmap-canvas"></canvas>
+            <button id="btn-toggle" class="btn btn-overlay">Start Mapping</button>
+        </div>
+
+        <div id="sensor-status" class="hint" hidden></div>
+
+        <details class="settings">
+            <summary>Settings</summary>
+            <div class="settings-grid">
+                <label>
+                    Step length (px)
+                    <input type="number" id="setting-step-length" min="5" max="50" value="15">
+                </label>
+                <label>
+                    Measure every N steps
+                    <input type="number" id="setting-measure-interval" min="1" max="50" value="5">
+                </label>
+                <label>
+                    Accel. threshold (m/s&sup2;)
+                    <input type="number" id="setting-threshold" min="8" max="20" step="0.5" value="12">
+                </label>
+                <label>
+                    Dot radius (px)
+                    <input type="number" id="setting-radius" min="10" max="100" value="40">
+                </label>
+            </div>
+        </details>
+
+        <div class="actions">
+            <button id="btn-clear" class="btn">Clear All</button>
+            <button id="btn-export" class="btn">Export Data</button>
+        </div>
+
+        <div id="measurements-section" hidden>
+            <h2>Measurements</h2>
+            <table id="measurements-table">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Score</th>
+                        <th>Quality</th>
+                        <th>Speed</th>
+                        <th>RTT</th>
+                    </tr>
+                </thead>
+                <tbody id="measurements-body"></tbody>
+            </table>
+        </div>
+    </main>
+    <footer>
+        <a href="https://github.com/charly-vibes/jams/tree/main/signal-heatmap" target="_blank" rel="noopener noreferrer">View source on GitHub</a>
+    </footer>
+    <script src="script.js"></script>
+</body>
+</html>

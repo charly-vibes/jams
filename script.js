@@ -8,7 +8,8 @@ const APPS = [
     'poem-analyzer',
     'postit-wall',
     'spec-viewer',
-    'wifi-helper'
+    'wifi-helper',
+    'signal-heatmap'
 ];
 
 document.addEventListener('DOMContentLoaded', async () => {
