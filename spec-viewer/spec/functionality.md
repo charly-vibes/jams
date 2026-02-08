@@ -53,6 +53,21 @@ A self-contained web application for reading OpenSpec documents from GitHub repo
 - Mobile menu toggle
 - Responsive typography and spacing
 
+### Theme Support
+- Light and dark themes
+- Toggle button in the header bar (moon/sun icons)
+- Respects system preference (prefers-color-scheme) on first visit
+- Persists preference in localStorage
+- All UI elements adapt via CSS custom properties
+
+### Deep Linking
+- URL query parameters for shareable links:
+  - `?repo=owner/repo` - auto-loads repository
+  - `&branch=name` - loads specific branch
+  - `&file=path/to/file.md` - opens specific file
+- URL updates automatically as user navigates
+- Share button on article header copies current URL to clipboard
+
 ### User Experience
 - Auto-load README on repository load
 - Remember current file when switching branches
@@ -85,9 +100,15 @@ A self-contained web application for reading OpenSpec documents from GitHub repo
 
 ### File Organization
 Single self-contained HTML file with embedded:
-- CSS styles (custom properties for theming)
+- CSS styles (custom properties for light/dark theming)
 - JavaScript logic
 - Inline SVG icons
+
+### Theme Architecture
+- All colors defined as CSS custom properties on `:root` (light) and `[data-theme="dark"]`
+- Header, loading overlay, and TOC backgrounds use `--header-bg` variable
+- Code blocks use dedicated `--code-block-bg` and `--code-block-text` variables
+- Theme preference stored in `localStorage` under `specreader-theme` key
 
 ## Limitations
 
