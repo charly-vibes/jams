@@ -1,0 +1,502 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #f5f5f5;
+    color: #333;
+    line-height: 1.6;
+    padding: 2rem;
+}
+
+main {
+    max-width: 800px;
+    margin: 0 auto;
+    background: #fff;
+    padding: 2rem;
+    border: 1px solid #ddd;
+}
+
+h1 {
+    margin-bottom: 1rem;
+    font-weight: 600;
+}
+
+.home-link {
+    position: fixed;
+    top: 1rem;
+    left: 1rem;
+    color: #999;
+    text-decoration: none;
+    font-size: 1.25rem;
+    line-height: 1;
+    opacity: 0.5;
+    transition: opacity 0.2s;
+}
+
+.home-link:hover {
+    opacity: 0.8;
+}
+
+footer {
+    max-width: 800px;
+    margin: 2rem auto 0;
+    text-align: center;
+    padding: 1rem;
+    color: #666;
+    font-size: 0.875rem;
+}
+
+footer a {
+    color: #666;
+    text-decoration: none;
+    border-bottom: 1px solid #ccc;
+}
+
+footer a:hover {
+    color: #333;
+    border-bottom-color: #333;
+}
+
+/* Tabs */
+
+.tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 2px solid #ddd;
+    margin-bottom: 1.5rem;
+}
+
+.tab {
+    background: none;
+    border: none;
+    padding: 0.75rem 1.25rem;
+    font-size: 1rem;
+    color: #666;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: color 0.2s, border-color 0.2s;
+    min-height: 44px;
+}
+
+.tab:hover {
+    color: #333;
+}
+
+.tab.active {
+    color: #333;
+    border-bottom-color: #333;
+    font-weight: 600;
+}
+
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+/* Signal Test Controls */
+
+.test-controls {
+    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+}
+
+.test-controls input {
+    flex: 1;
+    padding: 0.75rem 1rem;
+    font-size: 1rem;
+    border: 1px solid #ccc;
+    background: #fff;
+    color: #333;
+    min-height: 44px;
+}
+
+.test-controls input:focus {
+    outline: none;
+    border-color: #666;
+}
+
+.btn-primary {
+    padding: 0.75rem 1.5rem;
+    font-size: 1rem;
+    background: #333;
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    white-space: nowrap;
+    min-height: 44px;
+    transition: background 0.2s;
+}
+
+.btn-primary:hover {
+    background: #555;
+}
+
+.btn-primary:disabled {
+    background: #999;
+    cursor: not-allowed;
+}
+
+/* Status */
+
+.status {
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+    background: #f5f5f5;
+    border: 1px solid #ddd;
+    font-size: 0.9rem;
+    color: #666;
+}
+
+/* Diagnostics */
+
+.diagnostics {
+    margin-bottom: 1.5rem;
+}
+
+.diag-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.85rem;
+    line-height: 1.4;
+    border-left: 3px solid #ddd;
+    margin-bottom: 0.4rem;
+    background: #fafafa;
+}
+
+.diag-item.diag-warn {
+    border-left-color: #666;
+    background: #f0f0f0;
+}
+
+.diag-item.diag-critical {
+    border-left-color: #333;
+    background: #e8e8e8;
+}
+
+.diag-item.diag-ok {
+    border-left-color: #999;
+}
+
+.diag-icon {
+    flex-shrink: 0;
+    font-weight: 700;
+    width: 1.2em;
+    text-align: center;
+}
+
+/* Activity Compatibility */
+
+.activity-compat {
+    margin-bottom: 1.5rem;
+    border: 1px solid #ddd;
+}
+
+.activity-compat-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 0.5rem 0.75rem;
+    background: #f5f5f5;
+    border-bottom: 1px solid #ddd;
+}
+
+.activity-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+}
+
+.activity-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.85rem;
+    border-bottom: 1px solid #eee;
+}
+
+.activity-item:last-child {
+    border-bottom: none;
+}
+
+.activity-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.activity-dot.dot-good {
+    background: #555;
+}
+
+.activity-dot.dot-fair {
+    background: #999;
+}
+
+.activity-dot.dot-poor {
+    background: #ccc;
+}
+
+.activity-label {
+    flex: 1;
+}
+
+.activity-verdict {
+    font-size: 0.75rem;
+    color: #666;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+/* Best Spot Banner */
+
+.best-spot {
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+    background: #333;
+    color: #fff;
+    text-align: center;
+    font-size: 1.1rem;
+}
+
+.best-spot strong {
+    font-weight: 700;
+}
+
+/* Results Table */
+
+.results-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+thead th {
+    text-align: left;
+    padding: 0.75rem 0.5rem;
+    border-bottom: 2px solid #333;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+tbody td {
+    padding: 0.75rem 0.5rem;
+    border-bottom: 1px solid #eee;
+    white-space: nowrap;
+}
+
+tbody tr.best-row {
+    background: #f0f0f0;
+}
+
+/* Quality Badges */
+
+.badge {
+    display: inline-block;
+    padding: 0.2rem 0.6rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+.badge-excellent {
+    background: #333;
+    color: #fff;
+}
+
+.badge-good {
+    background: #666;
+    color: #fff;
+}
+
+.badge-fair {
+    background: #aaa;
+    color: #fff;
+}
+
+.badge-poor {
+    background: #ddd;
+    color: #333;
+}
+
+/* Delete button */
+
+.btn-delete {
+    background: none;
+    border: 1px solid #ccc;
+    color: #999;
+    padding: 0.3rem 0.6rem;
+    cursor: pointer;
+    font-size: 0.8rem;
+    min-height: 44px;
+    min-width: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.2s, border-color 0.2s;
+}
+
+.btn-delete:hover {
+    color: #333;
+    border-color: #333;
+}
+
+/* Checklist */
+
+.checklist-category {
+    margin-bottom: 2rem;
+}
+
+.checklist-category h2 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #ddd;
+}
+
+.checklist-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.6rem 0;
+    transition: opacity 0.2s;
+}
+
+.checklist-item.checked {
+    opacity: 0.4;
+}
+
+.checklist-item.checked .checklist-label {
+    text-decoration: line-through;
+}
+
+.checklist-item input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    margin-top: 0.15rem;
+    flex-shrink: 0;
+    cursor: pointer;
+    accent-color: #333;
+}
+
+.checklist-label {
+    font-size: 0.95rem;
+    cursor: pointer;
+    line-height: 1.5;
+}
+
+/* Reference Section */
+
+.reference-section {
+    margin-top: 2.5rem;
+    padding-top: 1.5rem;
+    border-top: 2px solid #ddd;
+}
+
+.reference-section h2 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+}
+
+.reference-block {
+    margin-bottom: 2rem;
+}
+
+.reference-block h3 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+
+.reference-block p {
+    font-size: 0.9rem;
+    color: #555;
+    margin-bottom: 0.75rem;
+    line-height: 1.6;
+}
+
+.ref-table-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin-bottom: 0.75rem;
+}
+
+.ref-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.ref-table th {
+    text-align: left;
+    padding: 0.5rem;
+    border-bottom: 2px solid #999;
+    font-weight: 600;
+    white-space: nowrap;
+    background: #f5f5f5;
+}
+
+.ref-table td {
+    padding: 0.5rem;
+    border-bottom: 1px solid #eee;
+    white-space: nowrap;
+}
+
+.ref-table tr:last-child td {
+    border-bottom: none;
+}
+
+.diagram {
+    background: #f5f5f5;
+    border: 1px solid #ddd;
+    padding: 1rem;
+    font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+    font-size: 0.8rem;
+    line-height: 1.8;
+    overflow-x: auto;
+    white-space: pre;
+    margin-bottom: 0.75rem;
+}
+
+/* Responsive */
+
+@media (max-width: 600px) {
+    body {
+        padding: 1rem;
+    }
+
+    main {
+        padding: 1.25rem;
+    }
+
+    .test-controls {
+        flex-direction: column;
+    }
+
+    .test-controls input,
+    .btn-primary {
+        width: 100%;
+    }
+
+    .activity-grid {
+        grid-template-columns: 1fr;
+    }
+}

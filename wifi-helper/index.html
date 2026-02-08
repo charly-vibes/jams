@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WiFi Helper</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <a href="../" class="home-link">&larr;</a>
+    <main>
+        <h1>WiFi Helper</h1>
+
+        <nav class="tabs">
+            <button class="tab active" data-tab="signal">Test Signal</button>
+            <button class="tab" data-tab="guide">Placement Guide</button>
+        </nav>
+
+        <section id="tab-signal" class="tab-content active">
+            <div class="test-controls">
+                <input type="text" id="location-name" placeholder="Location name (e.g. Living Room)" autocomplete="off">
+                <button id="test-btn" class="btn-primary">Test Signal</button>
+            </div>
+
+            <div id="status" class="status" hidden></div>
+
+            <div id="diagnostics" hidden></div>
+
+            <div id="activity-compat" hidden></div>
+
+            <div id="best-spot" class="best-spot" hidden></div>
+
+            <div class="results-wrapper">
+                <table id="results-table" hidden>
+                    <thead>
+                        <tr>
+                            <th>Location</th>
+                            <th>Score</th>
+                            <th>Quality</th>
+                            <th>Downlink</th>
+                            <th>RTT</th>
+                            <th>Speed</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="results-body"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section id="tab-guide" class="tab-content">
+            <div id="checklist"></div>
+            <div id="reference"></div>
+        </section>
+    </main>
+    <footer>
+        <a href="https://github.com/charly-vibes/jams/tree/main/wifi-helper" target="_blank" rel="noopener noreferrer">View source on GitHub</a>
+    </footer>
+    <script src="script.js"></script>
+</body>
+</html>
