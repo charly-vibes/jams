@@ -1,0 +1,1121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SpecReader — OpenSpec Viewer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,300;1,8..60,400&family=JetBrains+Mono:wght@400;500&family=DM+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.1/marked.min.js"></script>
+<style>
+  :root {
+    --bg: #FAF8F5;
+    --bg-sidebar: #F0EDE8;
+    --bg-card: #FFFFFF;
+    --text: #2C2825;
+    --text-muted: #8A8480;
+    --text-light: #B0AAA4;
+    --accent: #C05D3C;
+    --accent-hover: #A84E31;
+    --accent-bg: #FDF0EC;
+    --border: #E6E1DB;
+    --border-light: #EDEBE7;
+    --code-bg: #F5F2EE;
+    --shadow-sm: 0 1px 3px rgba(44,40,37,.06);
+    --shadow-md: 0 4px 16px rgba(44,40,37,.08);
+    --shadow-lg: 0 8px 32px rgba(44,40,37,.1);
+    --radius: 10px;
+    --sidebar-w: 300px;
+    --header-h: 64px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html { font-size: 17px; -webkit-text-size-adjust: 100%; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    min-height: 100vh;
+    overflow: hidden;
+  }
+
+  /* ── HEADER ── */
+  .header {
+    position: fixed; top: 0; left: 0; right: 0;
+    height: var(--header-h);
+    background: rgba(250,248,245,.92);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center;
+    padding: 0 24px;
+    z-index: 100;
+    gap: 16px;
+  }
+
+  .logo {
+    font-family: 'Source Serif 4', serif;
+    font-weight: 700; font-size: 1.2rem;
+    color: var(--accent);
+    letter-spacing: -.02em;
+    white-space: nowrap;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .logo svg { flex-shrink: 0; }
+
+  .repo-input-wrap {
+    flex: 1; max-width: 600px;
+    position: relative;
+  }
+  .repo-input-wrap input {
+    width: 100%;
+    padding: 10px 110px 10px 16px;
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .78rem;
+    background: var(--bg-card);
+    color: var(--text);
+    outline: none;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  .repo-input-wrap input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(192,93,60,.12);
+  }
+  .repo-input-wrap input::placeholder { color: var(--text-light); }
+
+  .load-btn {
+    position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+    padding: 7px 18px;
+    background: var(--accent);
+    color: #fff;
+    border: none; border-radius: 6px;
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 600; font-size: .8rem;
+    cursor: pointer;
+    transition: background .2s, transform .1s;
+  }
+  .load-btn:hover { background: var(--accent-hover); }
+  .load-btn:active { transform: translateY(-50%) scale(.97); }
+  .load-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  .menu-toggle {
+    display: none;
+    background: none; border: none;
+    color: var(--text); cursor: pointer;
+    padding: 6px;
+  }
+
+  /* ── LAYOUT ── */
+  .layout {
+    display: flex;
+    margin-top: var(--header-h);
+    height: calc(100vh - var(--header-h));
+  }
+
+  /* ── SIDEBAR ── */
+  .sidebar {
+    width: var(--sidebar-w);
+    min-width: var(--sidebar-w);
+    background: var(--bg-sidebar);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 16px 0;
+    transition: transform .3s ease;
+  }
+  .sidebar::-webkit-scrollbar { width: 4px; }
+  .sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  .sidebar-section {
+    padding: 0 16px;
+    margin-bottom: 8px;
+  }
+  .sidebar-label {
+    font-size: .65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--text-light);
+    padding: 8px 0 6px;
+  }
+
+  .file-tree { list-style: none; }
+
+  .file-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 16px;
+    cursor: pointer;
+    font-size: .82rem;
+    color: var(--text-muted);
+    border-left: 3px solid transparent;
+    transition: all .15s;
+    word-break: break-word;
+  }
+  .file-item:hover {
+    background: rgba(192,93,60,.06);
+    color: var(--text);
+  }
+  .file-item.active {
+    background: var(--accent-bg);
+    color: var(--accent);
+    border-left-color: var(--accent);
+    font-weight: 500;
+  }
+  .file-item .icon { flex-shrink: 0; opacity: .5; }
+  .file-item.active .icon { opacity: 1; }
+
+  .folder-name {
+    padding: 8px 16px;
+    font-size: .75rem;
+    font-weight: 600;
+    color: var(--text);
+    display: flex; align-items: center; gap: 6px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .folder-name:hover { color: var(--accent); }
+  .folder-children { display: none; }
+  .folder-children.open { display: block; }
+
+  .sidebar-empty {
+    padding: 40px 24px;
+    text-align: center;
+    color: var(--text-light);
+    font-size: .82rem;
+    line-height: 1.6;
+  }
+  .sidebar-empty svg { margin-bottom: 12px; opacity: .3; }
+
+  /* ── MAIN CONTENT ── */
+  .main {
+    flex: 1;
+    overflow-y: auto;
+    padding: 40px;
+    scroll-behavior: smooth;
+  }
+  .main::-webkit-scrollbar { width: 6px; }
+  .main::-webkit-scrollbar-thumb { background: var(--border); border-radius: 6px; }
+
+  /* ── WELCOME SCREEN ── */
+  .welcome {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    text-align: center;
+    padding: 40px;
+    animation: fadeUp .5s ease;
+  }
+  .welcome-icon { margin-bottom: 24px; opacity: .15; }
+  .welcome h2 {
+    font-family: 'Source Serif 4', serif;
+    font-size: 1.8rem;
+    font-weight: 600;
+    margin-bottom: 12px;
+    color: var(--text);
+  }
+  .welcome p {
+    color: var(--text-muted);
+    max-width: 420px;
+    font-size: .92rem;
+    line-height: 1.7;
+    margin-bottom: 8px;
+  }
+  .welcome code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .78rem;
+    background: var(--code-bg);
+    padding: 2px 8px;
+    border-radius: 4px;
+    color: var(--accent);
+  }
+
+  /* ── ARTICLE RENDERING ── */
+  .article-wrap {
+    max-width: 760px;
+    margin: 0 auto;
+    animation: fadeUp .35s ease;
+  }
+
+  .article-meta {
+    margin-bottom: 32px;
+    padding-bottom: 24px;
+    border-bottom: 1px solid var(--border-light);
+  }
+  .article-meta .filepath {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .72rem;
+    color: var(--text-light);
+    margin-bottom: 4px;
+  }
+  .article-meta h1 {
+    font-family: 'Source Serif 4', serif;
+    font-size: 2rem;
+    font-weight: 700;
+    line-height: 1.3;
+    letter-spacing: -.02em;
+    color: var(--text);
+  }
+
+  .article-body {
+    font-family: 'Source Serif 4', serif;
+    font-size: 1rem;
+    line-height: 1.85;
+    color: var(--text);
+  }
+
+  .article-body h1 {
+    font-size: 1.65rem; font-weight: 700;
+    margin: 2.4em 0 .6em;
+    letter-spacing: -.02em;
+    line-height: 1.3;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-light);
+  }
+  .article-body h2 {
+    font-size: 1.35rem; font-weight: 600;
+    margin: 2em 0 .5em;
+    letter-spacing: -.01em;
+    line-height: 1.35;
+  }
+  .article-body h3 {
+    font-size: 1.1rem; font-weight: 600;
+    margin: 1.6em 0 .4em;
+    color: var(--accent);
+  }
+  .article-body h4, .article-body h5, .article-body h6 {
+    font-family: 'DM Sans', sans-serif;
+    font-size: .88rem; font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    margin: 1.5em 0 .4em;
+    color: var(--text-muted);
+  }
+
+  .article-body p { margin-bottom: 1.15em; }
+
+  .article-body a {
+    color: var(--accent);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    transition: color .15s;
+  }
+  .article-body a:hover { color: var(--accent-hover); }
+
+  .article-body ul, .article-body ol {
+    margin: .6em 0 1.2em 1.4em;
+  }
+  .article-body li { margin-bottom: .35em; }
+  .article-body li::marker { color: var(--accent); }
+
+  .article-body blockquote {
+    border-left: 3px solid var(--accent);
+    padding: 12px 20px;
+    margin: 1.2em 0;
+    background: var(--accent-bg);
+    border-radius: 0 var(--radius) var(--radius) 0;
+    color: var(--text);
+    font-style: italic;
+  }
+  .article-body blockquote p:last-child { margin-bottom: 0; }
+
+  .article-body code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .82em;
+    background: var(--code-bg);
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--accent);
+  }
+
+  .article-body pre {
+    background: #2C2825;
+    color: #E8E4DF;
+    padding: 20px 24px;
+    border-radius: var(--radius);
+    overflow-x: auto;
+    margin: 1.2em 0;
+    font-size: .82rem;
+    line-height: 1.65;
+    box-shadow: var(--shadow-md);
+  }
+  .article-body pre code {
+    background: none;
+    color: inherit;
+    padding: 0;
+    font-size: inherit;
+  }
+
+  .article-body table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1.2em 0;
+    font-family: 'DM Sans', sans-serif;
+    font-size: .88rem;
+  }
+  .article-body th {
+    text-align: left;
+    padding: 10px 14px;
+    border-bottom: 2px solid var(--border);
+    font-weight: 600;
+    font-size: .78rem;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--text-muted);
+  }
+  .article-body td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-light);
+  }
+  .article-body tr:hover td { background: rgba(192,93,60,.03); }
+
+  .article-body img {
+    max-width: 100%;
+    border-radius: var(--radius);
+    margin: 1em 0;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .article-body hr {
+    border: none;
+    height: 1px;
+    background: var(--border);
+    margin: 2em 0;
+  }
+
+  /* ── TOC FLOATING ── */
+  .toc-float {
+    position: fixed;
+    right: 24px;
+    top: calc(var(--header-h) + 24px);
+    width: 220px;
+    max-height: calc(100vh - var(--header-h) - 48px);
+    overflow-y: auto;
+    padding: 16px;
+    background: rgba(250,248,245,.9);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius);
+    font-size: .72rem;
+    display: none;
+    z-index: 50;
+  }
+  .toc-float.visible { display: block; animation: fadeUp .3s ease; }
+  .toc-float-title {
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--text-light);
+    margin-bottom: 10px;
+    font-size: .62rem;
+  }
+  .toc-link {
+    display: block;
+    padding: 4px 0;
+    color: var(--text-muted);
+    text-decoration: none;
+    transition: color .15s;
+    line-height: 1.5;
+    cursor: pointer;
+  }
+  .toc-link:hover { color: var(--accent); }
+  .toc-link.depth-2 { padding-left: 12px; }
+  .toc-link.depth-3 { padding-left: 24px; font-size: .68rem; }
+
+  /* ── LOADING ── */
+  .loading-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(250,248,245,.85);
+    backdrop-filter: blur(4px);
+    z-index: 200;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .loading-overlay.show { display: flex; }
+
+  .spinner {
+    width: 36px; height: 36px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+  }
+  .loading-text {
+    font-size: .85rem;
+    color: var(--text-muted);
+  }
+
+  /* ── BRANCH SELECTOR ── */
+  .branch-picker {
+    padding: 10px 16px 4px;
+  }
+  .branch-picker-label {
+    font-size: .62rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--text-light);
+    margin-bottom: 6px;
+  }
+  .branch-select-wrap {
+    position: relative;
+  }
+  .branch-select-wrap select {
+    width: 100%;
+    padding: 8px 32px 8px 34px;
+    border: 1.5px solid var(--border);
+    border-radius: 7px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .74rem;
+    background: var(--bg-card);
+    color: var(--text);
+    appearance: none;
+    -webkit-appearance: none;
+    outline: none;
+    cursor: pointer;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  .branch-select-wrap select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(192,93,60,.12);
+  }
+  .branch-select-wrap select:disabled {
+    opacity: .45;
+    cursor: not-allowed;
+  }
+  .branch-select-wrap .branch-icon {
+    position: absolute;
+    left: 10px; top: 50%; transform: translateY(-50%);
+    pointer-events: none;
+    color: var(--text-light);
+  }
+  .branch-select-wrap .chevron-icon {
+    position: absolute;
+    right: 10px; top: 50%; transform: translateY(-50%);
+    pointer-events: none;
+    color: var(--text-light);
+  }
+  .branch-count {
+    font-size: .65rem;
+    color: var(--text-light);
+    margin-top: 4px;
+    padding-left: 2px;
+  }
+
+  /* ── SEARCH ── */
+  .search-wrap {
+    padding: 8px 16px 12px;
+    position: relative;
+  }
+  .search-wrap input {
+    width: 100%;
+    padding: 8px 12px 8px 32px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: .78rem;
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg-card);
+    color: var(--text);
+    outline: none;
+    transition: border-color .2s;
+  }
+  .search-wrap input:focus { border-color: var(--accent); }
+  .search-wrap input::placeholder { color: var(--text-light); }
+  .search-wrap .search-icon {
+    position: absolute;
+    left: 26px; top: 50%; transform: translateY(-50%);
+    color: var(--text-light);
+    pointer-events: none;
+  }
+
+  /* ── ERROR TOAST ── */
+  .toast {
+    position: fixed;
+    bottom: 24px; left: 50%; transform: translateX(-50%) translateY(100px);
+    background: #C05D3C;
+    color: #fff;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-size: .84rem;
+    font-weight: 500;
+    box-shadow: var(--shadow-lg);
+    z-index: 300;
+    transition: transform .3s ease;
+    max-width: 90vw;
+    text-align: center;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+
+  /* ── ANIMATIONS ── */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* ── RESPONSIVE ── */
+  @media (max-width: 1100px) {
+    .toc-float { display: none !important; }
+  }
+
+  @media (max-width: 860px) {
+    .menu-toggle { display: block; }
+    .sidebar {
+      position: fixed;
+      left: 0; top: var(--header-h);
+      height: calc(100vh - var(--header-h));
+      transform: translateX(-100%);
+      z-index: 90;
+      box-shadow: var(--shadow-lg);
+    }
+    .sidebar.open { transform: translateX(0); }
+    .sidebar-overlay {
+      display: none;
+      position: fixed;
+      top: var(--header-h); left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,.25);
+      z-index: 89;
+    }
+    .sidebar-overlay.show { display: block; }
+    .main { padding: 28px 20px; }
+    .logo span { display: none; }
+  }
+
+  @media (max-width: 500px) {
+    html { font-size: 16px; }
+    .repo-input-wrap input { font-size: .72rem; padding-right: 80px; }
+    .load-btn { padding: 6px 12px; font-size: .72rem; }
+    .main { padding: 20px 16px; }
+    .article-body pre { padding: 14px 16px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="header">
+  <button class="menu-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+  <div class="logo">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+      <rect x="3" y="3" width="18" height="18" rx="3" stroke="currentColor" stroke-width="1.8"/>
+      <path d="M7 8h10M7 12h7M7 16h9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    </svg>
+    <span>SpecReader</span>
+  </div>
+  <div class="repo-input-wrap">
+    <input type="text" id="repoInput" placeholder="github.com/owner/repo or owner/repo" spellcheck="false"
+      onkeydown="if(event.key==='Enter')loadRepo()">
+    <button class="load-btn" id="loadBtn" onclick="loadRepo()">Load</button>
+  </div>
+</header>
+
+<!-- SIDEBAR OVERLAY (mobile) -->
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+<!-- LAYOUT -->
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <div class="branch-picker" id="branchPicker" style="display:none">
+      <div class="branch-picker-label">Branch</div>
+      <div class="branch-select-wrap">
+        <svg class="branch-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 01-9 9"/></svg>
+        <select id="branchSelect" onchange="switchBranch(this.value)" disabled>
+          <option value="">Loading branches…</option>
+        </select>
+        <svg class="chevron-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <div class="branch-count" id="branchCount"></div>
+    </div>
+    <div class="search-wrap">
+      <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" id="fileSearch" placeholder="Filter files…" oninput="filterFiles()">
+    </div>
+    <div id="fileTree">
+      <div class="sidebar-empty">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+        <div>Enter a GitHub repo URL above<br>to browse spec files</div>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main" id="main">
+    <div class="welcome" id="welcome">
+      <svg class="welcome-icon" width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+        <rect x="3" y="3" width="18" height="18" rx="3"/>
+        <path d="M7 8h10M7 12h7M7 16h9" stroke-linecap="round"/>
+      </svg>
+      <h2>Read Specs Comfortably</h2>
+      <p>Paste a GitHub repository URL to load and browse OpenSpec documents with clean typography optimized for tablets and screens.</p>
+      <p style="margin-top:8px">Try something like <code>owner/repo</code></p>
+    </div>
+    <div id="articleContainer" style="display:none"></div>
+  </main>
+</div>
+
+<!-- TOC -->
+<nav class="toc-float" id="tocFloat"></nav>
+
+<!-- LOADING -->
+<div class="loading-overlay" id="loading">
+  <div class="spinner"></div>
+  <div class="loading-text" id="loadingText">Loading repository…</div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ── State ──
+let repoFiles = [];
+let currentFile = null;
+let repoOwner = '';
+let repoName = '';
+let repoBranch = 'main';
+let repoBranches = [];
+let repoDefaultBranch = 'main';
+
+// ── Parsing repo URL ──
+function parseRepoInput(input) {
+  input = input.trim().replace(/\/$/, '');
+  // Handle full URLs
+  input = input.replace(/^https?:\/\/(www\.)?github\.com\//, '');
+  // Remove tree/branch paths
+  const treePart = input.match(/^([^/]+)\/([^/]+)/);
+  if (!treePart) return null;
+  return { owner: treePart[1], name: treePart[2] };
+}
+
+// ── Fetch all branches (paginated) ──
+async function fetchBranches() {
+  repoBranches = [];
+  let page = 1;
+  const perPage = 100;
+  try {
+    while (true) {
+      const res = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/branches?per_page=${perPage}&page=${page}`);
+      if (!res.ok) break;
+      const data = await res.json();
+      if (!data.length) break;
+      repoBranches.push(...data.map(b => b.name));
+      if (data.length < perPage) break;
+      page++;
+      if (page > 10) break; // safety cap
+    }
+  } catch (_) {}
+
+  // Also fetch default branch from repo info
+  try {
+    const res = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}`);
+    if (res.ok) {
+      const info = await res.json();
+      repoDefaultBranch = info.default_branch || 'main';
+    }
+  } catch (_) {}
+
+  // Sort: default branch first, then alphabetical
+  repoBranches.sort((a, b) => {
+    if (a === repoDefaultBranch) return -1;
+    if (b === repoDefaultBranch) return 1;
+    return a.localeCompare(b);
+  });
+
+  renderBranchSelector();
+}
+
+function renderBranchSelector() {
+  const picker = document.getElementById('branchPicker');
+  const select = document.getElementById('branchSelect');
+  const count = document.getElementById('branchCount');
+
+  if (!repoBranches.length) {
+    picker.style.display = 'none';
+    return;
+  }
+
+  picker.style.display = '';
+  select.disabled = false;
+  select.innerHTML = '';
+
+  repoBranches.forEach(name => {
+    const opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = name + (name === repoDefaultBranch ? ' (default)' : '');
+    if (name === repoBranch) opt.selected = true;
+    select.appendChild(opt);
+  });
+
+  count.textContent = repoBranches.length + ' branch' + (repoBranches.length !== 1 ? 'es' : '');
+}
+
+async function switchBranch(branch) {
+  if (!branch || branch === repoBranch) return;
+  repoBranch = branch;
+  showLoading('Switching to ' + branch + '…');
+
+  try {
+    const res = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/trees/${branch}?recursive=1`);
+    if (!res.ok) throw new Error('Branch not found');
+    const tree = await res.json();
+
+    const specExtensions = ['.md', '.mdx', '.rst', '.txt', '.yaml', '.yml', '.json', '.toml'];
+    repoFiles = tree.tree
+      .filter(f => f.type === 'blob' && specExtensions.some(ext => f.path.toLowerCase().endsWith(ext)))
+      .map(f => ({ path: f.path, sha: f.sha, url: f.url }))
+      .sort((a, b) => a.path.localeCompare(b.path));
+
+    renderFileTree(repoFiles);
+
+    // If previously viewing a file, try to reload it on new branch
+    if (currentFile) {
+      const sameFile = repoFiles.find(f => f.path === currentFile.path);
+      if (sameFile) {
+        loadFile(sameFile);
+      } else {
+        // File doesn't exist on this branch, show readme or welcome
+        const readme = repoFiles.find(f => f.path.toLowerCase() === 'readme.md');
+        if (readme) {
+          loadFile(readme);
+        } else {
+          document.getElementById('articleContainer').style.display = 'none';
+          document.getElementById('welcome').style.display = '';
+          document.getElementById('tocFloat').classList.remove('visible');
+          currentFile = null;
+        }
+      }
+    } else {
+      const readme = repoFiles.find(f => f.path.toLowerCase() === 'readme.md');
+      if (readme) loadFile(readme);
+    }
+  } catch (e) {
+    showToast('Failed to load branch "' + branch + '".');
+  }
+
+  hideLoading();
+}
+
+// ── Load repo ──
+async function loadRepo() {
+  const input = document.getElementById('repoInput').value;
+  const parsed = parseRepoInput(input);
+  if (!parsed) return showToast('Please enter a valid GitHub repo (e.g. owner/repo)');
+
+  repoOwner = parsed.owner;
+  repoName = parsed.name;
+
+  showLoading('Loading repository…');
+
+  // Reset branch picker
+  document.getElementById('branchPicker').style.display = 'none';
+  repoBranches = [];
+  currentFile = null;
+
+  // Fetch repo info for default branch
+  try {
+    const infoRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}`);
+    if (infoRes.ok) {
+      const info = await infoRes.json();
+      repoDefaultBranch = info.default_branch || 'main';
+    }
+  } catch (_) {}
+
+  // Try default branch first, then fallbacks
+  let tree = null;
+  const branchesToTry = [repoDefaultBranch];
+  if (repoDefaultBranch !== 'main') branchesToTry.push('main');
+  if (repoDefaultBranch !== 'master') branchesToTry.push('master');
+
+  for (const branch of branchesToTry) {
+    try {
+      const res = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/trees/${branch}?recursive=1`);
+      if (res.ok) {
+        tree = await res.json();
+        repoBranch = branch;
+        break;
+      }
+    } catch (_) {}
+  }
+
+  if (!tree) {
+    hideLoading();
+    return showToast('Could not load repository. Check the URL and try again.');
+  }
+
+  // Filter for spec-like files
+  const specExtensions = ['.md', '.mdx', '.rst', '.txt', '.yaml', '.yml', '.json', '.toml'];
+  repoFiles = tree.tree
+    .filter(f => f.type === 'blob' && specExtensions.some(ext => f.path.toLowerCase().endsWith(ext)))
+    .map(f => ({ path: f.path, sha: f.sha, url: f.url }))
+    .sort((a, b) => a.path.localeCompare(b.path));
+
+  renderFileTree(repoFiles);
+  hideLoading();
+
+  // Fetch branches in background for the selector
+  fetchBranches();
+
+  // Auto-load README if present
+  const readme = repoFiles.find(f => f.path.toLowerCase() === 'readme.md');
+  if (readme) loadFile(readme);
+}
+
+// ── Render file tree ──
+function renderFileTree(files) {
+  const container = document.getElementById('fileTree');
+  if (!files.length) {
+    container.innerHTML = '<div class="sidebar-empty">No spec files found in this repository.</div>';
+    return;
+  }
+
+  // Build nested structure
+  const root = {};
+  files.forEach(f => {
+    const parts = f.path.split('/');
+    let node = root;
+    parts.forEach((part, i) => {
+      if (i === parts.length - 1) {
+        if (!node.__files__) node.__files__ = [];
+        node.__files__.push(f);
+      } else {
+        if (!node[part]) node[part] = {};
+        node = node[part];
+      }
+    });
+  });
+
+  container.innerHTML = '';
+  buildTreeDOM(root, container, 0);
+}
+
+function buildTreeDOM(node, parent, depth) {
+  // Files at this level
+  if (node.__files__) {
+    node.__files__.forEach(f => {
+      const el = document.createElement('div');
+      el.className = 'file-item';
+      el.dataset.path = f.path;
+      const name = f.path.split('/').pop();
+      const ext = name.split('.').pop().toLowerCase();
+      el.innerHTML = `<span class="icon">${fileIcon(ext)}</span><span>${name}</span>`;
+      el.onclick = () => {
+        loadFile(f);
+        closeSidebarMobile();
+      };
+      parent.appendChild(el);
+    });
+  }
+
+  // Folders
+  Object.keys(node).filter(k => k !== '__files__').sort().forEach(folder => {
+    const section = document.createElement('div');
+    section.className = 'sidebar-section';
+
+    const folderEl = document.createElement('div');
+    folderEl.className = 'folder-name';
+    folderEl.style.paddingLeft = (16 + depth * 12) + 'px';
+    folderEl.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg> ${folder}`;
+
+    const children = document.createElement('div');
+    children.className = 'folder-children';
+
+    folderEl.onclick = () => {
+      children.classList.toggle('open');
+      folderEl.querySelector('svg').style.transform = children.classList.contains('open') ? 'rotate(90deg)' : '';
+    };
+
+    // Auto-open first level
+    if (depth === 0) {
+      children.classList.add('open');
+      folderEl.querySelector('svg').style.transform = 'rotate(90deg)';
+    }
+
+    section.appendChild(folderEl);
+    section.appendChild(children);
+    parent.appendChild(section);
+
+    buildTreeDOM(node[folder], children, depth + 1);
+  });
+}
+
+function fileIcon(ext) {
+  const icons = {
+    md: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>',
+    json: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H7a2 2 0 00-2 2v5a2 2 0 01-2 2 2 2 0 012 2v5a2 2 0 002 2h1M16 3h1a2 2 0 012 2v5a2 2 0 002 2 2 2 0 00-2 2v5a2 2 0 01-2 2h-1"/></svg>',
+    yaml: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>',
+  };
+  return icons[ext] || icons.md;
+}
+
+// ── Load and render file ──
+async function loadFile(file) {
+  showLoading('Loading file…');
+
+  // Mark active
+  document.querySelectorAll('.file-item').forEach(el => el.classList.remove('active'));
+  const activeEl = document.querySelector(`.file-item[data-path="${CSS.escape(file.path)}"]`);
+  if (activeEl) activeEl.classList.add('active');
+
+  try {
+    // Fetch raw content
+    const res = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${file.path}?ref=${repoBranch}`, {
+      headers: { 'Accept': 'application/vnd.github.v3.raw' }
+    });
+
+    if (!res.ok) throw new Error('Failed to fetch file');
+    const content = await res.text();
+    currentFile = file;
+    renderArticle(file, content);
+  } catch (e) {
+    showToast('Failed to load file. It may be too large or inaccessible.');
+  }
+
+  hideLoading();
+}
+
+function renderArticle(file, content) {
+  const container = document.getElementById('articleContainer');
+  const welcome = document.getElementById('welcome');
+  welcome.style.display = 'none';
+  container.style.display = 'block';
+
+  const ext = file.path.split('.').pop().toLowerCase();
+  const fileName = file.path.split('/').pop();
+
+  let bodyHtml;
+  if (['md', 'mdx'].includes(ext)) {
+    bodyHtml = marked.parse(content, { gfm: true, breaks: false });
+  } else if (['yaml', 'yml', 'toml', 'json'].includes(ext)) {
+    bodyHtml = `<pre><code>${escapeHtml(content)}</code></pre>`;
+  } else {
+    bodyHtml = `<pre><code>${escapeHtml(content)}</code></pre>`;
+  }
+
+  // Extract first h1 from the rendered body for title
+  const tempDiv = document.createElement('div');
+  tempDiv.innerHTML = bodyHtml;
+  const firstH1 = tempDiv.querySelector('h1');
+  let title = fileName;
+  if (firstH1) {
+    title = firstH1.textContent;
+    firstH1.remove();
+    bodyHtml = tempDiv.innerHTML;
+  }
+
+  // Fix relative image URLs to point to GitHub raw
+  bodyHtml = bodyHtml.replace(
+    /(<img[^>]+src=")(?!https?:\/\/)([^"]+)(")/g,
+    (_, pre, src, post) => {
+      const dir = file.path.includes('/') ? file.path.substring(0, file.path.lastIndexOf('/') + 1) : '';
+      return `${pre}https://raw.githubusercontent.com/${repoOwner}/${repoName}/${repoBranch}/${dir}${src}${post}`;
+    }
+  );
+
+  container.innerHTML = `
+    <div class="article-wrap">
+      <div class="article-meta">
+        <div class="filepath">${repoOwner}/${repoName} <span style="color:var(--accent);font-weight:500">@ ${repoBranch}</span> / ${file.path}</div>
+        <h1>${escapeHtml(title)}</h1>
+      </div>
+      <div class="article-body" id="articleBody">${bodyHtml}</div>
+    </div>
+  `;
+
+  // Build TOC
+  buildTOC();
+
+  // Scroll to top
+  document.getElementById('main').scrollTop = 0;
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// ── Table of Contents ──
+function buildTOC() {
+  const toc = document.getElementById('tocFloat');
+  const body = document.getElementById('articleBody');
+  if (!body) { toc.classList.remove('visible'); return; }
+
+  const headings = body.querySelectorAll('h1, h2, h3');
+  if (headings.length < 3) { toc.classList.remove('visible'); return; }
+
+  let html = '<div class="toc-float-title">On this page</div>';
+  headings.forEach((h, i) => {
+    const id = 'heading-' + i;
+    h.id = id;
+    const depth = parseInt(h.tagName.charAt(1));
+    html += `<a class="toc-link depth-${depth}" onclick="scrollToHeading('${id}')">${h.textContent}</a>`;
+  });
+
+  toc.innerHTML = html;
+  toc.classList.add('visible');
+}
+
+function scrollToHeading(id) {
+  const el = document.getElementById(id);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ── File search filter ──
+function filterFiles() {
+  const q = document.getElementById('fileSearch').value.toLowerCase();
+  document.querySelectorAll('.file-item').forEach(el => {
+    el.style.display = el.dataset.path.toLowerCase().includes(q) ? '' : 'none';
+  });
+  // Show all folders if searching
+  if (q) {
+    document.querySelectorAll('.folder-children').forEach(el => el.classList.add('open'));
+    document.querySelectorAll('.folder-name svg').forEach(svg => svg.style.transform = 'rotate(90deg)');
+  }
+}
+
+// ── Sidebar toggle (mobile) ──
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('sidebarOverlay').classList.toggle('show');
+}
+function closeSidebarMobile() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebarOverlay').classList.remove('show');
+}
+
+// ── Loading ──
+function showLoading(text) {
+  document.getElementById('loadingText').textContent = text || 'Loading…';
+  document.getElementById('loading').classList.add('show');
+}
+function hideLoading() {
+  document.getElementById('loading').classList.remove('show');
+}
+
+// ── Toast ──
+function showToast(msg) {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 3500);
+}
+
+// ── Configure marked ──
+marked.setOptions({
+  headerIds: false,
+  mangle: false,
+});
+</script>
+</body>
+</html>
