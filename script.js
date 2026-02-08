@@ -6,7 +6,8 @@ const APPS = [
     'ip-info',
     'piano',
     'poem-analyzer',
-    'postit-wall'
+    'postit-wall',
+    'spec-viewer'
 ];
 
 document.addEventListener('DOMContentLoaded', async () => {
