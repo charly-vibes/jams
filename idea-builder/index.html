@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#FAF8F5">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Architekt">
+    <title>Architekt - Idea Builder</title>
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist+Mono:wght@300;400&family=Outfit:wght@300;400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<a href="../" class="home-link">&larr;</a>
+<div id="app">
+  <div class="view active" id="homeView">
+    <div class="home-header">
+      <div class="home-logo">Architekt</div>
+      <div class="home-tagline">Un espacio para pensar con claridad</div>
+      <div class="home-actions">
+        <button class="sm-btn" onclick="expAll()">Exportar</button>
+        <button class="sm-btn" onclick="document.getElementById('impF').click()">Importar</button>
+      </div>
+    </div>
+    <div class="view-scroll">
+      <div class="home-body">
+        <input type="text" class="new-topic-input" id="newTopic" placeholder="¿Sobre qué quieres pensar?" maxlength="80">
+        <div id="tListW"></div>
+      </div>
+    </div>
+  </div>
+  <div class="view hidden-right" id="wsView">
+    <div class="ws-bar">
+      <button class="ws-back" onclick="goHome()">&#8592;</button>
+      <div class="ws-title" id="wsTitle"></div>
+    </div>
+    <div class="view-scroll" id="wsScroll">
+      <div class="ws-panel active" id="wp-ideas"><div class="ws-body" id="wIdeas"></div></div>
+      <div class="ws-panel" id="wp-topoi"><div class="ws-body" id="wTopoi"></div></div>
+      <div class="ws-panel" id="wp-combi"><div class="ws-body" id="wCombi"></div></div>
+      <div class="ws-panel" id="wp-struct"><div class="ws-body" id="wStruct"></div></div>
+    </div>
+    <nav class="tool-nav">
+      <button class="tool-btn active" data-tool="ideas">Ideas</button>
+      <button class="tool-btn" data-tool="topoi">Topoi</button>
+      <button class="tool-btn" data-tool="combi">Combinar</button>
+      <button class="tool-btn" data-tool="struct">Estructura</button>
+    </nav>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<div class="modal-bg" id="modalBg"><div class="modal-box" id="modalBox"></div></div>
+<input type="file" id="impF" accept=".json" style="display:none">
+<footer>
+    <a href="https://github.com/charly-vibes/jams/tree/main/idea-builder" target="_blank" rel="noopener noreferrer">View source on GitHub</a>
+</footer>
+<script src="script.js"></script>
+</body>
+</html>

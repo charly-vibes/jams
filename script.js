@@ -9,7 +9,8 @@ const APPS = [
     'postit-wall',
     'spec-viewer',
     'wifi-helper',
-    'signal-heatmap'
+    'signal-heatmap',
+    'idea-builder'
 ];
 
 document.addEventListener('DOMContentLoaded', async () => {
