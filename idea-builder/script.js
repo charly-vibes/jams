@@ -53,7 +53,8 @@ function syncTool(){
 }
 
 function renderTool(){
-  ({ideas:renderIdeas,topoi:renderTopoi,combi:renderCombi,struct:renderStruct})[tool]();
+  if(tool==='ideas') renderIdeas();
+  else if(tool==='explore') renderExplore();
 }
 
 // TOPICS
@@ -100,6 +101,7 @@ function renderIdeas(){
     <div class="idea-input-wrap">
       <textarea class="idea-input" id="ideaTxt" placeholder="Captura un pensamiento..." rows="1"></textarea>
       <button class="idea-send" id="ideaSend" onclick="addIdea()">↑</button>
+      <button class="tag-toggle" id="tagToggle" onclick="toggleTags()">#</button>
     </div>
     <div class="idea-tags-row" id="ideaTagsRow">
       <input class="idea-tags-field" id="ideaTagsF" placeholder="#etiquetas separadas por espacio">
@@ -108,10 +110,17 @@ function renderIdeas(){
     <div class="ideas-list" id="ideasList"></div>`;
   renderIL();
   const txt=document.getElementById('ideaTxt');
-  txt.addEventListener('focus',()=>{document.getElementById('ideaTagsRow').classList.add('vis');document.getElementById('ideaSend').classList.add('vis');});
-  txt.addEventListener('blur',()=>{setTimeout(()=>{if(!txt.value.trim()){document.getElementById('ideaTagsRow').classList.remove('vis');document.getElementById('ideaSend').classList.remove('vis');}},200);});
+  txt.addEventListener('focus',()=>{document.getElementById('ideaSend').classList.add('vis');});
+  txt.addEventListener('blur',()=>{setTimeout(()=>{if(!txt.value.trim()){document.getElementById('ideaSend').classList.remove('vis');}},200);});
   txt.addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey))addIdea();});
   txt.addEventListener('input',()=>{txt.style.height='auto';txt.style.height=txt.scrollHeight+'px';});
+}
+
+function toggleTags(){
+  const row=document.getElementById('ideaTagsRow');
+  const btn=document.getElementById('tagToggle');
+  row.classList.toggle('vis');
+  btn.classList.toggle('active');
 }
 
 function renderIL(){
@@ -142,6 +151,7 @@ function addIdea(){
   const d=load(),t=d.topics.find(x=>x.id===d.cur);if(!t)return;
   t.ideas.unshift({id:gid(),text:v,tags,at:Date.now()});save(d);
   txt.value='';tf.value='';txt.style.height='auto';renderIdeas();toast('Idea guardada');
+  setTimeout(()=>{const t=document.getElementById('ideaTxt');if(t)t.focus();},100);
 }
 function delIdea(id){const d=load(),t=d.topics.find(x=>x.id===d.cur);if(!t)return;t.ideas=t.ideas.filter(i=>i.id!==id);save(d);renderIL();toast('Eliminada');}
 function filterIdeas(){renderIL();}
@@ -155,9 +165,9 @@ const TOPOI=[
   {k:'test',n:'Testimonio',q:['¿Qué dicen los expertos?','¿Qué revela la experiencia?','¿Cómo respondería un oponente?']}
 ];
 
-function renderTopoi(){
+function renderTopoiInto(container){
   const t=getT();if(!t)return;if(!t.topoi)t.topoi={};
-  document.getElementById('wTopoi').innerHTML=
+  container.innerHTML=
     '<div class="sec-desc">Explora tu tema a través de los cinco lugares de invención argumentativa.</div>'+
     TOPOI.map((tp,i)=>`
       <div class="topos" id="tp-${tp.k}">
@@ -168,20 +178,22 @@ function renderTopoi(){
         </div>
         <div class="topos-body"><div class="topos-inner">
           <div class="topos-prompts">${tp.q.map(q=>'<button class="topos-prompt" onclick="insTp(\''+tp.k+'\',this)">'+q+'</button>').join('')}</div>
-          <textarea class="topos-area" placeholder="Tus reflexiones..." oninput="saveTp('${tp.k}',this.value)">${esc(t.topoi[tp.k]||'')}</textarea>
+          <textarea class="topos-area" placeholder="Tus reflexiones..." oninput="saveTp(\'${tp.k}\',this.value)">${esc(t.topoi[tp.k]||'')}</textarea>
         </div></div>
       </div>`).join('');
+}
+
+function renderTopoi(){
+  const el=document.getElementById('wTopoi')||document.getElementById('expTopoi');
+  if(el) renderTopoiInto(el);
 }
 
 function togTp(k){
   const el=document.getElementById('tp-'+k);
   const wasOpen=el.classList.contains('open');
-  // Close all others first
   document.querySelectorAll('.topos.open').forEach(t=>t.classList.remove('open'));
-  // Toggle clicked one
   if(!wasOpen){
     el.classList.add('open');
-    // Auto-focus the textarea
     setTimeout(()=>{const ta=el.querySelector('.topos-area');if(ta)ta.focus();},350);
   }
 }
@@ -193,18 +205,18 @@ function insTp(k,el){
 function saveTp(k,v){const d=load(),t=d.topics.find(x=>x.id===d.cur);if(!t)return;if(!t.topoi)t.topoi={};t.topoi[k]=v;save(d);}
 
 // COMBI - history collapsed by default
-function renderCombi(){
+function renderCombiInto(container){
   const t=getT();if(!t)return;
   if(!t.combi)t.combi={a:[],b:[],c:[]};if(!t.combiH)t.combiH=[];
   const rings=[{k:'a',l:'Sujetos / Temas'},{k:'b',l:'Atributos / Cualidades'},{k:'c',l:'Contextos / Relaciones'}];
-  document.getElementById('wCombi').innerHTML=
+  container.innerHTML=
     '<div class="sec-desc">Combina conceptos de tres anillos para generar premisas originales.</div>'+
     rings.map(r=>`
       <div class="combi-ring">
         <div class="combi-ring-label"><span class="combi-dot ${r.k}"></span>${r.l}</div>
         <div class="combi-tokens">
           ${(t.combi[r.k]||[]).map((v,i)=>'<span class="combi-token">'+esc(v)+'<button class="combi-token-x" onclick="rmTk(\''+r.k+'\','+i+')">×</button></span>').join('')}
-          <input class="combi-add-input" placeholder="Añadir..." onkeydown="addTk(event,'${r.k}',this)">
+          <input class="combi-add-input" placeholder="Añadir..." onkeydown="addTk(event,\'${r.k}\',this)">
         </div>
       </div>`).join('')+
     '<div class="combi-gen-wrap"><button class="combi-gen-btn" onclick="genCombi()">Generar combinación</button></div>'+
@@ -215,13 +227,18 @@ function renderCombi(){
     :'');
 }
 
+function renderCombi(){
+  const el=document.getElementById('wCombi')||document.getElementById('expCombi');
+  if(el) renderCombiInto(el);
+}
+
 function togHist(){
   const el=document.getElementById('combiHist');
   if(el) el.classList.toggle('open');
 }
 
-function addTk(e,r,inp){if(e.key!=='Enter')return;const v=inp.value.trim();if(!v)return;const d=load(),t=d.topics.find(x=>x.id===d.cur);if(!t)return;if(!t.combi[r])t.combi[r]=[];t.combi[r].push(v);save(d);inp.value='';renderCombi();}
-function rmTk(r,i){const d=load(),t=d.topics.find(x=>x.id===d.cur);if(!t)return;t.combi[r].splice(i,1);save(d);renderCombi();}
+function addTk(e,r,inp){if(e.key!=='Enter')return;const v=inp.value.trim();if(!v)return;const d=load(),t=d.topics.find(x=>x.id===d.cur);if(!t)return;if(!t.combi[r])t.combi[r]=[];t.combi[r].push(v);save(d);inp.value='';renderExplore();}
+function rmTk(r,i){const d=load(),t=d.topics.find(x=>x.id===d.cur);if(!t)return;t.combi[r].splice(i,1);save(d);renderExplore();}
 
 function genCombi(){
   const t=getT();if(!t)return;const{a,b,c}=t.combi;
@@ -240,7 +257,7 @@ function genCombi(){
 function saveCombi(){
   if(!window._lastCombi)return;
   const d=load(),tp=d.topics.find(x=>x.id===d.cur);if(!tp)return;
-  tp.combiH.unshift({f:window._lastCombi.f,t:window._lastCombi.t,at:Date.now()});save(d);renderCombi();toast('Guardada');
+  tp.combiH.unshift({f:window._lastCombi.f,t:window._lastCombi.t,at:Date.now()});save(d);renderExplore();toast('Guardada');
 }
 
 // STRUCT - step by step: one slot at a time
@@ -251,12 +268,12 @@ const MODELS={
   free:{n:'Libre',s:[{k:'i',l:'Introducción',p:'Punto de entrada...'},{k:'d1',l:'Desarrollo 1',p:''},{k:'d2',l:'Desarrollo 2',p:''},{k:'c',l:'Conclusión',p:'Cierre y síntesis...'}]}
 };
 
-function renderStruct(){
+function renderStructInto(container){
   const t=getT();if(!t)return;if(!t.struct)t.struct={m:'toulmin',s:{}};
   const mod=MODELS[t.struct.m]||MODELS.toulmin;
   if(structStep>=mod.s.length) structStep=mod.s.length-1;
   const s=mod.s[structStep];
-  document.getElementById('wStruct').innerHTML=
+  container.innerHTML=
     '<div class="struct-models">'+Object.entries(MODELS).map(([k,v])=>'<button class="struct-pill'+(k===t.struct.m?' active':'')+'" onclick="setModel(\''+k+'\')">'+v.n+'</button>').join('')+'</div>'+
     '<div class="struct-steps">'+mod.s.map((_,i)=>{
       const cls=['struct-step'];
@@ -275,9 +292,46 @@ function renderStruct(){
     '</div>';
 }
 
-function goStep(i){structStep=i;renderStruct();}
-function setModel(m){const d=load(),t=d.topics.find(x=>x.id===d.cur);if(!t)return;t.struct.m=m;structStep=0;save(d);renderStruct();}
+function renderStruct(){
+  const el=document.getElementById('wStruct')||document.getElementById('expStruct');
+  if(el) renderStructInto(el);
+}
+
+function goStep(i){structStep=i;renderExplore();}
+function setModel(m){const d=load(),t=d.topics.find(x=>x.id===d.cur);if(!t)return;t.struct.m=m;structStep=0;save(d);renderExplore();}
 function saveSlot(k,v){const d=load(),t=d.topics.find(x=>x.id===d.cur);if(!t)return;t.struct.s[k]=v;save(d);}
+
+// EXPLORE - unified panel with collapsible sections
+function renderExplore(){
+  const t=getT();if(!t)return;
+  const el=document.getElementById('wExplore');
+  el.innerHTML=
+    '<div class="explore-section open" id="exp-topoi">'+
+      '<div class="explore-section-title" onclick="togExp(\'topoi\')"><span class="chev">›</span>Topoi</div>'+
+      '<div class="explore-section-body"><div id="expTopoi"></div></div>'+
+    '</div>'+
+    '<div class="explore-section" id="exp-combi">'+
+      '<div class="explore-section-title" onclick="togExp(\'combi\')"><span class="chev">›</span>Combinar</div>'+
+      '<div class="explore-section-body"><div id="expCombi"></div></div>'+
+    '</div>'+
+    '<div class="explore-section" id="exp-struct">'+
+      '<div class="explore-section-title" onclick="togExp(\'struct\')"><span class="chev">›</span>Estructura</div>'+
+      '<div class="explore-section-body"><div id="expStruct"></div></div>'+
+    '</div>';
+  renderTopoiInto(document.getElementById('expTopoi'));
+  renderCombiInto(document.getElementById('expCombi'));
+  renderStructInto(document.getElementById('expStruct'));
+}
+
+function togExp(s){
+  const el=document.getElementById('exp-'+s);
+  if(el) el.classList.toggle('open');
+}
+
+// Overflow menu
+function showOverflow(){
+  modal('<h3>Opciones</h3><div class="modal-actions" style="flex-direction:column;gap:10px;align-items:stretch"><button class="sm-btn" onclick="expAll();closeModal()">Exportar datos</button><button class="sm-btn" onclick="document.getElementById(\'impF\').click();closeModal()">Importar datos</button></div>');
+}
 
 // Export/Import
 function expAll(){

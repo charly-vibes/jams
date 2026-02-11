@@ -19,8 +19,7 @@
       <div class="home-logo">Architekt</div>
       <div class="home-tagline">Un espacio para pensar con claridad</div>
       <div class="home-actions">
-        <button class="sm-btn" onclick="expAll()">Exportar</button>
-        <button class="sm-btn" onclick="document.getElementById('impF').click()">Importar</button>
+        <button class="overflow-btn" onclick="showOverflow()">⋯</button>
       </div>
     </div>
     <div class="view-scroll">
@@ -37,15 +36,11 @@
     </div>
     <div class="view-scroll" id="wsScroll">
       <div class="ws-panel active" id="wp-ideas"><div class="ws-body" id="wIdeas"></div></div>
-      <div class="ws-panel" id="wp-topoi"><div class="ws-body" id="wTopoi"></div></div>
-      <div class="ws-panel" id="wp-combi"><div class="ws-body" id="wCombi"></div></div>
-      <div class="ws-panel" id="wp-struct"><div class="ws-body" id="wStruct"></div></div>
+      <div class="ws-panel" id="wp-explore"><div class="ws-body" id="wExplore"></div></div>
     </div>
     <nav class="tool-nav">
       <button class="tool-btn active" data-tool="ideas">Ideas</button>
-      <button class="tool-btn" data-tool="topoi">Topoi</button>
-      <button class="tool-btn" data-tool="combi">Combinar</button>
-      <button class="tool-btn" data-tool="struct">Estructura</button>
+      <button class="tool-btn" data-tool="explore">Explorar</button>
     </nav>
   </div>
 </div>
