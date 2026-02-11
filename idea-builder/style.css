@@ -178,3 +178,15 @@ footer a:hover { color:var(--text-3); }
   .ws-bar { padding-top:calc(16px + env(safe-area-inset-top)); }
   .tool-nav { padding-bottom:calc(16px + env(safe-area-inset-bottom)); }
 }
+
+@media (min-width: 640px) {
+  .home-header { max-width:600px; margin:0 auto; padding-top:80px; }
+  .home-body { max-width:600px; margin:0 auto; }
+  .ws-bar { padding:24px calc((100% - 560px) / 2) 16px; }
+  .ws-body { max-width:560px; margin:0 auto; }
+  .tool-nav { padding:16px calc((100% - 560px) / 2) 20px; }
+  .home-logo { font-size:2.6rem; }
+  .home-tagline { font-size:0.9rem; }
+  .new-topic-input { font-size:1.25rem; padding:20px 24px; }
+  .topic-row { padding:18px 20px; }
+}
