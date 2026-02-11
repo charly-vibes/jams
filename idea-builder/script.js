@@ -26,13 +26,14 @@ function closeModal(){document.getElementById('modalBg').classList.remove('show'
 document.getElementById('modalBg').addEventListener('click',e=>{if(e.target===e.currentTarget)closeModal()});
 
 let tool='ideas';
+let structStep=0;
 
 function openTopic(id){
   const d=load();d.cur=id;save(d);const t=getT();if(!t)return;
   document.getElementById('wsTitle').textContent=t.name;
   document.getElementById('homeView').className='view hidden-left';
   document.getElementById('wsView').className='view active';
-  tool='ideas';syncTool();renderTool();
+  tool='ideas';structStep=0;syncTool();renderTool();
 }
 
 function goHome(){
@@ -145,7 +146,7 @@ function addIdea(){
 function delIdea(id){const d=load(),t=d.topics.find(x=>x.id===d.cur);if(!t)return;t.ideas=t.ideas.filter(i=>i.id!==id);save(d);renderIL();toast('Eliminada');}
 function filterIdeas(){renderIL();}
 
-// TOPOI
+// TOPOI - exclusive accordion: only one open at a time
 const TOPOI=[
   {k:'def',n:'Definición',q:['¿Qué es exactamente?','¿De qué partes se compone?','¿Cómo se entiende universalmente?']},
   {k:'comp',n:'Comparación',q:['¿A qué se parece?','¿En qué se diferencia radicalmente?','¿Qué es lo opuesto?']},
@@ -172,7 +173,18 @@ function renderTopoi(){
       </div>`).join('');
 }
 
-function togTp(k){document.getElementById('tp-'+k).classList.toggle('open');}
+function togTp(k){
+  const el=document.getElementById('tp-'+k);
+  const wasOpen=el.classList.contains('open');
+  // Close all others first
+  document.querySelectorAll('.topos.open').forEach(t=>t.classList.remove('open'));
+  // Toggle clicked one
+  if(!wasOpen){
+    el.classList.add('open');
+    // Auto-focus the textarea
+    setTimeout(()=>{const ta=el.querySelector('.topos-area');if(ta)ta.focus();},350);
+  }
+}
 function insTp(k,el){
   const ta=document.querySelector('#tp-'+k+' .topos-area');
   ta.value=ta.value?ta.value+'\n\n'+el.textContent+'\n':el.textContent+'\n';
@@ -180,7 +192,7 @@ function insTp(k,el){
 }
 function saveTp(k,v){const d=load(),t=d.topics.find(x=>x.id===d.cur);if(!t)return;if(!t.topoi)t.topoi={};t.topoi[k]=v;save(d);}
 
-// COMBI
+// COMBI - history collapsed by default
 function renderCombi(){
   const t=getT();if(!t)return;
   if(!t.combi)t.combi={a:[],b:[],c:[]};if(!t.combiH)t.combiH=[];
@@ -197,8 +209,15 @@ function renderCombi(){
       </div>`).join('')+
     '<div class="combi-gen-wrap"><button class="combi-gen-btn" onclick="genCombi()">Generar combinación</button></div>'+
     '<div id="combiOut"></div>'+
-    (t.combiH.length?'<div class="section-label" style="margin-top:16px">Historial</div>':'')+
-    '<div class="combi-hist">'+t.combiH.map(h=>'<div class="combi-hist-item"><div class="combi-hist-f">'+esc(h.f)+'</div>'+esc(h.t)+'</div>').join('')+'</div>';
+    (t.combiH.length?
+      '<button class="combi-hist-toggle" onclick="togHist()">Historial ('+t.combiH.length+')</button>'+
+      '<div class="combi-hist" id="combiHist">'+t.combiH.map(h=>'<div class="combi-hist-item"><div class="combi-hist-f">'+esc(h.f)+'</div>'+esc(h.t)+'</div>').join('')+'</div>'
+    :'');
+}
+
+function togHist(){
+  const el=document.getElementById('combiHist');
+  if(el) el.classList.toggle('open');
 }
 
 function addTk(e,r,inp){if(e.key!=='Enter')return;const v=inp.value.trim();if(!v)return;const d=load(),t=d.topics.find(x=>x.id===d.cur);if(!t)return;if(!t.combi[r])t.combi[r]=[];t.combi[r].push(v);save(d);inp.value='';renderCombi();}
@@ -224,7 +243,7 @@ function saveCombi(){
   tp.combiH.unshift({f:window._lastCombi.f,t:window._lastCombi.t,at:Date.now()});save(d);renderCombi();toast('Guardada');
 }
 
-// STRUCT
+// STRUCT - step by step: one slot at a time
 const MODELS={
   toulmin:{n:'Toulmin',s:[{k:'claim',l:'Reivindicación',p:'Tu tesis principal...'},{k:'grounds',l:'Evidencia',p:'Hechos que la apoyan...'},{k:'warrant',l:'Garantía',p:'La conexión lógica...'},{k:'backing',l:'Respaldo',p:'Apoyo adicional...'},{k:'qualifier',l:'Calificador',p:'"Presumiblemente"...'},{k:'rebuttal',l:'Reserva',p:'Objeciones posibles...'}]},
   polya:{n:'Polya',s:[{k:'u',l:'Comprender',p:'¿Cuál es el objetivo?'},{k:'p',l:'Planificar',p:'Patrones similares...'},{k:'e',l:'Ejecutar',p:'Hilar ideas...'},{k:'r',l:'Revisar',p:'¿Se sostiene?'}]},
@@ -234,18 +253,30 @@ const MODELS={
 
 function renderStruct(){
   const t=getT();if(!t)return;if(!t.struct)t.struct={m:'toulmin',s:{}};
-  const m=MODELS[t.struct.m]||MODELS.toulmin;
+  const mod=MODELS[t.struct.m]||MODELS.toulmin;
+  if(structStep>=mod.s.length) structStep=mod.s.length-1;
+  const s=mod.s[structStep];
   document.getElementById('wStruct').innerHTML=
-    '<div class="sec-desc">Estructura tu pensamiento con marcos de andamiaje probados.</div>'+
     '<div class="struct-models">'+Object.entries(MODELS).map(([k,v])=>'<button class="struct-pill'+(k===t.struct.m?' active':'')+'" onclick="setModel(\''+k+'\')">'+v.n+'</button>').join('')+'</div>'+
-    '<div class="struct-slots">'+m.s.map((s,i)=>`
-      <div class="struct-slot">
-        <div class="struct-slot-head"><span class="struct-slot-n">${i+1}</span>${s.l}</div>
-        <textarea placeholder="${s.p}" oninput="saveSlot('${s.k}',this.value)">${esc(t.struct.s[s.k]||'')}</textarea>
-      </div>`).join('')+'</div>';
+    '<div class="struct-steps">'+mod.s.map((_,i)=>{
+      const cls=['struct-step'];
+      if(i===structStep) cls.push('active');
+      else if(t.struct.s[mod.s[i].k]) cls.push('filled');
+      return '<button class="'+cls.join(' ')+'" onclick="goStep('+i+')"></button>';
+    }).join('')+'</div>'+
+    '<div class="struct-focus-slot">'+
+      '<div class="struct-focus-head"><span class="struct-focus-n">'+(structStep+1)+'</span>'+esc(s.l)+'</div>'+
+      '<textarea class="struct-focus-area" placeholder="'+esc(s.p)+'" oninput="saveSlot(\''+s.k+'\',this.value)">'+esc(t.struct.s[s.k]||'')+'</textarea>'+
+    '</div>'+
+    '<div class="struct-nav">'+
+      (structStep>0?'<button class="sm-btn" onclick="goStep('+(structStep-1)+')">← '+esc(mod.s[structStep-1].l)+'</button>':'<span></span>')+
+      '<div class="struct-counter">'+(structStep+1)+' / '+mod.s.length+'</div>'+
+      (structStep<mod.s.length-1?'<button class="sm-btn primary" onclick="goStep('+(structStep+1)+')">'+esc(mod.s[structStep+1].l)+' →</button>':'<span></span>')+
+    '</div>';
 }
 
-function setModel(m){const d=load(),t=d.topics.find(x=>x.id===d.cur);if(!t)return;t.struct.m=m;save(d);renderStruct();}
+function goStep(i){structStep=i;renderStruct();}
+function setModel(m){const d=load(),t=d.topics.find(x=>x.id===d.cur);if(!t)return;t.struct.m=m;structStep=0;save(d);renderStruct();}
 function saveSlot(k,v){const d=load(),t=d.topics.find(x=>x.id===d.cur);if(!t)return;t.struct.s[k]=v;save(d);}
 
 // Export/Import
