@@ -11,7 +11,8 @@ const APPS = [
     'wifi-helper',
     'signal-heatmap',
     'idea-builder',
-    'beads-viewer'
+    'beads-viewer',
+    'commit-insights'
 ];
 
 document.addEventListener('DOMContentLoaded', async () => {

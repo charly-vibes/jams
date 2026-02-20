@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Commit Insights — GitHub Commit Production Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@400;600&family=JetBrains+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #FAF8F5;
+    --bg-card: #FFFFFF;
+    --text: #2C2825;
+    --text-muted: #8A8480;
+    --text-light: #B0AAA4;
+    --accent: #C05D3C;
+    --accent-hover: #A84E31;
+    --accent-bg: #FDF0EC;
+    --border: #E6E1DB;
+    --shadow-sm: 0 1px 3px rgba(44,40,37,.06);
+    --shadow-md: 0 4px 16px rgba(44,40,37,.08);
+    --header-bg: rgba(250,248,245,.92);
+    --radius: 10px;
+    --header-h: 64px;
+    --success: #2D7A3E;
+    --warning: #D97706;
+  }
+
+  [data-theme="dark"] {
+    --bg: #1A1816;
+    --bg-card: #2A2724;
+    --text: #E8E4DF;
+    --text-muted: #9A9590;
+    --text-light: #6A6560;
+    --accent: #E07A5A;
+    --accent-hover: #F08B6B;
+    --accent-bg: rgba(224,122,90,.12);
+    --border: #3A3632;
+    --shadow-sm: 0 1px 3px rgba(0,0,0,.2);
+    --shadow-md: 0 4px 16px rgba(0,0,0,.3);
+    --header-bg: rgba(26,24,22,.92);
+    --success: #4ADE80;
+    --warning: #FBBF24;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html { font-size: 17px; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  /* HEADER */
+  .header {
+    position: fixed; top: 0; left: 0; right: 0;
+    height: var(--header-h);
+    background: var(--header-bg);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center;
+    padding: 0 24px;
+    z-index: 100;
+    gap: 16px;
+  }
+
+  .home-link {
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 1.3rem;
+    transition: color .15s;
+    line-height: 1;
+  }
+  .home-link:hover { color: var(--accent); }
+
+  .logo {
+    font-family: 'Source Serif 4', serif;
+    font-weight: 600; font-size: 1.2rem;
+    color: var(--accent);
+    letter-spacing: -.02em;
+  }
+
+  .user-input-wrap {
+    flex: 1; max-width: 500px;
+    position: relative;
+  }
+  .user-input-wrap input {
+    width: 100%;
+    padding: 10px 90px 10px 16px;
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .78rem;
+    background: var(--bg-card);
+    color: var(--text);
+    transition: border-color .15s;
+  }
+  .user-input-wrap input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  .user-input-wrap button {
+    position: absolute;
+    right: 6px; top: 50%;
+    transform: translateY(-50%);
+    padding: 6px 16px;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: .75rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background .15s;
+  }
+  .user-input-wrap button:hover {
+    background: var(--accent-hover);
+  }
+  .user-input-wrap button:disabled {
+    opacity: .5;
+    cursor: not-allowed;
+  }
+
+  .time-range {
+    display: flex;
+    gap: 8px;
+  }
+  .time-range button {
+    padding: 6px 12px;
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: .75rem;
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .time-range button:hover {
+    background: var(--accent-bg);
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+  .time-range button.active {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+  }
+
+  /* MAIN CONTENT */
+  .container {
+    padding-top: var(--header-h);
+    max-width: 1400px;
+    margin: 0 auto;
+    padding-left: 24px;
+    padding-right: 24px;
+    padding-bottom: 48px;
+  }
+
+  .user-card {
+    margin: 32px 0;
+    padding: 24px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+
+  .user-avatar {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+  }
+
+  .user-info h2 {
+    font-family: 'Source Serif 4', serif;
+    font-size: 1.5rem;
+    margin-bottom: 4px;
+  }
+
+  .user-stats {
+    display: flex;
+    gap: 24px;
+    margin-top: 12px;
+    font-size: .85rem;
+  }
+
+  .user-stat {
+    color: var(--text-muted);
+  }
+
+  .user-stat strong {
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin: 24px 0;
+  }
+
+  .stat-card {
+    padding: 20px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .stat-label {
+    font-size: .8rem;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+  }
+
+  .stat-value {
+    font-size: 2rem;
+    font-weight: 600;
+    color: var(--accent);
+    font-family: 'Source Serif 4', serif;
+  }
+
+  .chart-container {
+    margin: 24px 0;
+    padding: 24px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .chart-title {
+    font-family: 'Source Serif 4', serif;
+    font-size: 1.2rem;
+    margin-bottom: 16px;
+  }
+
+  .heatmap {
+    display: grid;
+    gap: 3px;
+    margin-top: 16px;
+  }
+
+  .heatmap-week {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 3px;
+  }
+
+  .heatmap-day {
+    aspect-ratio: 1;
+    border-radius: 2px;
+    background: var(--border);
+    position: relative;
+    cursor: pointer;
+    transition: transform .1s;
+  }
+
+  .heatmap-day:hover {
+    transform: scale(1.1);
+    z-index: 10;
+  }
+
+  .heatmap-day.level-0 { background: var(--border); }
+  .heatmap-day.level-1 { background: #C5E1A5; opacity: .4; }
+  .heatmap-day.level-2 { background: #9CCC65; opacity: .6; }
+  .heatmap-day.level-3 { background: #7CB342; opacity: .8; }
+  .heatmap-day.level-4 { background: #558B2F; opacity: 1; }
+
+  .heatmap-tooltip {
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 6px 10px;
+    background: var(--text);
+    color: var(--bg);
+    border-radius: 4px;
+    font-size: .7rem;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity .15s;
+    margin-bottom: 4px;
+  }
+
+  .heatmap-day:hover .heatmap-tooltip {
+    opacity: 1;
+  }
+
+  .line-chart {
+    height: 200px;
+    position: relative;
+    margin-top: 20px;
+  }
+
+  .line-chart svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  .chart-line {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 2;
+  }
+
+  .chart-area {
+    fill: var(--accent);
+    opacity: .1;
+  }
+
+  .chart-point {
+    fill: var(--accent);
+    cursor: pointer;
+  }
+
+  .chart-point:hover {
+    r: 6;
+  }
+
+  .repo-list {
+    margin: 24px 0;
+  }
+
+  .repo-item {
+    padding: 16px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .repo-name {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .9rem;
+    color: var(--accent);
+  }
+
+  .repo-count {
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: var(--text-muted);
+  }
+
+  .commit-list {
+    margin: 24px 0;
+  }
+
+  .commit-item {
+    padding: 16px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 12px;
+  }
+
+  .commit-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: start;
+    margin-bottom: 8px;
+  }
+
+  .commit-repo {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .75rem;
+    color: var(--accent);
+  }
+
+  .commit-date {
+    font-size: .75rem;
+    color: var(--text-muted);
+  }
+
+  .commit-message {
+    font-size: .9rem;
+    line-height: 1.5;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 48px 24px;
+    color: var(--text-muted);
+  }
+
+  .error-message {
+    padding: 16px;
+    background: #FEE2E2;
+    border: 1px solid #FCA5A5;
+    border-radius: var(--radius);
+    color: #991B1B;
+    margin: 24px 0;
+  }
+
+  [data-theme="dark"] .error-message {
+    background: rgba(220, 38, 38, .1);
+    border-color: rgba(220, 38, 38, .3);
+    color: #FCA5A5;
+  }
+
+  .loading {
+    text-align: center;
+    padding: 48px 24px;
+    color: var(--text-muted);
+  }
+
+  @media (max-width: 768px) {
+    .header {
+      flex-wrap: wrap;
+      height: auto;
+      padding: 12px;
+    }
+    .user-input-wrap {
+      max-width: 100%;
+    }
+    .time-range {
+      flex-wrap: wrap;
+    }
+    .stats-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+</head>
+<body>
+  <div class="header">
+    <a href="../" class="home-link">←</a>
+    <div class="logo">Commit Insights</div>
+    <div class="user-input-wrap">
+      <input type="text" id="usernameInput" placeholder="Enter GitHub username..." />
+      <button id="loadBtn">Load</button>
+    </div>
+    <div class="time-range">
+      <button data-days="7">7d</button>
+      <button data-days="30" class="active">30d</button>
+      <button data-days="90">90d</button>
+      <button data-days="365">1y</button>
+    </div>
+  </div>
+
+  <div class="container">
+    <div id="content">
+      <div class="empty-state">
+        <p>Enter a GitHub username to see commit insights</p>
+      </div>
+    </div>
+  </div>
+
+<script>
+// Dark mode detection
+if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) {
+  document.documentElement.setAttribute('data-theme', 'dark');
+}
+
+// State
+let username = '';
+let events = [];
+let commits = [];
+let timeRangeDays = 30;
+
+// DOM elements
+const usernameInput = document.getElementById('usernameInput');
+const loadBtn = document.getElementById('loadBtn');
+const content = document.getElementById('content');
+const timeRangeBtns = document.querySelectorAll('.time-range button');
+
+// Initialize from URL
+const params = new URLSearchParams(window.location.search);
+const urlUsername = params.get('user');
+if (urlUsername) {
+  usernameInput.value = urlUsername;
+  loadUser(urlUsername);
+}
+
+// Event listeners
+loadBtn.addEventListener('click', () => {
+  const user = usernameInput.value.trim();
+  if (user) loadUser(user);
+});
+
+usernameInput.addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') {
+    const user = usernameInput.value.trim();
+    if (user) loadUser(user);
+  }
+});
+
+timeRangeBtns.forEach(btn => {
+  btn.addEventListener('click', () => {
+    timeRangeBtns.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    timeRangeDays = parseInt(btn.dataset.days);
+    if (commits.length > 0) renderDashboard();
+  });
+});
+
+// Load user data
+async function loadUser(user) {
+  username = user;
+  updateURL();
+
+  content.innerHTML = '<div class="loading">Loading commit data...</div>';
+  loadBtn.disabled = true;
+
+  try {
+    // Fetch user profile
+    const userRes = await fetch(`https://api.github.com/users/${username}`);
+    if (!userRes.ok) throw new Error('User not found');
+    const userData = await userRes.json();
+
+    // Fetch events (paginated, up to 10 pages = ~300 events)
+    events = [];
+    for (let page = 1; page <= 10; page++) {
+      const eventsRes = await fetch(`https://api.github.com/users/${username}/events/public?per_page=100&page=${page}`);
+      if (!eventsRes.ok) break;
+      const pageEvents = await eventsRes.json();
+      if (pageEvents.length === 0) break;
+      events.push(...pageEvents);
+    }
+
+    // Extract commits from push events
+    commits = extractCommits(events);
+
+    // Render dashboard
+    renderDashboard(userData);
+
+  } catch (error) {
+    content.innerHTML = `<div class="error-message">Error: ${error.message}</div>`;
+  } finally {
+    loadBtn.disabled = false;
+  }
+}
+
+// Extract commits from events
+function extractCommits(events) {
+  const commitList = [];
+
+  events.forEach(event => {
+    if (event.type === 'PushEvent' && event.payload.commits) {
+      event.payload.commits.forEach(commit => {
+        commitList.push({
+          sha: commit.sha,
+          message: commit.message,
+          date: new Date(event.created_at),
+          repo: event.repo.name,
+          url: commit.url
+        });
+      });
+    }
+  });
+
+  return commitList.sort((a, b) => b.date - a.date);
+}
+
+// Calculate statistics
+function calculateStats(commits, days) {
+  const now = new Date();
+  const cutoff = new Date(now - days * 24 * 60 * 60 * 1000);
+  const filtered = commits.filter(c => c.date >= cutoff);
+
+  // Daily commits
+  const dailyMap = new Map();
+  filtered.forEach(commit => {
+    const day = commit.date.toISOString().split('T')[0];
+    dailyMap.set(day, (dailyMap.get(day) || 0) + 1);
+  });
+
+  // Repository breakdown
+  const repoMap = new Map();
+  filtered.forEach(commit => {
+    repoMap.set(commit.repo, (repoMap.get(commit.repo) || 0) + 1);
+  });
+
+  // Streaks
+  const sortedDays = Array.from(dailyMap.keys()).sort();
+  let currentStreak = 0;
+  let longestStreak = 0;
+  let tempStreak = 0;
+
+  const today = new Date().toISOString().split('T')[0];
+  let checkDate = new Date();
+
+  // Current streak (working backwards from today)
+  for (let i = 0; i < days; i++) {
+    const day = checkDate.toISOString().split('T')[0];
+    if (dailyMap.has(day)) {
+      currentStreak++;
+    } else if (i > 0) {
+      break;
+    }
+    checkDate.setDate(checkDate.getDate() - 1);
+  }
+
+  // Longest streak
+  for (let i = 0; i < sortedDays.length; i++) {
+    if (i === 0) {
+      tempStreak = 1;
+    } else {
+      const prevDate = new Date(sortedDays[i - 1]);
+      const currDate = new Date(sortedDays[i]);
+      const diffDays = Math.floor((currDate - prevDate) / (1000 * 60 * 60 * 24));
+
+      if (diffDays === 1) {
+        tempStreak++;
+      } else {
+        longestStreak = Math.max(longestStreak, tempStreak);
+        tempStreak = 1;
+      }
+    }
+  }
+  longestStreak = Math.max(longestStreak, tempStreak);
+
+  // Most active day
+  let maxCommits = 0;
+  let mostActiveDay = '';
+  dailyMap.forEach((count, day) => {
+    if (count > maxCommits) {
+      maxCommits = count;
+      mostActiveDay = day;
+    }
+  });
+
+  return {
+    total: filtered.length,
+    dailyMap,
+    repoMap,
+    currentStreak,
+    longestStreak,
+    mostActiveDay,
+    avgPerDay: (filtered.length / days).toFixed(1),
+    topRepos: Array.from(repoMap.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+  };
+}
+
+// Render dashboard
+function renderDashboard(userData) {
+  const stats = calculateStats(commits, timeRangeDays);
+
+  content.innerHTML = `
+    <div class="user-card">
+      <img src="${userData.avatar_url}" alt="${userData.name || userData.login}" class="user-avatar" />
+      <div class="user-info">
+        <h2>${userData.name || userData.login}</h2>
+        <div class="user-stats">
+          <span class="user-stat"><strong>${userData.public_repos}</strong> repos</span>
+          <span class="user-stat"><strong>${userData.followers}</strong> followers</span>
+          <span class="user-stat"><strong>${userData.following}</strong> following</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Total Commits</div>
+        <div class="stat-value">${stats.total}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Avg/Day</div>
+        <div class="stat-value">${stats.avgPerDay}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Current Streak</div>
+        <div class="stat-value">${stats.currentStreak}d</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Longest Streak</div>
+        <div class="stat-value">${stats.longestStreak}d</div>
+      </div>
+    </div>
+
+    <div class="chart-container">
+      <div class="chart-title">Activity Heatmap</div>
+      <div id="heatmap"></div>
+    </div>
+
+    <div class="chart-container">
+      <div class="chart-title">Commits Over Time</div>
+      <div id="lineChart"></div>
+    </div>
+
+    <div class="chart-container">
+      <div class="chart-title">Top Repositories</div>
+      <div id="repoList"></div>
+    </div>
+
+    <div class="chart-container">
+      <div class="chart-title">Recent Commits</div>
+      <div id="commitList"></div>
+    </div>
+  `;
+
+  renderHeatmap(stats.dailyMap);
+  renderLineChart(stats.dailyMap);
+  renderRepoList(stats.topRepos);
+  renderCommitList(commits.slice(0, 20));
+}
+
+// Render heatmap
+function renderHeatmap(dailyMap) {
+  const heatmap = document.getElementById('heatmap');
+  const now = new Date();
+  const weeks = [];
+
+  // Generate last 12 weeks
+  for (let w = 11; w >= 0; w--) {
+    const week = [];
+    for (let d = 6; d >= 0; d--) {
+      const date = new Date(now);
+      date.setDate(date.getDate() - (w * 7 + d));
+      const dateStr = date.toISOString().split('T')[0];
+      const count = dailyMap.get(dateStr) || 0;
+
+      let level = 0;
+      if (count > 0) level = 1;
+      if (count > 2) level = 2;
+      if (count > 5) level = 3;
+      if (count > 10) level = 4;
+
+      week.unshift({ date: dateStr, count, level });
+    }
+    weeks.push(week);
+  }
+
+  heatmap.className = 'heatmap';
+  weeks.forEach(week => {
+    const weekDiv = document.createElement('div');
+    weekDiv.className = 'heatmap-week';
+    week.forEach(day => {
+      const dayDiv = document.createElement('div');
+      dayDiv.className = `heatmap-day level-${day.level}`;
+      dayDiv.innerHTML = `<div class="heatmap-tooltip">${day.date}: ${day.count} commits</div>`;
+      weekDiv.appendChild(dayDiv);
+    });
+    heatmap.appendChild(weekDiv);
+  });
+}
+
+// Render line chart
+function renderLineChart(dailyMap) {
+  const lineChart = document.getElementById('lineChart');
+  const now = new Date();
+  const data = [];
+
+  for (let i = timeRangeDays - 1; i >= 0; i--) {
+    const date = new Date(now);
+    date.setDate(date.getDate() - i);
+    const dateStr = date.toISOString().split('T')[0];
+    data.push({
+      date: dateStr,
+      count: dailyMap.get(dateStr) || 0
+    });
+  }
+
+  const maxCount = Math.max(...data.map(d => d.count), 1);
+  const width = lineChart.offsetWidth || 800;
+  const height = 200;
+  const padding = 40;
+
+  const xScale = (width - 2 * padding) / (data.length - 1);
+  const yScale = (height - 2 * padding) / maxCount;
+
+  let pathD = '';
+  let areaD = '';
+  let points = '';
+
+  data.forEach((d, i) => {
+    const x = padding + i * xScale;
+    const y = height - padding - d.count * yScale;
+
+    if (i === 0) {
+      pathD = `M ${x} ${y}`;
+      areaD = `M ${x} ${height - padding}`;
+    } else {
+      pathD += ` L ${x} ${y}`;
+    }
+    areaD += ` L ${x} ${y}`;
+
+    if (d.count > 0) {
+      points += `<circle cx="${x}" cy="${y}" r="4" class="chart-point">
+        <title>${d.date}: ${d.count} commits</title>
+      </circle>`;
+    }
+  });
+
+  areaD += ` L ${padding + (data.length - 1) * xScale} ${height - padding} Z`;
+
+  lineChart.innerHTML = `
+    <svg viewBox="0 0 ${width} ${height}">
+      <path d="${areaD}" class="chart-area" />
+      <path d="${pathD}" class="chart-line" />
+      ${points}
+    </svg>
+  `;
+}
+
+// Render repo list
+function renderRepoList(topRepos) {
+  const repoList = document.getElementById('repoList');
+  if (topRepos.length === 0) {
+    repoList.innerHTML = '<div class="empty-state">No repository data</div>';
+    return;
+  }
+
+  repoList.className = 'repo-list';
+  repoList.innerHTML = topRepos.map(([repo, count]) => `
+    <div class="repo-item">
+      <div class="repo-name">${repo}</div>
+      <div class="repo-count">${count}</div>
+    </div>
+  `).join('');
+}
+
+// Render commit list
+function renderCommitList(commits) {
+  const commitList = document.getElementById('commitList');
+  if (commits.length === 0) {
+    commitList.innerHTML = '<div class="empty-state">No commits found</div>';
+    return;
+  }
+
+  commitList.className = 'commit-list';
+  commitList.innerHTML = commits.map(commit => `
+    <div class="commit-item">
+      <div class="commit-header">
+        <div class="commit-repo">${commit.repo}</div>
+        <div class="commit-date">${formatDate(commit.date)}</div>
+      </div>
+      <div class="commit-message">${escapeHtml(commit.message.split('\n')[0])}</div>
+    </div>
+  `).join('');
+}
+
+// Helpers
+function formatDate(date) {
+  const now = new Date();
+  const diff = now - date;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+
+  if (days === 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return `${days} days ago`;
+  if (days < 30) return `${Math.floor(days / 7)} weeks ago`;
+
+  return date.toLocaleDateString();
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function updateURL() {
+  const url = new URL(window.location);
+  url.searchParams.set('user', username);
+  window.history.pushState({}, '', url);
+}
+</script>
+</body>
+</html>
