@@ -641,6 +641,30 @@
     color: var(--text-muted);
     box-shadow: var(--shadow-md);
   }
+
+  /* Graph focus mode */
+  .graph-node.dimmed {
+    opacity: 0.15;
+  }
+
+  .graph-node.focused .node-circle {
+    stroke-width: 4;
+    filter: drop-shadow(0 0 8px var(--accent));
+  }
+
+  .graph-node.related {
+    opacity: 1;
+  }
+
+  .graph-edge.dimmed {
+    opacity: 0.1;
+  }
+
+  .graph-edge.highlighted {
+    opacity: 1;
+    stroke: var(--accent);
+    stroke-width: 3;
+  }
 </style>
 </head>
 <body>
@@ -769,9 +793,9 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="12" x2="15" y2="15"/></svg>
         </button>
       </div>
-      <div class="graph-info">
+      <div class="graph-info" id="graphInfo">
         <strong>Graph View</strong><br>
-        Drag to pan • Scroll to zoom • Click nodes to view details
+        <span id="graphInfoText">Click a node to focus • Click background to show all</span>
       </div>
     </div>
   </main>
@@ -799,6 +823,7 @@ let graphZoom = 1;
 let graphPan = { x: 0, y: 0 };
 let isDragging = false;
 let dragStart = { x: 0, y: 0 };
+let focusedIssueId = null;
 
 // ── Parse repo input ──
 function parseRepoInput(input) {
@@ -1061,6 +1086,12 @@ function showIssue(issue) {
   // Scroll to top
   document.getElementById('main').scrollTop = 0;
   updateURL();
+
+  // Update graph focus if in graph view
+  if (currentView === 'graph') {
+    focusedIssueId = issue.id;
+    applyGraphFocus();
+  }
 }
 
 // ── Show issue by ID ──
@@ -1165,6 +1196,11 @@ function switchView(view) {
     document.getElementById('welcome').style.display = 'none';
     document.getElementById('graphContainer').classList.add('active');
     renderGraph();
+    // Apply focus to current issue if one is selected
+    if (currentIssue) {
+      focusedIssueId = currentIssue.id;
+      setTimeout(() => applyGraphFocus(), 100);
+    }
   } else {
     document.getElementById('graphContainer').classList.remove('active');
     if (currentIssue) {
@@ -1340,12 +1376,27 @@ function renderGraph() {
     g.appendChild(titleText);
 
     // Click handler
-    g.addEventListener('click', () => {
-      showIssue(node.issue);
-      switchView('detail');
+    g.addEventListener('click', (e) => {
+      e.stopPropagation();
+      focusedIssueId = node.id;
+      applyGraphFocus();
+      // Update sidebar selection
+      document.querySelectorAll('.issue-item').forEach(item => item.classList.remove('active'));
+      const listItem = Array.from(document.querySelectorAll('.issue-item'))
+        .find(item => item.querySelector('.issue-id').textContent === node.id);
+      if (listItem) listItem.classList.add('active');
+      currentIssue = node.issue;
     });
 
     group.appendChild(g);
+  });
+
+  // Click on background to clear focus
+  svg.addEventListener('click', (e) => {
+    if (e.target === svg || e.target.id === 'graphGroup') {
+      focusedIssueId = null;
+      applyGraphFocus();
+    }
   });
 
   // Apply current transform
@@ -1417,6 +1468,84 @@ function resetZoom() {
   graphZoom = 1;
   graphPan = { x: 0, y: 0 };
   applyGraphTransform();
+}
+
+// ── Graph Focus ──
+function applyGraphFocus() {
+  const infoText = document.getElementById('graphInfoText');
+
+  if (!focusedIssueId) {
+    // Clear all focus states
+    document.querySelectorAll('.graph-node').forEach(node => {
+      node.classList.remove('dimmed', 'focused', 'related');
+    });
+    document.querySelectorAll('.graph-edge').forEach(edge => {
+      edge.classList.remove('dimmed', 'highlighted');
+    });
+    if (infoText) {
+      infoText.textContent = 'Click a node to focus • Click background to show all';
+    }
+    return;
+  }
+
+  // Update info text
+  if (infoText) {
+    const issue = allIssues.find(i => i.id === focusedIssueId);
+    if (issue) {
+      infoText.innerHTML = `Focused on <strong>${focusedIssueId}</strong> • Click background to show all`;
+    }
+  }
+
+  // Find related issue IDs
+  const relatedIds = new Set([focusedIssueId]);
+
+  // Find direct dependencies (what this issue blocks and is blocked by)
+  const focusedIssue = allIssues.find(i => i.id === focusedIssueId);
+  if (focusedIssue && focusedIssue.dependencies) {
+    focusedIssue.dependencies.forEach(dep => {
+      if (dep.type === 'blocks') {
+        relatedIds.add(dep.depends_on_id);
+      }
+    });
+  }
+
+  // Find issues that block this one
+  allIssues.forEach(issue => {
+    if (issue.dependencies) {
+      issue.dependencies.forEach(dep => {
+        if (dep.type === 'blocks' && dep.depends_on_id === focusedIssueId) {
+          relatedIds.add(issue.id);
+        }
+      });
+    }
+  });
+
+  // Apply focus classes to nodes
+  document.querySelectorAll('.graph-node').forEach(node => {
+    const nodeId = node.getAttribute('data-id');
+    node.classList.remove('dimmed', 'focused', 'related');
+
+    if (nodeId === focusedIssueId) {
+      node.classList.add('focused');
+    } else if (relatedIds.has(nodeId)) {
+      node.classList.add('related');
+    } else {
+      node.classList.add('dimmed');
+    }
+  });
+
+  // Apply focus classes to edges
+  document.querySelectorAll('.graph-edge').forEach(edge => {
+    const from = edge.getAttribute('data-from');
+    const to = edge.getAttribute('data-to');
+    edge.classList.remove('dimmed', 'highlighted');
+
+    if (relatedIds.has(from) && relatedIds.has(to)) {
+      edge.classList.add('highlighted');
+    } else {
+      edge.classList.add('dimmed');
+    }
+  });
 }
 
 // ── Init ──
