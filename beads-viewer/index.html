@@ -665,11 +665,83 @@
     stroke: var(--accent);
     stroke-width: 3;
   }
+
+  /* ── MODAL ── */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 300;
+    align-items: center;
+    justify-content: center;
+    animation: fadeIn .2s ease;
+  }
+
+  .modal-overlay.show {
+    display: flex;
+  }
+
+  .modal-content {
+    background: var(--bg-card);
+    border-radius: var(--radius);
+    max-width: 800px;
+    max-height: 80vh;
+    width: 90%;
+    overflow-y: auto;
+    box-shadow: var(--shadow-lg);
+    animation: slideUp .3s ease;
+    position: relative;
+  }
+
+  .modal-header {
+    position: sticky;
+    top: 0;
+    background: var(--bg-card);
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    z-index: 1;
+  }
+
+  .modal-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    transition: all .2s;
+    flex-shrink: 0;
+  }
+
+  .modal-close:hover {
+    background: var(--bg-sidebar);
+    color: var(--text);
+  }
+
+  .modal-body {
+    padding: 24px;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  @keyframes slideUp {
+    from { transform: translateY(20px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
 </style>
 </head>
 <body>
 
 <header class="header">
+  <a href="../" style="color: var(--text-muted); text-decoration: none; font-size: 1.2rem; transition: color .2s;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text-muted)'" title="Back to Jams">←</a>
   <div class="logo">
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
       <circle cx="6" cy="12" r="3"/>
@@ -807,6 +879,23 @@
 </div>
 
 <div class="toast" id="toast"></div>
+
+<div class="modal-overlay" id="modal" onclick="if(event.target===this) closeModal()">
+  <div class="modal-content">
+    <div class="modal-header">
+      <div style="flex: 1; min-width: 0;">
+        <div id="modalTitle" style="font-size: 1.2rem; font-weight: 600; margin-bottom: 4px;"></div>
+        <div id="modalMeta"></div>
+      </div>
+      <button class="modal-close" onclick="closeModal()" aria-label="Close">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
 
 <script>
 // ── State ──
@@ -1375,7 +1464,7 @@ function renderGraph() {
     titleText.textContent = title;
     g.appendChild(titleText);
 
-    // Click handler
+    // Click handler - single click to focus
     g.addEventListener('click', (e) => {
       e.stopPropagation();
       focusedIssueId = node.id;
@@ -1386,6 +1475,12 @@ function renderGraph() {
         .find(item => item.querySelector('.issue-id').textContent === node.id);
       if (listItem) listItem.classList.add('active');
       currentIssue = node.issue;
+    });
+
+    // Double-click handler - show modal
+    g.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      showIssueModal(node.issue);
     });
 
     group.appendChild(g);
@@ -1496,29 +1591,41 @@ function applyGraphFocus() {
     }
   }
 
-  // Find related issue IDs
+  // Find all related issue IDs (transitive closure)
   const relatedIds = new Set([focusedIssueId]);
 
-  // Find direct dependencies (what this issue blocks and is blocked by)
-  const focusedIssue = allIssues.find(i => i.id === focusedIssueId);
-  if (focusedIssue && focusedIssue.dependencies) {
-    focusedIssue.dependencies.forEach(dep => {
-      if (dep.type === 'blocks') {
-        relatedIds.add(dep.depends_on_id);
-      }
-    });
-  }
+  // Helper function to recursively find all descendants (what this blocks, transitively)
+  const findDescendants = (issueId) => {
+    const issue = allIssues.find(i => i.id === issueId);
+    if (!issue) return;
 
-  // Find issues that block this one
-  allIssues.forEach(issue => {
     if (issue.dependencies) {
       issue.dependencies.forEach(dep => {
-        if (dep.type === 'blocks' && dep.depends_on_id === focusedIssueId) {
-          relatedIds.add(issue.id);
+        if (dep.type === 'blocks' && !relatedIds.has(dep.depends_on_id)) {
+          relatedIds.add(dep.depends_on_id);
+          findDescendants(dep.depends_on_id);
         }
       });
     }
-  });
+  };
+
+  // Helper function to recursively find all ancestors (what blocks this, transitively)
+  const findAncestors = (issueId) => {
+    allIssues.forEach(issue => {
+      if (issue.dependencies) {
+        issue.dependencies.forEach(dep => {
+          if (dep.type === 'blocks' && dep.depends_on_id === issueId && !relatedIds.has(issue.id)) {
+            relatedIds.add(issue.id);
+            findAncestors(issue.id);
+          }
+        });
+      }
+    });
+  };
+
+  // Find all connected issues (ancestors and descendants)
+  findDescendants(focusedIssueId);
+  findAncestors(focusedIssueId);
 
   // Apply focus classes to nodes
   document.querySelectorAll('.graph-node').forEach(node => {
@@ -1547,6 +1654,100 @@ function applyGraphFocus() {
     }
   });
 }
+
+// ── Modal ──
+function showIssueModal(issue) {
+  // Build dependency info
+  const blockedBy = [];
+  const blocks = [];
+
+  if (issue.dependencies) {
+    issue.dependencies.forEach(dep => {
+      if (dep.type === 'blocks') {
+        const blockedIssue = allIssues.find(i => i.id === dep.depends_on_id);
+        if (blockedIssue) blocks.push(blockedIssue);
+      }
+    });
+  }
+
+  allIssues.forEach(otherIssue => {
+    if (otherIssue.dependencies) {
+      otherIssue.dependencies.forEach(dep => {
+        if (dep.type === 'blocks' && dep.depends_on_id === issue.id) {
+          blockedBy.push(otherIssue);
+        }
+      });
+    }
+  });
+
+  // Set modal content
+  document.getElementById('modalTitle').textContent = issue.title;
+
+  document.getElementById('modalMeta').innerHTML = `
+    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+      <span class="badge badge-status-${issue.status}">${issue.status}</span>
+      <span class="badge badge-type">${issue.issue_type}</span>
+      ${issue.priority ? `<span class="badge badge-priority-${issue.priority}">P${issue.priority}</span>` : ''}
+    </div>
+  `;
+
+  document.getElementById('modalBody').innerHTML = `
+    <dl class="issue-info" style="margin-bottom: 24px;">
+      <dt>ID</dt><dd>${issue.id}</dd>
+      <dt>Owner</dt><dd>${issue.owner || 'Unassigned'}</dd>
+      <dt>Created</dt><dd>${formatDate(issue.created_at)} by ${issue.created_by}</dd>
+      <dt>Updated</dt><dd>${formatDate(issue.updated_at)}</dd>
+      ${issue.closed_at ? `<dt>Closed</dt><dd>${formatDate(issue.closed_at)}</dd>` : ''}
+      ${issue.close_reason ? `<dt>Reason</dt><dd>${issue.close_reason}</dd>` : ''}
+    </dl>
+
+    <div class="issue-description" style="margin-bottom: 24px;">${escapeHtml(issue.description || 'No description provided.')}</div>
+
+    ${blockedBy.length > 0 ? `
+      <div style="margin-bottom: 24px;">
+        <h3 style="font-size: 1.1rem; font-weight: 600; margin-bottom: 12px; color: var(--accent);">⚠️ Blocked By (${blockedBy.length})</h3>
+        <ul class="dep-list">
+          ${blockedBy.map(dep => `
+            <li class="dep-item" onclick="showIssueModal(allIssues.find(i => i.id === '${dep.id}'))">
+              <div class="dep-id">${dep.id}</div>
+              <div>${escapeHtml(dep.title)}</div>
+            </li>
+          `).join('')}
+        </ul>
+      </div>
+    ` : ''}
+
+    ${blocks.length > 0 ? `
+      <div>
+        <h3 style="font-size: 1.1rem; font-weight: 600; margin-bottom: 12px; color: var(--accent);">🔒 Blocks (${blocks.length})</h3>
+        <ul class="dep-list">
+          ${blocks.map(dep => `
+            <li class="dep-item" onclick="showIssueModal(allIssues.find(i => i.id === '${dep.id}'))">
+              <div class="dep-id">${dep.id}</div>
+              <div>${escapeHtml(dep.title)}</div>
+            </li>
+          `).join('')}
+        </ul>
+      </div>
+    ` : ''}
+  `;
+
+  // Show modal
+  document.getElementById('modal').classList.add('show');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.remove('show');
+  document.body.style.overflow = '';
+}
+
+// ESC key to close modal
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    closeModal();
+  }
+});
 
 // ── Init ──
 initFromURL();
