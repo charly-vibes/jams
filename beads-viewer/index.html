@@ -1,0 +1,932 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BeadsView — Issue Tracker Viewer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #FAF8F5;
+    --bg-sidebar: #F0EDE8;
+    --bg-card: #FFFFFF;
+    --text: #2C2825;
+    --text-muted: #8A8480;
+    --text-light: #B0AAA4;
+    --accent: #C05D3C;
+    --accent-hover: #A84E31;
+    --accent-bg: #FDF0EC;
+    --border: #E6E1DB;
+    --border-light: #EDEBE7;
+    --shadow-sm: 0 1px 3px rgba(44,40,37,.06);
+    --shadow-md: 0 4px 16px rgba(44,40,37,.08);
+    --header-bg: rgba(250,248,245,.92);
+    --radius: 10px;
+    --sidebar-w: 320px;
+    --header-h: 64px;
+    --success: #2D7A3E;
+    --warning: #D97706;
+    --error: #DC2626;
+  }
+
+  [data-theme="dark"] {
+    --bg: #1A1816;
+    --bg-sidebar: #211F1C;
+    --bg-card: #2A2724;
+    --text: #E8E4DF;
+    --text-muted: #9A9590;
+    --text-light: #6A6560;
+    --accent: #E07A5A;
+    --accent-hover: #F08B6B;
+    --accent-bg: rgba(224,122,90,.12);
+    --border: #3A3632;
+    --border-light: #302C28;
+    --shadow-sm: 0 1px 3px rgba(0,0,0,.2);
+    --shadow-md: 0 4px 16px rgba(0,0,0,.3);
+    --header-bg: rgba(26,24,22,.92);
+    --success: #4ADE80;
+    --warning: #FBBF24;
+    --error: #F87171;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html { font-size: 17px; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    min-height: 100vh;
+    overflow: hidden;
+  }
+
+  /* ── HEADER ── */
+  .header {
+    position: fixed; top: 0; left: 0; right: 0;
+    height: var(--header-h);
+    background: var(--header-bg);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center;
+    padding: 0 24px;
+    z-index: 100;
+    gap: 16px;
+  }
+
+  .logo {
+    font-family: 'Source Serif 4', serif;
+    font-weight: 600; font-size: 1.2rem;
+    color: var(--accent);
+    letter-spacing: -.02em;
+    white-space: nowrap;
+    display: flex; align-items: center; gap: 8px;
+  }
+
+  .repo-input-wrap {
+    flex: 1; max-width: 600px;
+    position: relative;
+  }
+  .repo-input-wrap input {
+    width: 100%;
+    padding: 10px 110px 10px 16px;
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .78rem;
+    background: var(--bg-card);
+    color: var(--text);
+    outline: none;
+    transition: border-color .2s;
+  }
+  .repo-input-wrap input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(192,93,60,.12);
+  }
+  .repo-input-wrap input::placeholder { color: var(--text-light); }
+
+  .load-btn {
+    position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+    padding: 7px 18px;
+    background: var(--accent);
+    color: #fff;
+    border: none; border-radius: 6px;
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 600; font-size: .8rem;
+    cursor: pointer;
+    transition: background .2s;
+  }
+  .load-btn:hover { background: var(--accent-hover); }
+  .load-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  .theme-toggle {
+    background: none;
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    padding: 7px;
+    cursor: pointer;
+    color: var(--text-muted);
+    display: flex;
+    transition: all .2s;
+  }
+  .theme-toggle:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--accent-bg);
+  }
+  .icon-sun { display: none; }
+  .icon-moon { display: block; }
+  [data-theme="dark"] .icon-sun { display: block; }
+  [data-theme="dark"] .icon-moon { display: none; }
+
+  /* ── LAYOUT ── */
+  .layout {
+    display: flex;
+    margin-top: var(--header-h);
+    height: calc(100vh - var(--header-h));
+  }
+
+  /* ── SIDEBAR ── */
+  .sidebar {
+    width: var(--sidebar-w);
+    background: var(--bg-sidebar);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 16px 0;
+  }
+
+  .sidebar-section {
+    padding: 0 16px;
+    margin-bottom: 16px;
+  }
+
+  .sidebar-label {
+    font-size: .65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--text-light);
+    padding: 8px 0 6px;
+  }
+
+  .filter-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+
+  .filter-btn {
+    padding: 5px 12px;
+    font-size: .72rem;
+    background: var(--bg-card);
+    border: 1.5px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--text-muted);
+    transition: all .2s;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .filter-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .filter-btn.active {
+    background: var(--accent-bg);
+    border-color: var(--accent);
+    color: var(--accent);
+    font-weight: 500;
+  }
+
+  .search-wrap {
+    padding: 8px 16px 12px;
+    position: relative;
+  }
+  .search-wrap input {
+    width: 100%;
+    padding: 8px 12px 8px 32px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: .78rem;
+    background: var(--bg-card);
+    color: var(--text);
+    outline: none;
+  }
+  .search-wrap input:focus { border-color: var(--accent); }
+  .search-icon {
+    position: absolute;
+    left: 26px; top: 50%; transform: translateY(-50%);
+    color: var(--text-light);
+    pointer-events: none;
+  }
+
+  .issue-list { list-style: none; }
+
+  .issue-item {
+    padding: 12px 16px;
+    cursor: pointer;
+    border-left: 3px solid transparent;
+    transition: all .15s;
+  }
+  .issue-item:hover {
+    background: rgba(192,93,60,.06);
+  }
+  .issue-item.active {
+    background: var(--accent-bg);
+    border-left-color: var(--accent);
+  }
+
+  .issue-id {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .68rem;
+    color: var(--text-light);
+    margin-bottom: 2px;
+  }
+
+  .issue-title {
+    font-size: .82rem;
+    font-weight: 500;
+    color: var(--text);
+    margin-bottom: 4px;
+    line-height: 1.3;
+  }
+
+  .issue-meta {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .badge {
+    font-size: .62rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+  }
+
+  .badge-status-open { background: #E0F2FE; color: #075985; }
+  .badge-status-closed { background: #E5E7EB; color: #4B5563; }
+  .badge-type { background: var(--bg-card); color: var(--text-muted); border: 1px solid var(--border); }
+  .badge-priority-1 { background: #FEE2E2; color: #991B1B; }
+  .badge-priority-2 { background: #FED7AA; color: #9A3412; }
+  .badge-priority-3 { background: #FEF3C7; color: #92400E; }
+
+  [data-theme="dark"] .badge-status-open { background: #075985; color: #E0F2FE; }
+  [data-theme="dark"] .badge-status-closed { background: #4B5563; color: #E5E7EB; }
+  [data-theme="dark"] .badge-priority-1 { background: #991B1B; color: #FEE2E2; }
+  [data-theme="dark"] .badge-priority-2 { background: #9A3412; color: #FED7AA; }
+  [data-theme="dark"] .badge-priority-3 { background: #92400E; color: #FEF3C7; }
+
+  .sidebar-empty {
+    padding: 40px 24px;
+    text-align: center;
+    color: var(--text-light);
+    font-size: .82rem;
+    line-height: 1.6;
+  }
+
+  /* ── MAIN CONTENT ── */
+  .main {
+    flex: 1;
+    overflow-y: auto;
+    padding: 40px;
+  }
+
+  .welcome {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    text-align: center;
+    padding: 40px;
+  }
+  .welcome h2 {
+    font-family: 'Source Serif 4', serif;
+    font-size: 1.8rem;
+    font-weight: 600;
+    margin-bottom: 12px;
+  }
+  .welcome p {
+    color: var(--text-muted);
+    max-width: 420px;
+    font-size: .92rem;
+    margin-bottom: 8px;
+  }
+
+  .issue-detail {
+    max-width: 760px;
+    margin: 0 auto;
+  }
+
+  .issue-header {
+    margin-bottom: 32px;
+    padding-bottom: 24px;
+    border-bottom: 1px solid var(--border-light);
+  }
+
+  .issue-header h1 {
+    font-family: 'Source Serif 4', serif;
+    font-size: 2rem;
+    font-weight: 600;
+    line-height: 1.3;
+    margin-bottom: 8px;
+  }
+
+  .issue-header-meta {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .issue-info {
+    font-size: .85rem;
+    color: var(--text-muted);
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 8px 16px;
+    margin-top: 16px;
+  }
+
+  .issue-info dt {
+    font-weight: 600;
+    color: var(--text);
+  }
+  .issue-info dd {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .82rem;
+  }
+
+  .issue-description {
+    font-family: 'Source Serif 4', serif;
+    font-size: 1rem;
+    line-height: 1.8;
+    margin-bottom: 32px;
+    white-space: pre-wrap;
+  }
+
+  .deps-section {
+    margin-top: 32px;
+  }
+
+  .deps-section h3 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 12px;
+    color: var(--accent);
+  }
+
+  .dep-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .dep-item {
+    padding: 12px 16px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: .85rem;
+    cursor: pointer;
+    transition: all .2s;
+  }
+  .dep-item:hover {
+    border-color: var(--accent);
+    background: var(--accent-bg);
+  }
+
+  .dep-id {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .75rem;
+    color: var(--accent);
+    font-weight: 500;
+  }
+
+  .loading-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: var(--header-bg);
+    backdrop-filter: blur(4px);
+    z-index: 200;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .loading-overlay.show { display: flex; }
+
+  .spinner {
+    width: 36px; height: 36px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .toast {
+    position: fixed;
+    bottom: 24px; left: 50%; transform: translateX(-50%) translateY(100px);
+    background: var(--accent);
+    color: #fff;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-size: .84rem;
+    font-weight: 500;
+    box-shadow: var(--shadow-md);
+    z-index: 300;
+    transition: transform .3s ease;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+
+  .stats-bar {
+    display: flex;
+    gap: 16px;
+    padding: 8px 16px;
+    font-size: .72rem;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .stat-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .stat-value {
+    font-weight: 600;
+    color: var(--text);
+  }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="logo">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+      <circle cx="6" cy="12" r="3"/>
+      <circle cx="18" cy="12" r="3"/>
+      <line x1="9" y1="12" x2="15" y2="12"/>
+    </svg>
+    <span>BeadsView</span>
+  </div>
+  <div class="repo-input-wrap">
+    <input type="text" id="repoInput" placeholder="github.com/owner/repo or owner/repo" spellcheck="false"
+      onkeydown="if(event.key==='Enter')loadRepo()">
+    <button class="load-btn" id="loadBtn" onclick="loadRepo()">Load</button>
+  </div>
+  <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
+    <svg class="icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+    <svg class="icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+  </button>
+</header>
+
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <div class="stats-bar" id="statsBar" style="display:none">
+      <div class="stat-item">
+        <span class="stat-value" id="totalCount">0</span>
+        <span>total</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-value" id="openCount">0</span>
+        <span>open</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-value" id="closedCount">0</span>
+        <span>closed</span>
+      </div>
+    </div>
+
+    <div class="search-wrap">
+      <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" id="searchInput" placeholder="Search issues..." oninput="filterIssues()">
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-label">Status</div>
+      <div class="filter-group">
+        <button class="filter-btn active" data-filter="status" data-value="all" onclick="toggleFilter(this)">All</button>
+        <button class="filter-btn" data-filter="status" data-value="open" onclick="toggleFilter(this)">Open</button>
+        <button class="filter-btn" data-filter="status" data-value="closed" onclick="toggleFilter(this)">Closed</button>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-label">Type</div>
+      <div class="filter-group">
+        <button class="filter-btn active" data-filter="type" data-value="all" onclick="toggleFilter(this)">All</button>
+        <button class="filter-btn" data-filter="type" data-value="task" onclick="toggleFilter(this)">Task</button>
+        <button class="filter-btn" data-filter="type" data-value="bug" onclick="toggleFilter(this)">Bug</button>
+        <button class="filter-btn" data-filter="type" data-value="feature" onclick="toggleFilter(this)">Feature</button>
+        <button class="filter-btn" data-filter="type" data-value="epic" onclick="toggleFilter(this)">Epic</button>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-label">Priority</div>
+      <div class="filter-group">
+        <button class="filter-btn active" data-filter="priority" data-value="all" onclick="toggleFilter(this)">All</button>
+        <button class="filter-btn" data-filter="priority" data-value="1" onclick="toggleFilter(this)">P1</button>
+        <button class="filter-btn" data-filter="priority" data-value="2" onclick="toggleFilter(this)">P2</button>
+        <button class="filter-btn" data-filter="priority" data-value="3" onclick="toggleFilter(this)">P3</button>
+      </div>
+    </div>
+
+    <div id="issueListContainer">
+      <div class="sidebar-empty">
+        Enter a GitHub repo URL above to load issues
+      </div>
+    </div>
+  </aside>
+
+  <main class="main" id="main">
+    <div class="welcome" id="welcome">
+      <svg width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" style="opacity:.15;margin-bottom:24px">
+        <circle cx="6" cy="12" r="3"/>
+        <circle cx="18" cy="12" r="3"/>
+        <line x1="9" y1="12" x2="15" y2="12"/>
+      </svg>
+      <h2>Visualize Beads Issues</h2>
+      <p>Paste a GitHub repository URL to load and browse issues tracked with the <code style="font-family:monospace;background:var(--bg-sidebar);padding:2px 6px;border-radius:4px">bd</code> CLI tool.</p>
+      <p style="margin-top:8px">Issues are stored in <code style="font-family:monospace;background:var(--bg-sidebar);padding:2px 6px;border-radius:4px">.beads/issues.jsonl</code></p>
+    </div>
+    <div id="issueDetail" style="display:none"></div>
+  </main>
+</div>
+
+<div class="loading-overlay" id="loading">
+  <div class="spinner"></div>
+  <div id="loadingText" style="color:var(--text-muted);font-size:.85rem">Loading...</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── State ──
+let allIssues = [];
+let filteredIssues = [];
+let currentIssue = null;
+let repoOwner = '';
+let repoName = '';
+let repoBranch = 'main';
+let filters = { status: 'all', type: 'all', priority: 'all' };
+let searchQuery = '';
+
+// ── Parse repo input ──
+function parseRepoInput(input) {
+  input = input.trim().replace(/\/$/, '');
+  input = input.replace(/^https?:\/\/(www\.)?github\.com\//, '');
+  const treePart = input.match(/^([^/]+)\/([^/]+)/);
+  if (!treePart) return null;
+  return { owner: treePart[1], name: treePart[2] };
+}
+
+// ── Load repository ──
+async function loadRepo() {
+  const input = document.getElementById('repoInput').value;
+  const parsed = parseRepoInput(input);
+  if (!parsed) return showToast('Please enter a valid GitHub repo');
+
+  repoOwner = parsed.owner;
+  repoName = parsed.name;
+
+  showLoading('Loading issues...');
+
+  try {
+    // Try to fetch .beads/issues.jsonl
+    const res = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/.beads/issues.jsonl?ref=${repoBranch}`, {
+      headers: { 'Accept': 'application/vnd.github.v3.raw' }
+    });
+
+    if (!res.ok) {
+      hideLoading();
+      return showToast('Could not find .beads/issues.jsonl in this repository');
+    }
+
+    const content = await res.text();
+    parseIssues(content);
+    updateURL();
+  } catch (e) {
+    hideLoading();
+    showToast('Failed to load issues: ' + e.message);
+  }
+
+  hideLoading();
+}
+
+// ── Parse JSONL ──
+function parseIssues(content) {
+  allIssues = [];
+  const lines = content.trim().split('\n');
+
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    try {
+      const issue = JSON.parse(line);
+      allIssues.push(issue);
+    } catch (e) {
+      console.error('Failed to parse line:', line, e);
+    }
+  }
+
+  // Sort by created_at desc
+  allIssues.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+  filteredIssues = allIssues;
+  renderStats();
+  renderIssueList();
+
+  // Auto-select first issue
+  if (filteredIssues.length > 0) {
+    showIssue(filteredIssues[0]);
+  }
+}
+
+// ── Render stats ──
+function renderStats() {
+  const total = allIssues.length;
+  const open = allIssues.filter(i => i.status === 'open').length;
+  const closed = allIssues.filter(i => i.status === 'closed').length;
+
+  document.getElementById('totalCount').textContent = total;
+  document.getElementById('openCount').textContent = open;
+  document.getElementById('closedCount').textContent = closed;
+  document.getElementById('statsBar').style.display = total > 0 ? '' : 'none';
+}
+
+// ── Filter issues ──
+function filterIssues() {
+  searchQuery = document.getElementById('searchInput').value.toLowerCase();
+
+  filteredIssues = allIssues.filter(issue => {
+    // Status filter
+    if (filters.status !== 'all' && issue.status !== filters.status) return false;
+
+    // Type filter
+    if (filters.type !== 'all' && issue.issue_type !== filters.type) return false;
+
+    // Priority filter
+    if (filters.priority !== 'all' && issue.priority !== parseInt(filters.priority)) return false;
+
+    // Search query
+    if (searchQuery) {
+      const searchText = (issue.id + issue.title + issue.description).toLowerCase();
+      if (!searchText.includes(searchQuery)) return false;
+    }
+
+    return true;
+  });
+
+  renderIssueList();
+}
+
+// ── Toggle filter ──
+function toggleFilter(btn) {
+  const filterType = btn.dataset.filter;
+  const value = btn.dataset.value;
+
+  // Remove active from siblings
+  btn.parentElement.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+
+  filters[filterType] = value;
+  filterIssues();
+}
+
+// ── Render issue list ──
+function renderIssueList() {
+  const container = document.getElementById('issueListContainer');
+
+  if (filteredIssues.length === 0) {
+    container.innerHTML = '<div class="sidebar-empty">No issues match the current filters</div>';
+    return;
+  }
+
+  const list = document.createElement('ul');
+  list.className = 'issue-list';
+
+  filteredIssues.forEach(issue => {
+    const item = document.createElement('li');
+    item.className = 'issue-item';
+    if (currentIssue && currentIssue.id === issue.id) {
+      item.classList.add('active');
+    }
+
+    item.innerHTML = `
+      <div class="issue-id">${issue.id}</div>
+      <div class="issue-title">${escapeHtml(issue.title)}</div>
+      <div class="issue-meta">
+        <span class="badge badge-status-${issue.status}">${issue.status}</span>
+        <span class="badge badge-type">${issue.issue_type}</span>
+        ${issue.priority ? `<span class="badge badge-priority-${issue.priority}">P${issue.priority}</span>` : ''}
+      </div>
+    `;
+
+    item.onclick = () => showIssue(issue);
+    list.appendChild(item);
+  });
+
+  container.innerHTML = '';
+  container.appendChild(list);
+}
+
+// ── Show issue detail ──
+function showIssue(issue) {
+  currentIssue = issue;
+
+  // Update active state in list
+  document.querySelectorAll('.issue-item').forEach(item => item.classList.remove('active'));
+  const activeItem = Array.from(document.querySelectorAll('.issue-item'))
+    .find(item => item.querySelector('.issue-id').textContent === issue.id);
+  if (activeItem) activeItem.classList.add('active');
+
+  // Build dependency info
+  const blockedBy = [];
+  const blocks = [];
+
+  if (issue.dependencies) {
+    issue.dependencies.forEach(dep => {
+      if (dep.type === 'blocks') {
+        // This issue blocks dep.depends_on_id
+        const blockedIssue = allIssues.find(i => i.id === dep.depends_on_id);
+        if (blockedIssue) blocks.push(blockedIssue);
+      }
+    });
+  }
+
+  // Find issues that block this one
+  allIssues.forEach(otherIssue => {
+    if (otherIssue.dependencies) {
+      otherIssue.dependencies.forEach(dep => {
+        if (dep.type === 'blocks' && dep.depends_on_id === issue.id) {
+          blockedBy.push(otherIssue);
+        }
+      });
+    }
+  });
+
+  const detail = document.getElementById('issueDetail');
+  const welcome = document.getElementById('welcome');
+
+  welcome.style.display = 'none';
+  detail.style.display = 'block';
+
+  detail.innerHTML = `
+    <div class="issue-detail">
+      <div class="issue-header">
+        <div class="issue-header-meta">
+          <span class="badge badge-status-${issue.status}">${issue.status}</span>
+          <span class="badge badge-type">${issue.issue_type}</span>
+          ${issue.priority ? `<span class="badge badge-priority-${issue.priority}">Priority ${issue.priority}</span>` : ''}
+        </div>
+        <h1>${escapeHtml(issue.title)}</h1>
+        <dl class="issue-info">
+          <dt>ID</dt><dd>${issue.id}</dd>
+          <dt>Owner</dt><dd>${issue.owner || 'Unassigned'}</dd>
+          <dt>Created</dt><dd>${formatDate(issue.created_at)} by ${issue.created_by}</dd>
+          <dt>Updated</dt><dd>${formatDate(issue.updated_at)}</dd>
+          ${issue.closed_at ? `<dt>Closed</dt><dd>${formatDate(issue.closed_at)}</dd>` : ''}
+          ${issue.close_reason ? `<dt>Reason</dt><dd>${issue.close_reason}</dd>` : ''}
+        </dl>
+      </div>
+
+      <div class="issue-description">${escapeHtml(issue.description || 'No description provided.')}</div>
+
+      ${blockedBy.length > 0 ? `
+        <div class="deps-section">
+          <h3>⚠️ Blocked By (${blockedBy.length})</h3>
+          <ul class="dep-list">
+            ${blockedBy.map(dep => `
+              <li class="dep-item" onclick="showIssueById('${dep.id}')">
+                <div class="dep-id">${dep.id}</div>
+                <div>${escapeHtml(dep.title)}</div>
+              </li>
+            `).join('')}
+          </ul>
+        </div>
+      ` : ''}
+
+      ${blocks.length > 0 ? `
+        <div class="deps-section">
+          <h3>🔒 Blocks (${blocks.length})</h3>
+          <ul class="dep-list">
+            ${blocks.map(dep => `
+              <li class="dep-item" onclick="showIssueById('${dep.id}')">
+                <div class="dep-id">${dep.id}</div>
+                <div>${escapeHtml(dep.title)}</div>
+              </li>
+            `).join('')}
+          </ul>
+        </div>
+      ` : ''}
+    </div>
+  `;
+
+  // Scroll to top
+  document.getElementById('main').scrollTop = 0;
+  updateURL();
+}
+
+// ── Show issue by ID ──
+function showIssueById(id) {
+  const issue = allIssues.find(i => i.id === id);
+  if (issue) showIssue(issue);
+}
+
+// ── Format date ──
+function formatDate(dateStr) {
+  if (!dateStr) return '';
+  const date = new Date(dateStr);
+  return date.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
+
+// ── Escape HTML ──
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// ── Loading ──
+function showLoading(text) {
+  document.getElementById('loadingText').textContent = text || 'Loading...';
+  document.getElementById('loading').classList.add('show');
+}
+function hideLoading() {
+  document.getElementById('loading').classList.remove('show');
+}
+
+// ── Toast ──
+function showToast(msg) {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 3500);
+}
+
+// ── Theme ──
+function initTheme() {
+  const saved = localStorage.getItem('beadsview-theme');
+  if (saved) {
+    document.documentElement.setAttribute('data-theme', saved);
+  } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+    document.documentElement.setAttribute('data-theme', 'dark');
+  }
+}
+
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme');
+  const next = current === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('beadsview-theme', next);
+}
+
+initTheme();
+
+// ── URL state ──
+function updateURL() {
+  if (!repoOwner || !repoName) return;
+  const params = new URLSearchParams();
+  params.set('repo', repoOwner + '/' + repoName);
+  if (currentIssue) params.set('issue', currentIssue.id);
+  const url = window.location.pathname + '?' + params.toString();
+  history.replaceState(null, '', url);
+}
+
+function initFromURL() {
+  const params = new URLSearchParams(window.location.search);
+  const repo = params.get('repo');
+  if (!repo) return;
+
+  document.getElementById('repoInput').value = repo;
+  loadRepo().then(() => {
+    const issueId = params.get('issue');
+    if (issueId) {
+      showIssueById(issueId);
+    }
+  });
+}
+
+// ── Init ──
+initFromURL();
+</script>
+</body>
+</html>
