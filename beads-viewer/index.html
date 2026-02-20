@@ -469,6 +469,64 @@
     color: var(--text);
   }
 
+  /* ── BRANCH SELECTOR ── */
+  .branch-picker {
+    padding: 10px 16px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .branch-picker-label {
+    font-size: .62rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--text-light);
+    margin-bottom: 6px;
+  }
+
+  .branch-select-wrap {
+    position: relative;
+  }
+
+  .branch-select-wrap select {
+    width: 100%;
+    padding: 8px 32px 8px 34px;
+    border: 1.5px solid var(--border);
+    border-radius: 7px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .74rem;
+    background: var(--bg-card);
+    color: var(--text);
+    appearance: none;
+    outline: none;
+    cursor: pointer;
+    transition: border-color .2s;
+  }
+
+  .branch-select-wrap select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(192,93,60,.12);
+  }
+
+  .branch-select-wrap select:disabled {
+    opacity: .45;
+    cursor: not-allowed;
+  }
+
+  .branch-select-wrap .branch-icon {
+    position: absolute;
+    left: 10px; top: 50%; transform: translateY(-50%);
+    pointer-events: none;
+    color: var(--text-light);
+  }
+
+  .branch-select-wrap .chevron-icon {
+    position: absolute;
+    right: 10px; top: 50%; transform: translateY(-50%);
+    pointer-events: none;
+    color: var(--text-light);
+  }
+
   /* ── VIEW TOGGLE ── */
   .view-toggle {
     display: flex;
@@ -773,6 +831,16 @@
 
 <div class="layout">
   <aside class="sidebar" id="sidebar">
+    <div class="branch-picker" id="branchPicker" style="display:none">
+      <div class="branch-picker-label">Branch</div>
+      <div class="branch-select-wrap">
+        <svg class="branch-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 01-9 9"/></svg>
+        <select id="branchSelect" onchange="switchBranch(this.value)" disabled>
+          <option value="">Loading branches...</option>
+        </select>
+        <svg class="chevron-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+    </div>
     <div class="stats-bar" id="statsBar" style="display:none">
       <div class="stat-item">
         <span class="stat-value" id="totalCount">0</span>
@@ -904,7 +972,9 @@ let filteredIssues = [];
 let currentIssue = null;
 let repoOwner = '';
 let repoName = '';
-let repoBranch = 'main';
+let repoBranch = '';
+let repoDefaultBranch = 'main';
+let repoBranches = [];
 let filters = { status: 'all', type: 'all', priority: 'all' };
 let searchQuery = '';
 let currentView = 'detail'; // 'detail' or 'graph'
@@ -932,25 +1002,133 @@ async function loadRepo() {
   repoOwner = parsed.owner;
   repoName = parsed.name;
 
-  showLoading('Loading issues...');
+  showLoading('Loading repository...');
+
+  // Fetch repository info for default branch
+  try {
+    const infoRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}`);
+    if (infoRes.ok) {
+      const info = await infoRes.json();
+      repoDefaultBranch = info.default_branch || 'main';
+    }
+  } catch (e) {
+    console.error('Failed to fetch repo info:', e);
+  }
+
+  // Try branches in order: URL param (if set), beads-sync, default branch
+  const branchesToTry = [];
+  if (repoBranch) branchesToTry.push(repoBranch);
+  if (!branchesToTry.includes('beads-sync')) branchesToTry.push('beads-sync');
+  if (!branchesToTry.includes(repoDefaultBranch)) branchesToTry.push(repoDefaultBranch);
+  if (!branchesToTry.includes('main')) branchesToTry.push('main');
+
+  let content = null;
+  for (const branch of branchesToTry) {
+    try {
+      const res = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/.beads/issues.jsonl?ref=${branch}`, {
+        headers: { 'Accept': 'application/vnd.github.v3.raw' }
+      });
+
+      if (res.ok) {
+        content = await res.text();
+        repoBranch = branch;
+        break;
+      }
+    } catch (e) {
+      console.error(`Failed to load from ${branch}:`, e);
+    }
+  }
+
+  if (!content) {
+    hideLoading();
+    return showToast('Could not find .beads/issues.jsonl in this repository');
+  }
+
+  parseIssues(content);
+  updateURL();
+
+  // Fetch branches in background
+  fetchBranches();
+
+  hideLoading();
+}
+
+// ── Fetch all branches ──
+async function fetchBranches() {
+  repoBranches = [];
+  let page = 1;
+  const perPage = 100;
 
   try {
-    // Try to fetch .beads/issues.jsonl
-    const res = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/.beads/issues.jsonl?ref=${repoBranch}`, {
+    while (true) {
+      const res = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/branches?per_page=${perPage}&page=${page}`);
+      if (!res.ok) break;
+      const data = await res.json();
+      if (!data.length) break;
+      repoBranches.push(...data.map(b => b.name));
+      if (data.length < perPage) break;
+      page++;
+      if (page > 10) break; // safety cap
+    }
+  } catch (e) {
+    console.error('Failed to fetch branches:', e);
+  }
+
+  renderBranchSelector();
+}
+
+function renderBranchSelector() {
+  const picker = document.getElementById('branchPicker');
+  const select = document.getElementById('branchSelect');
+
+  if (!repoBranches.length) {
+    picker.style.display = 'none';
+    return;
+  }
+
+  picker.style.display = '';
+  select.disabled = false;
+  select.innerHTML = '';
+
+  // Sort: beads-sync first, then default, then alphabetical
+  repoBranches.sort((a, b) => {
+    if (a === 'beads-sync') return -1;
+    if (b === 'beads-sync') return 1;
+    if (a === repoDefaultBranch) return -1;
+    if (b === repoDefaultBranch) return 1;
+    return a.localeCompare(b);
+  });
+
+  repoBranches.forEach(name => {
+    const opt = document.createElement('option');
+    opt.value = name;
+    let label = name;
+    if (name === 'beads-sync') label += ' (beads)';
+    else if (name === repoDefaultBranch) label += ' (default)';
+    opt.textContent = label;
+    if (name === repoBranch) opt.selected = true;
+    select.appendChild(opt);
+  });
+}
+
+async function switchBranch(branch) {
+  if (!branch || branch === repoBranch) return;
+
+  showLoading('Switching to ' + branch + '...');
+
+  try {
+    const res = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/.beads/issues.jsonl?ref=${branch}`, {
       headers: { 'Accept': 'application/vnd.github.v3.raw' }
     });
 
-    if (!res.ok) {
-      hideLoading();
-      return showToast('Could not find .beads/issues.jsonl in this repository');
-    }
+    if (!res.ok) throw new Error('Branch not found or no issues file');
 
     const content = await res.text();
+    repoBranch = branch;
     parseIssues(content);
     updateURL();
   } catch (e) {
-    hideLoading();
-    showToast('Failed to load issues: ' + e.message);
+    showToast('Failed to load branch "' + branch + '"');
   }
 
   hideLoading();
@@ -1250,6 +1428,9 @@ function updateURL() {
   if (!repoOwner || !repoName) return;
   const params = new URLSearchParams();
   params.set('repo', repoOwner + '/' + repoName);
+  if (repoBranch && repoBranch !== repoDefaultBranch) {
+    params.set('branch', repoBranch);
+  }
   if (currentIssue) params.set('issue', currentIssue.id);
   const url = window.location.pathname + '?' + params.toString();
   history.replaceState(null, '', url);
@@ -1261,6 +1442,11 @@ function initFromURL() {
   if (!repo) return;
 
   document.getElementById('repoInput').value = repo;
+
+  // Set branch from URL if provided (will be tried during loadRepo)
+  const branch = params.get('branch');
+  if (branch) repoBranch = branch;
+
   loadRepo().then(() => {
     const issueId = params.get('issue');
     if (issueId) {
