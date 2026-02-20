@@ -468,6 +468,179 @@
     font-weight: 600;
     color: var(--text);
   }
+
+  /* ── VIEW TOGGLE ── */
+  .view-toggle {
+    display: flex;
+    gap: 4px;
+    background: var(--bg-card);
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    padding: 4px;
+  }
+
+  .view-toggle-btn {
+    padding: 5px 12px;
+    background: none;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-family: 'DM Sans', sans-serif;
+    font-size: .75rem;
+    font-weight: 500;
+    transition: all .2s;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .view-toggle-btn:hover {
+    color: var(--text);
+  }
+
+  .view-toggle-btn.active {
+    background: var(--accent-bg);
+    color: var(--accent);
+  }
+
+  /* ── GRAPH VIEW ── */
+  .graph-container {
+    display: none;
+    width: 100%;
+    height: 100%;
+    position: relative;
+    background: var(--bg);
+    overflow: hidden;
+  }
+
+  .graph-container.active {
+    display: block;
+  }
+
+  .graph-svg {
+    width: 100%;
+    height: 100%;
+    cursor: grab;
+  }
+
+  .graph-svg:active {
+    cursor: grabbing;
+  }
+
+  .graph-node {
+    cursor: pointer;
+    transition: all .2s;
+  }
+
+  .graph-node:hover .node-circle {
+    stroke-width: 3;
+  }
+
+  .graph-node:hover .node-text {
+    font-weight: 600;
+  }
+
+  .node-circle {
+    stroke: var(--border);
+    stroke-width: 2;
+    transition: all .2s;
+  }
+
+  .node-circle-open {
+    fill: #E0F2FE;
+    stroke: #075985;
+  }
+
+  .node-circle-closed {
+    fill: var(--bg-card);
+    stroke: var(--border);
+  }
+
+  [data-theme="dark"] .node-circle-open {
+    fill: #075985;
+    stroke: #E0F2FE;
+  }
+
+  [data-theme="dark"] .node-circle-closed {
+    fill: var(--bg-card);
+    stroke: var(--text-light);
+  }
+
+  .node-text {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    fill: var(--text);
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .node-title {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 10px;
+    fill: var(--text-muted);
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .graph-edge {
+    stroke: var(--border);
+    stroke-width: 2;
+    fill: none;
+    marker-end: url(#arrowhead);
+  }
+
+  .graph-edge-highlight {
+    stroke: var(--accent);
+    stroke-width: 3;
+  }
+
+  .graph-controls {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px;
+    box-shadow: var(--shadow-md);
+  }
+
+  .graph-control-btn {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--text-muted);
+    transition: all .2s;
+  }
+
+  .graph-control-btn:hover {
+    background: var(--accent-bg);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .graph-info {
+    position: absolute;
+    bottom: 16px;
+    left: 16px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: .75rem;
+    color: var(--text-muted);
+    box-shadow: var(--shadow-md);
+  }
 </style>
 </head>
 <body>
@@ -485,6 +658,16 @@
     <input type="text" id="repoInput" placeholder="github.com/owner/repo or owner/repo" spellcheck="false"
       onkeydown="if(event.key==='Enter')loadRepo()">
     <button class="load-btn" id="loadBtn" onclick="loadRepo()">Load</button>
+  </div>
+  <div class="view-toggle" id="viewToggle" style="display:none">
+    <button class="view-toggle-btn active" onclick="switchView('detail')">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+      List
+    </button>
+    <button class="view-toggle-btn" onclick="switchView('graph')">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="3"/><circle cx="6" cy="19" r="3"/><circle cx="18" cy="19" r="3"/><line x1="12" y1="8" x2="6" y2="16"/><line x1="12" y1="8" x2="18" y2="16"/></svg>
+      Graph
+    </button>
   </div>
   <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
     <svg class="icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
@@ -563,6 +746,34 @@
       <p style="margin-top:8px">Issues are stored in <code style="font-family:monospace;background:var(--bg-sidebar);padding:2px 6px;border-radius:4px">.beads/issues.jsonl</code></p>
     </div>
     <div id="issueDetail" style="display:none"></div>
+    <div class="graph-container" id="graphContainer">
+      <svg class="graph-svg" id="graphSvg">
+        <defs>
+          <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+            <polygon points="0 0, 10 3, 0 6" fill="var(--border)" />
+          </marker>
+          <marker id="arrowhead-highlight" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+            <polygon points="0 0, 10 3, 0 6" fill="var(--accent)" />
+          </marker>
+        </defs>
+        <g id="graphGroup"></g>
+      </svg>
+      <div class="graph-controls">
+        <button class="graph-control-btn" onclick="zoomIn()" title="Zoom in">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
+        <button class="graph-control-btn" onclick="zoomOut()" title="Zoom out">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
+        <button class="graph-control-btn" onclick="resetZoom()" title="Reset view">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="12" x2="15" y2="15"/></svg>
+        </button>
+      </div>
+      <div class="graph-info">
+        <strong>Graph View</strong><br>
+        Drag to pan • Scroll to zoom • Click nodes to view details
+      </div>
+    </div>
   </main>
 </div>
 
@@ -583,6 +794,11 @@ let repoName = '';
 let repoBranch = 'main';
 let filters = { status: 'all', type: 'all', priority: 'all' };
 let searchQuery = '';
+let currentView = 'detail'; // 'detail' or 'graph'
+let graphZoom = 1;
+let graphPan = { x: 0, y: 0 };
+let isDragging = false;
+let dragStart = { x: 0, y: 0 };
 
 // ── Parse repo input ──
 function parseRepoInput(input) {
@@ -648,9 +864,17 @@ function parseIssues(content) {
   renderStats();
   renderIssueList();
 
+  // Show view toggle
+  document.getElementById('viewToggle').style.display = allIssues.length > 0 ? 'flex' : 'none';
+
   // Auto-select first issue
   if (filteredIssues.length > 0) {
     showIssue(filteredIssues[0]);
+  }
+
+  // Render graph
+  if (currentView === 'graph') {
+    renderGraph();
   }
 }
 
@@ -923,6 +1147,276 @@ function initFromURL() {
       showIssueById(issueId);
     }
   });
+}
+
+// ── View Switching ──
+function switchView(view) {
+  currentView = view;
+
+  // Update toggle buttons
+  document.querySelectorAll('.view-toggle-btn').forEach(btn => {
+    btn.classList.remove('active');
+  });
+  event.target.closest('.view-toggle-btn').classList.add('active');
+
+  // Show/hide views
+  if (view === 'graph') {
+    document.getElementById('issueDetail').style.display = 'none';
+    document.getElementById('welcome').style.display = 'none';
+    document.getElementById('graphContainer').classList.add('active');
+    renderGraph();
+  } else {
+    document.getElementById('graphContainer').classList.remove('active');
+    if (currentIssue) {
+      document.getElementById('issueDetail').style.display = 'block';
+      document.getElementById('welcome').style.display = 'none';
+    } else {
+      document.getElementById('issueDetail').style.display = 'none';
+      document.getElementById('welcome').style.display = allIssues.length > 0 ? 'none' : 'flex';
+    }
+  }
+}
+
+// ── Graph Rendering ──
+function renderGraph() {
+  if (filteredIssues.length === 0) return;
+
+  const svg = document.getElementById('graphSvg');
+  const group = document.getElementById('graphGroup');
+  group.innerHTML = '';
+
+  // Build dependency graph
+  const nodes = [];
+  const edges = [];
+  const nodeMap = new Map();
+
+  filteredIssues.forEach((issue, i) => {
+    const node = {
+      id: issue.id,
+      issue: issue,
+      x: 0,
+      y: 0,
+      level: 0,
+      children: [],
+      parents: []
+    };
+    nodes.push(node);
+    nodeMap.set(issue.id, node);
+  });
+
+  // Build edges
+  nodes.forEach(node => {
+    const issue = node.issue;
+    if (issue.dependencies) {
+      issue.dependencies.forEach(dep => {
+        if (dep.type === 'blocks') {
+          const targetNode = nodeMap.get(dep.depends_on_id);
+          if (targetNode) {
+            edges.push({ from: node, to: targetNode });
+            node.children.push(targetNode);
+            targetNode.parents.push(node);
+          }
+        }
+      });
+    }
+
+    // Also find reverse dependencies
+    filteredIssues.forEach(otherIssue => {
+      if (otherIssue.dependencies) {
+        otherIssue.dependencies.forEach(dep => {
+          if (dep.type === 'blocks' && dep.depends_on_id === issue.id) {
+            const sourceNode = nodeMap.get(otherIssue.id);
+            if (sourceNode && !edges.find(e => e.from === sourceNode && e.to === node)) {
+              edges.push({ from: sourceNode, to: node });
+            }
+          }
+        });
+      }
+    });
+  });
+
+  // Calculate levels (hierarchical layout)
+  const calculateLevels = () => {
+    const visited = new Set();
+    const setLevel = (node, level) => {
+      if (visited.has(node.id)) return;
+      visited.add(node.id);
+      node.level = Math.max(node.level, level);
+      node.children.forEach(child => setLevel(child, level + 1));
+    };
+
+    // Start from root nodes (no parents)
+    nodes.filter(n => n.parents.length === 0).forEach(n => setLevel(n, 0));
+
+    // Handle any unvisited nodes (cycles or disconnected)
+    nodes.forEach(n => {
+      if (!visited.has(n.id)) {
+        setLevel(n, 0);
+      }
+    });
+  };
+
+  calculateLevels();
+
+  // Layout nodes
+  const width = svg.clientWidth || 800;
+  const height = svg.clientHeight || 600;
+  const levelHeight = 120;
+  const nodeRadius = 30;
+
+  // Group nodes by level
+  const levels = new Map();
+  nodes.forEach(node => {
+    if (!levels.has(node.level)) {
+      levels.set(node.level, []);
+    }
+    levels.get(node.level).push(node);
+  });
+
+  // Position nodes
+  levels.forEach((levelNodes, level) => {
+    const levelWidth = width - 100;
+    const spacing = levelWidth / (levelNodes.length + 1);
+    levelNodes.forEach((node, i) => {
+      node.x = 50 + spacing * (i + 1);
+      node.y = 80 + level * levelHeight;
+    });
+  });
+
+  // Render edges
+  edges.forEach(edge => {
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    const x1 = edge.from.x;
+    const y1 = edge.from.y + nodeRadius;
+    const x2 = edge.to.x;
+    const y2 = edge.to.y - nodeRadius;
+
+    // Curved path
+    const midY = (y1 + y2) / 2;
+    const d = `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`;
+
+    line.setAttribute('d', d);
+    line.setAttribute('class', 'graph-edge');
+    line.setAttribute('data-from', edge.from.id);
+    line.setAttribute('data-to', edge.to.id);
+    group.appendChild(line);
+  });
+
+  // Render nodes
+  nodes.forEach(node => {
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.setAttribute('class', 'graph-node');
+    g.setAttribute('data-id', node.id);
+    g.setAttribute('transform', `translate(${node.x}, ${node.y})`);
+    g.style.cursor = 'pointer';
+
+    // Circle
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('r', nodeRadius);
+    circle.setAttribute('class', `node-circle node-circle-${node.issue.status}`);
+    g.appendChild(circle);
+
+    // ID text (trim common prefix)
+    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text.setAttribute('class', 'node-text');
+    text.setAttribute('text-anchor', 'middle');
+    text.setAttribute('y', '5');
+    // Extract suffix after last dash
+    const idParts = node.id.split('-');
+    const shortId = idParts.length > 1 ? idParts[idParts.length - 1] : node.id;
+    text.textContent = shortId;
+    g.appendChild(text);
+
+    // Title (truncated)
+    const titleText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    titleText.setAttribute('class', 'node-title');
+    titleText.setAttribute('text-anchor', 'middle');
+    titleText.setAttribute('y', nodeRadius + 15);
+    const maxLen = 20;
+    const title = node.issue.title.length > maxLen ?
+      node.issue.title.substring(0, maxLen) + '...' :
+      node.issue.title;
+    titleText.textContent = title;
+    g.appendChild(titleText);
+
+    // Click handler
+    g.addEventListener('click', () => {
+      showIssue(node.issue);
+      switchView('detail');
+    });
+
+    group.appendChild(g);
+  });
+
+  // Apply current transform
+  applyGraphTransform();
+
+  // Setup pan/zoom
+  setupGraphInteraction();
+}
+
+// ── Graph Interaction ──
+function setupGraphInteraction() {
+  const svg = document.getElementById('graphSvg');
+
+  // Mouse wheel zoom
+  svg.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? 0.9 : 1.1;
+    graphZoom *= delta;
+    graphZoom = Math.max(0.1, Math.min(3, graphZoom));
+    applyGraphTransform();
+  });
+
+  // Pan with drag
+  svg.addEventListener('mousedown', (e) => {
+    if (e.target === svg || e.target.closest('#graphGroup')) {
+      isDragging = true;
+      dragStart = { x: e.clientX - graphPan.x, y: e.clientY - graphPan.y };
+      svg.style.cursor = 'grabbing';
+    }
+  });
+
+  svg.addEventListener('mousemove', (e) => {
+    if (isDragging) {
+      graphPan.x = e.clientX - dragStart.x;
+      graphPan.y = e.clientY - dragStart.y;
+      applyGraphTransform();
+    }
+  });
+
+  svg.addEventListener('mouseup', () => {
+    isDragging = false;
+    svg.style.cursor = 'grab';
+  });
+
+  svg.addEventListener('mouseleave', () => {
+    isDragging = false;
+    svg.style.cursor = 'grab';
+  });
+}
+
+function applyGraphTransform() {
+  const group = document.getElementById('graphGroup');
+  group.setAttribute('transform', `translate(${graphPan.x}, ${graphPan.y}) scale(${graphZoom})`);
+}
+
+function zoomIn() {
+  graphZoom *= 1.2;
+  graphZoom = Math.min(3, graphZoom);
+  applyGraphTransform();
+}
+
+function zoomOut() {
+  graphZoom *= 0.8;
+  graphZoom = Math.max(0.1, graphZoom);
+  applyGraphTransform();
+}
+
+function resetZoom() {
+  graphZoom = 1;
+  graphPan = { x: 0, y: 0 };
+  applyGraphTransform();
 }
 
 // ── Init ──
