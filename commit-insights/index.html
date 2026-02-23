@@ -1259,7 +1259,7 @@ function updateURL() {
 
 const authBtn = document.getElementById('authBtn');
 const authPanel = document.getElementById('authPanel');
-let workerUrl = localStorage.getItem('github_worker_url') || '';
+let workerUrl = localStorage.getItem('github_worker_url') || 'https://commit-insights-oauth.sasha-hipervinculos.workers.dev';
 
 function renderAuthUI() {
   if (authUser) {
