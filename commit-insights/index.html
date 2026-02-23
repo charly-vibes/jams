@@ -1277,15 +1277,7 @@ function renderAuthUI() {
   authBtn.classList.remove('connected');
   authPanel.innerHTML = `
     <div class="auth-section-label">GitHub OAuth</div>
-    <label class="auth-field-label" for="workerUrlInput">Worker URL</label>
-    <div class="auth-row">
-      <input class="auth-input" id="workerUrlInput" type="url"
-        placeholder="https://….workers.dev" value="${escapeHtml(workerUrl)}" />
-      <button class="auth-save-btn" id="saveWorkerBtn" title="Save">✓</button>
-    </div>
-    <button class="auth-panel-btn" id="startAuthBtn" ${!workerUrl ? 'disabled' : ''}>
-      Continue with GitHub
-    </button>
+    <button class="auth-panel-btn" id="startAuthBtn">Continue with GitHub</button>
     <div class="auth-divider">or</div>
     <div class="auth-section-label">Personal Access Token</div>
     <input class="auth-input" id="patInput" type="password" placeholder="ghp_…" />
@@ -1296,23 +1288,7 @@ function renderAuthUI() {
     </p>
   `;
 
-  const workerInput = document.getElementById('workerUrlInput');
-  const startAuthBtn = document.getElementById('startAuthBtn');
-
-  workerInput.addEventListener('input', (e) => {
-    workerUrl = e.target.value.trim().replace(/\/$/, '');
-    startAuthBtn.disabled = !workerUrl;
-  });
-  document.getElementById('saveWorkerBtn').addEventListener('click', () => {
-    workerUrl = workerInput.value.trim().replace(/\/$/, '');
-    localStorage.setItem('github_worker_url', workerUrl);
-    startAuthBtn.disabled = !workerUrl;
-  });
-  workerInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') document.getElementById('saveWorkerBtn').click();
-  });
-
-  startAuthBtn.addEventListener('click', startDeviceFlow);
+  document.getElementById('startAuthBtn').addEventListener('click', startDeviceFlow);
 
   document.getElementById('savePatBtn').addEventListener('click', async () => {
     const pat = document.getElementById('patInput').value.trim();
@@ -1382,7 +1358,11 @@ async function startDeviceFlow() {
     `;
 
     document.getElementById('deviceCode').addEventListener('click', () => {
-      navigator.clipboard.writeText(user_code).catch(() => {});
+      navigator.clipboard.writeText(user_code).then(() => {
+        const el = document.getElementById('deviceCode');
+        el.textContent = 'Copied!';
+        setTimeout(() => { el.textContent = user_code; }, 1500);
+      }).catch(() => {});
     });
     document.getElementById('cancelAuthBtn').addEventListener('click', () => {
       clearInterval(pollTimer);
