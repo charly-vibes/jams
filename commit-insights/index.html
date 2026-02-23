@@ -1365,11 +1365,13 @@ async function startDeviceFlow() {
       }).catch(() => {});
     });
     document.getElementById('cancelAuthBtn').addEventListener('click', () => {
-      clearInterval(pollTimer);
+      clearTimeout(pollTimer);
       renderAuthUI();
     });
 
-    pollTimer = setInterval(async () => {
+    let pollDelay = (interval || 5) * 1000;
+
+    async function poll() {
       try {
         const pollRes = await fetch(`${workerUrl}/access_token`, {
           method: 'POST',
@@ -1384,19 +1386,23 @@ async function startDeviceFlow() {
         console.log('[auth] poll:', data);
 
         if (data.access_token) {
-          clearInterval(pollTimer);
           await onTokenReceived(data.access_token);
-        } else if (data.error === 'authorization_pending' || data.error === 'slow_down') {
-          // keep polling
+        } else if (data.error === 'slow_down') {
+          pollDelay = (data.interval || (pollDelay / 1000 + 5)) * 1000;
+          pollTimer = setTimeout(poll, pollDelay);
+        } else if (data.error === 'authorization_pending') {
+          pollTimer = setTimeout(poll, pollDelay);
         } else if (data.error) {
-          clearInterval(pollTimer);
           authPanel.innerHTML = `<p style="color:red;margin:0">${data.error_description || data.error}</p>`;
           setTimeout(renderAuthUI, 3000);
         }
       } catch (e) {
         console.warn('[auth] poll error:', e);
+        pollTimer = setTimeout(poll, pollDelay);
       }
-    }, (interval || 5) * 1000);
+    }
+
+    pollTimer = setTimeout(poll, pollDelay);
 
   } catch (e) {
     authPanel.innerHTML = `<p style="color:red;margin:0">Failed to connect: ${e.message}</p>`;
