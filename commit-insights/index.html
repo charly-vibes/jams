@@ -427,6 +427,115 @@
     color: #FCD34D;
   }
 
+  .auth-section {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+
+  .auth-btn {
+    padding: 6px 12px;
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: .75rem;
+    cursor: pointer;
+    transition: all .15s;
+    white-space: nowrap;
+  }
+  .auth-btn:hover {
+    background: var(--accent-bg);
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+  .auth-btn.connected {
+    color: var(--success);
+    border-color: var(--success);
+  }
+
+  .auth-panel {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-md);
+    padding: 14px;
+    width: 270px;
+    z-index: 200;
+    display: none;
+  }
+  .auth-panel.open { display: block; }
+
+  .auth-panel p {
+    font-size: .78rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+    margin-bottom: 10px;
+  }
+  .auth-panel a { color: var(--accent); }
+
+  .device-code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 1.5rem;
+    font-weight: 500;
+    letter-spacing: .2em;
+    text-align: center;
+    color: var(--accent);
+    padding: 10px;
+    border: 2px dashed var(--border);
+    border-radius: 8px;
+    margin: 8px 0 10px;
+    cursor: pointer;
+    user-select: all;
+  }
+  .device-code:hover { border-color: var(--accent); }
+
+  .auth-waiting {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: .78rem;
+    color: var(--text-muted);
+    margin-top: 8px;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner {
+    width: 13px; height: 13px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin .8s linear infinite;
+    flex-shrink: 0;
+  }
+
+  .auth-panel-btn {
+    width: 100%;
+    padding: 7px;
+    border-radius: 6px;
+    font-size: .75rem;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--accent);
+    color: white;
+    transition: background .15s;
+    margin-top: 4px;
+  }
+  .auth-panel-btn:hover { background: var(--accent-hover); }
+  .auth-panel-btn.secondary {
+    background: transparent;
+    color: var(--text-muted);
+    margin-top: 8px;
+  }
+  .auth-panel-btn.secondary:hover {
+    background: var(--accent-bg);
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+
   .loading {
     text-align: center;
     padding: 48px 24px;
@@ -469,6 +578,10 @@
       <input type="checkbox" id="dynamicLoadToggle" checked style="cursor: pointer;">
       <span>Progressive load</span>
     </label>
+    <div class="auth-section">
+      <button class="auth-btn" id="authBtn">Login with GitHub</button>
+      <div class="auth-panel" id="authPanel"></div>
+    </div>
   </div>
 
   <div class="container">
@@ -483,6 +596,18 @@
 // Dark mode detection
 if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) {
   document.documentElement.setAttribute('data-theme', 'dark');
+}
+
+// Auth
+const CLIENT_ID = 'Ov23li9bvIsJoUGnF8zv';
+let token = localStorage.getItem('github_token') || '';
+let authUser = JSON.parse(localStorage.getItem('github_auth_user') || 'null');
+let pollTimer = null;
+
+function getHeaders() {
+  const h = {};
+  if (token) h['Authorization'] = `token ${token}`;
+  return h;
 }
 
 // State
@@ -544,7 +669,7 @@ async function loadUser(user) {
 
   try {
     // Fetch user profile
-    const userRes = await fetch(`https://api.github.com/users/${username}`);
+    const userRes = await fetch(`https://api.github.com/users/${username}`, { headers: getHeaders() });
 
     // Check rate limit
     const rateLimit = userRes.headers.get('X-RateLimit-Remaining');
@@ -562,7 +687,7 @@ async function loadUser(user) {
     // Fetch events (paginated, up to 10 pages = ~300 events)
     events = [];
     for (let page = 1; page <= 10; page++) {
-      const eventsRes = await fetch(`https://api.github.com/users/${username}/events/public?per_page=30&page=${page}`);
+      const eventsRes = await fetch(`https://api.github.com/users/${username}/events/public?per_page=30&page=${page}`, { headers: getHeaders() });
       if (!eventsRes.ok) {
         console.error(`Failed to fetch page ${page}:`, eventsRes.status);
         break;
@@ -597,9 +722,9 @@ async function loadUser(user) {
           <br>
           <strong>Solutions:</strong>
           <ul style="margin: 8px 0 0 20px;">
+            <li><strong>Login with GitHub</strong> (top-right) to raise the limit to 5,000 req/hr</li>
             <li>Wait for the reset time mentioned above</li>
             <li>Use a different IP address or network</li>
-            <li>The app will work again automatically after the reset time</li>
           </ul>
         </div>
       `;
@@ -631,7 +756,7 @@ async function extractCommitsWithProgressiveUpdate(events) {
       try {
         if (before) {
           const compareUrl = `https://api.github.com/repos/${repo}/compare/${before}...${head}`;
-          const res = await fetch(compareUrl);
+          const res = await fetch(compareUrl, { headers: getHeaders() });
 
           if (res.ok) {
             const data = await res.json();
@@ -832,7 +957,7 @@ function calculateStats(commits, days) {
 }
 
 // Render dashboard
-function renderDashboard(userData) {
+function renderDashboard() {
   const stats = calculateStats(commits, timeRangeDays);
 
   const pushEvents = events.filter(e => e.type === 'PushEvent').length;
@@ -1059,6 +1184,125 @@ function updateURL() {
   url.searchParams.set('user', username);
   window.history.pushState({}, '', url);
 }
+
+// ── Auth / Device Flow ────────────────────────────────────────────────────────
+
+const authBtn = document.getElementById('authBtn');
+const authPanel = document.getElementById('authPanel');
+
+function renderAuthUI() {
+  if (authUser) {
+    authBtn.textContent = `● @${authUser.login}`;
+    authBtn.classList.add('connected');
+    authPanel.innerHTML = `
+      <p>Signed in as <strong>${authUser.login}</strong>.<br>Rate limit: 5,000 req/hr.</p>
+      <button class="auth-panel-btn secondary" id="logoutBtn">Sign out</button>
+    `;
+    document.getElementById('logoutBtn').addEventListener('click', logout);
+  } else {
+    authBtn.textContent = 'Login with GitHub';
+    authBtn.classList.remove('connected');
+    authPanel.innerHTML = `
+      <p>Sign in to raise the rate limit from 60 to 5,000 req/hr and access private repos.</p>
+      <button class="auth-panel-btn" id="startAuthBtn">Continue with GitHub</button>
+    `;
+    document.getElementById('startAuthBtn').addEventListener('click', startDeviceFlow);
+  }
+}
+
+authBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  authPanel.classList.toggle('open');
+  if (authPanel.classList.contains('open')) renderAuthUI();
+});
+
+document.addEventListener('click', () => authPanel.classList.remove('open'));
+authPanel.addEventListener('click', (e) => e.stopPropagation());
+
+function logout() {
+  token = '';
+  authUser = null;
+  localStorage.removeItem('github_token');
+  localStorage.removeItem('github_auth_user');
+  authPanel.classList.remove('open');
+  renderAuthUI();
+}
+
+async function startDeviceFlow() {
+  authPanel.innerHTML = `<p style="margin:0">Connecting to GitHub…</p>`;
+
+  try {
+    const res = await fetch('https://github.com/login/device/code', {
+      method: 'POST',
+      headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client_id: CLIENT_ID, scope: 'read:user repo' })
+    });
+    const { device_code, user_code, verification_uri, interval } = await res.json();
+
+    window.open(verification_uri, '_blank');
+
+    authPanel.innerHTML = `
+      <p>A tab opened to GitHub. Enter this code there:</p>
+      <div class="device-code" id="deviceCode" title="Click to copy">${user_code}</div>
+      <div class="auth-waiting">
+        <div class="spinner"></div>
+        <span>Waiting for authorization…</span>
+      </div>
+      <button class="auth-panel-btn secondary" id="cancelAuthBtn">Cancel</button>
+    `;
+
+    document.getElementById('deviceCode').addEventListener('click', () => {
+      navigator.clipboard.writeText(user_code).catch(() => {});
+    });
+    document.getElementById('cancelAuthBtn').addEventListener('click', () => {
+      clearInterval(pollTimer);
+      renderAuthUI();
+    });
+
+    pollTimer = setInterval(async () => {
+      try {
+        const pollRes = await fetch('https://github.com/login/oauth/access_token', {
+          method: 'POST',
+          headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            client_id: CLIENT_ID,
+            device_code,
+            grant_type: 'urn:ietf:params:oauth:grant-type:device_code'
+          })
+        });
+        const data = await pollRes.json();
+
+        if (data.access_token) {
+          clearInterval(pollTimer);
+          token = data.access_token;
+          localStorage.setItem('github_token', token);
+
+          const userRes = await fetch('https://api.github.com/user', { headers: getHeaders() });
+          authUser = await userRes.json();
+          localStorage.setItem('github_auth_user', JSON.stringify(authUser));
+
+          authPanel.classList.remove('open');
+          renderAuthUI();
+
+          if (!usernameInput.value && authUser.login) {
+            usernameInput.value = authUser.login;
+          }
+        } else if (data.error === 'access_denied' || data.error === 'expired_token') {
+          clearInterval(pollTimer);
+          authPanel.innerHTML = `<p style="color:red;margin:0">${data.error_description || data.error}</p>`;
+          setTimeout(renderAuthUI, 2500);
+        }
+        // 'authorization_pending' → keep polling
+      } catch (_) { /* network hiccup, keep polling */ }
+    }, (interval || 5) * 1000);
+
+  } catch (e) {
+    authPanel.innerHTML = `<p style="color:red;margin:0">Failed to connect: ${e.message}</p>`;
+    setTimeout(renderAuthUI, 2500);
+  }
+}
+
+renderAuthUI();
 </script>
 </body>
 </html>
