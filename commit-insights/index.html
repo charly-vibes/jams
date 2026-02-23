@@ -1381,17 +1381,21 @@ async function startDeviceFlow() {
           })
         });
         const data = await pollRes.json();
+        console.log('[auth] poll:', data);
 
         if (data.access_token) {
           clearInterval(pollTimer);
           await onTokenReceived(data.access_token);
-        } else if (data.error === 'access_denied' || data.error === 'expired_token') {
+        } else if (data.error === 'authorization_pending' || data.error === 'slow_down') {
+          // keep polling
+        } else if (data.error) {
           clearInterval(pollTimer);
           authPanel.innerHTML = `<p style="color:red;margin:0">${data.error_description || data.error}</p>`;
-          setTimeout(renderAuthUI, 2500);
+          setTimeout(renderAuthUI, 3000);
         }
-        // 'authorization_pending' → keep polling
-      } catch (_) { /* network hiccup, keep polling */ }
+      } catch (e) {
+        console.warn('[auth] poll error:', e);
+      }
     }, (interval || 5) * 1000);
 
   } catch (e) {
