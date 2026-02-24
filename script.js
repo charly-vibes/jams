@@ -12,7 +12,8 @@ const APPS = [
     'signal-heatmap',
     'idea-builder',
     'beads-viewer',
-    'commit-insights'
+    'commit-insights',
+    'sensor-log'
 ];
 
 document.addEventListener('DOMContentLoaded', async () => {

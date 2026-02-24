@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#1a1a2e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="SensorLog">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon.svg">
+  <title>SensorLog</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d0d1a;
+      --surface: #1a1a2e;
+      --card: #21213a;
+      --border: #2d2d50;
+      --text: #e0e0f0;
+      --text-muted: #888aaa;
+      --accent: #4a90d9;
+      --red: #e74c3c;
+      --green: #2ecc71;
+      --yellow: #f39c12;
+      --tab-h: 56px;
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      font-size: 14px;
+      overscroll-behavior: none;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      height: 100dvh;
+    }
+
+    /* ── Header ─────────────────────────────────────────────── */
+    .app-header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+
+    .app-header .logo { width: 24px; height: 24px; }
+
+    .app-header h1 {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+      color: var(--text);
+    }
+
+    .header-badge {
+      font-size: 10px;
+      background: var(--accent);
+      color: #fff;
+      padding: 2px 6px;
+      border-radius: 10px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    .home-link {
+      margin-left: auto;
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 20px;
+      line-height: 1;
+      opacity: 0.6;
+      padding: 4px;
+    }
+    .home-link:hover { opacity: 1; }
+
+    /* ── Screens ─────────────────────────────────────────────── */
+    .screens {
+      flex: 1;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .screen {
+      display: none;
+      height: 100%;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      padding-bottom: calc(var(--tab-h) + var(--safe-bottom) + 8px);
+    }
+    .screen.active { display: block; }
+
+    /* ── Tab bar ──────────────────────────────────────────────── */
+    .tab-bar {
+      display: flex;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+      padding-bottom: var(--safe-bottom);
+    }
+
+    .tab {
+      flex: 1;
+      padding: 10px 0;
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      transition: color 0.15s;
+      min-height: var(--tab-h);
+    }
+    .tab .tab-icon { font-size: 20px; line-height: 1; }
+    .tab.active { color: var(--accent); }
+    .tab:active { background: rgba(255,255,255,0.04); }
+
+    /* ── Sensor cards ─────────────────────────────────────────── */
+    #screen-sensors { padding: 12px; }
+
+    .sensors-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .sensor-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      transition: border-color 0.2s;
+    }
+    .sensor-card.enabled { border-color: var(--accent); }
+    .sensor-card.unavailable { opacity: 0.45; }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .sensor-name { font-size: 14px; font-weight: 600; color: var(--text); }
+
+    /* Toggle switch */
+    .toggle-wrap { position: relative; cursor: pointer; }
+    .toggle-wrap input { position: absolute; opacity: 0; width: 0; height: 0; }
+    .toggle-track {
+      display: block;
+      width: 44px; height: 26px;
+      background: var(--border);
+      border-radius: 13px;
+      position: relative;
+      transition: background 0.2s;
+    }
+    .toggle-thumb {
+      position: absolute;
+      top: 3px; left: 3px;
+      width: 20px; height: 20px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform 0.2s;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+    }
+    .toggle-wrap input:checked + .toggle-track { background: var(--accent); }
+    .toggle-wrap input:checked + .toggle-track .toggle-thumb { transform: translateX(18px); }
+
+    .card-body { display: flex; align-items: center; gap: 8px; }
+
+    .freq-select {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 5px 8px;
+      border-radius: 6px;
+      font-size: 12px;
+      min-width: 72px;
+    }
+
+    .sensor-unit { font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
+
+    .sensor-value {
+      margin-left: auto;
+      font-size: 12px;
+      font-family: 'SF Mono', 'Fira Mono', monospace;
+      color: var(--accent);
+      text-align: right;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .unavailable-badge { font-size: 10px; color: var(--text-muted); margin-top: 4px; }
+
+    /* ── Recording controls ───────────────────────────────────── */
+    .recording-controls { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+
+    #btn-record {
+      width: 100%;
+      padding: 16px;
+      border: none;
+      border-radius: 12px;
+      background: var(--green);
+      color: #fff;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+    }
+    #btn-record:active { transform: scale(0.97); }
+    #btn-record.recording { background: var(--red); }
+
+    .keepalive-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+    .keepalive-row label { display: flex; align-items: center; gap: 10px; cursor: pointer; flex: 1; }
+
+    /* ── Recording status bar ────────────────────────────────── */
+    .recording-status {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      background: rgba(231,76,60,0.1);
+      border: 1px solid rgba(231,76,60,0.3);
+      border-radius: 10px;
+      font-size: 13px;
+      font-family: 'SF Mono', 'Fira Mono', monospace;
+    }
+    .recording-status.hidden { display: none; }
+    .rec-dot { color: var(--red); animation: blink 1s step-end infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
+    #rec-timer { color: var(--text); font-weight: 600; }
+    #rec-samples { color: var(--text-muted); margin-left: auto; font-size: 11px; }
+
+    .background-info {
+      padding: 8px 12px;
+      background: rgba(74,144,217,0.06);
+      border: 1px solid rgba(74,144,217,0.15);
+      border-radius: 8px;
+      font-size: 11px;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    /* ── Timeline screen ─────────────────────────────────────── */
+    #screen-timeline { padding: 8px 0; }
+
+    .chart-wrap { background: var(--bg); margin-bottom: 2px; }
+
+    .chart-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px 2px;
+      font-size: 11px;
+      color: var(--text-muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .series-dot { font-size: 10px; font-weight: 700; }
+
+    .sensor-canvas {
+      display: block;
+      width: 100%;
+      height: 120px;
+      background: var(--bg);
+    }
+
+    #no-sensors-msg {
+      padding: 48px 24px;
+      text-align: center;
+      color: var(--text-muted);
+    }
+
+    /* ── Sessions screen ─────────────────────────────────────── */
+    #screen-sessions { padding: 12px; }
+
+    .sessions-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .sessions-header h2 { font-size: 18px; font-weight: 700; }
+
+    .session-item {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin-bottom: 8px;
+    }
+    .session-item.status-interrupted { border-color: var(--yellow); }
+    .session-item.status-completed { border-color: var(--border); }
+
+    .session-meta { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+    .session-date { font-size: 13px; font-weight: 600; }
+    .session-status {
+      font-size: 11px;
+      color: var(--text-muted);
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: var(--bg);
+    }
+    .status-interrupted .session-status { color: var(--yellow); }
+    .status-completed .session-status { color: var(--green); }
+
+    .session-detail { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
+
+    .session-actions { display: flex; gap: 8px; }
+
+    .btn-sm {
+      padding: 7px 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-sm:active { background: var(--border); }
+    .btn-export { border-color: var(--accent); color: var(--accent); }
+    .btn-delete { border-color: rgba(231,76,60,0.4); color: var(--red); }
+
+    #no-sessions-msg { padding: 48px 24px; text-align: center; color: var(--text-muted); }
+
+    /* ── Toast ───────────────────────────────────────────────── */
+    #toast {
+      position: fixed;
+      bottom: calc(var(--tab-h) + var(--safe-bottom) + 12px);
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: rgba(30,30,60,0.95);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 10px 18px;
+      border-radius: 20px;
+      font-size: 13px;
+      max-width: 90vw;
+      text-align: center;
+      opacity: 0;
+      transition: opacity 0.2s, transform 0.2s;
+      pointer-events: none;
+      z-index: 999;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+    #toast.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    body.recording .app-header { background: rgba(26,10,10,0.9); }
+
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  </style>
+</head>
+<body>
+
+  <header class="app-header">
+    <svg class="logo" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <polyline points="2,12 4,12 6,5 8,19 10,9 12,15 14,7 16,17 18,12 22,12"
+        stroke="#4a90d9" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <h1>SensorLog</h1>
+    <span class="header-badge">PWA</span>
+    <a href="../" class="home-link" title="Back">←</a>
+  </header>
+
+  <div class="screens">
+
+    <!-- ── Sensors ─────────────────────────────────── -->
+    <div id="screen-sensors" class="screen active">
+      <div class="sensors-list" id="sensors-list"></div>
+
+      <div class="recording-controls">
+        <div class="recording-status hidden" id="recording-status">
+          <span class="rec-dot">●</span>
+          <span id="rec-timer">00:00:00</span>
+          <span id="rec-samples">0 samples</span>
+        </div>
+
+        <button id="btn-record">⏺ RECORD</button>
+
+        <div class="keepalive-row">
+          <label>
+            <div class="toggle-wrap">
+              <input type="checkbox" id="chk-keepalive">
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </div>
+            Keep screen active
+          </label>
+        </div>
+
+        <div class="background-info">
+          For continuous recording, keep the app visible and lower screen brightness.<br>
+          <strong>Android:</strong> Enable "Keep screen active" for wake lock + silent audio background trick.<br>
+          <strong>iOS:</strong> Wake lock only — keep the app on screen.
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Timeline ────────────────────────────────── -->
+    <div id="screen-timeline" class="screen">
+      <div id="charts-container"></div>
+      <p id="no-sensors-msg">Start recording to see live data</p>
+    </div>
+
+    <!-- ── Sessions ────────────────────────────────── -->
+    <div id="screen-sessions" class="screen">
+      <div class="sessions-header"><h2>Sessions</h2></div>
+      <div id="sessions-list"></div>
+      <p id="no-sessions-msg">No sessions recorded yet</p>
+    </div>
+
+  </div>
+
+  <nav class="tab-bar">
+    <button class="tab active" data-screen="sensors">
+      <span class="tab-icon">📡</span>Sensors
+    </button>
+    <button class="tab" data-screen="timeline">
+      <span class="tab-icon">📈</span>Timeline
+    </button>
+    <button class="tab" data-screen="sessions">
+      <span class="tab-icon">🗂</span>Sessions
+    </button>
+  </nav>
+
+  <div id="toast"></div>
+  <script src="app.js"></script>
+</body>
+</html>

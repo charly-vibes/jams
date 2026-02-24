@@ -1,0 +1,24 @@
+{
+  "name": "SensorLog",
+  "short_name": "SensorLog",
+  "description": "Crash-resilient sensor logger for smartphones. Records accelerometer, gyroscope, GPS and more with OPFS persistence.",
+  "start_url": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#1a1a2e",
+  "background_color": "#0d0d1a",
+  "icons": [
+    {
+      "src": "icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
