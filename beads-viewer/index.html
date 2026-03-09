@@ -794,6 +794,69 @@
     from { transform: translateY(20px); opacity: 0; }
     to { transform: translateY(0); opacity: 1; }
   }
+
+  /* ── FRESHNESS BAR ── */
+  .freshness-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 16px;
+    font-size: .72rem;
+    border-bottom: 1px solid var(--border);
+    gap: 8px;
+  }
+  .freshness-fresh { color: var(--success); }
+  .freshness-aging { color: var(--warning); }
+  .freshness-stale { color: var(--error); }
+  .freshness-hint-btn {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: .68rem;
+    color: var(--text-muted);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all .2s;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .freshness-hint-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ── SHARE BUTTON ── */
+  .share-btn {
+    background: none;
+    border: 1.5px solid var(--border);
+    border-radius: 7px;
+    padding: 7px 12px;
+    color: var(--text-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: .78rem;
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 500;
+    transition: all .2s;
+    white-space: nowrap;
+  }
+  .share-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+
+  /* ── BACKUP ITEMS ── */
+  .backup-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 0;
+    font-size: .75rem;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border-light);
+    cursor: pointer;
+    transition: color .2s;
+  }
+  .backup-item:hover { color: var(--accent); }
+  .backup-item:last-child { border-bottom: none; }
+  .backup-size { font-size: .68rem; color: var(--text-light); }
 </style>
 </head>
 <body>
@@ -823,6 +886,10 @@
       Graph
     </button>
   </div>
+  <button class="share-btn" id="shareBtn" style="display:none" onclick="showShareModal()" title="Copy shareable link / README badge">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+    Share
+  </button>
   <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
     <svg class="icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
     <svg class="icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
@@ -854,6 +921,11 @@
         <span class="stat-value" id="closedCount">0</span>
         <span>closed</span>
       </div>
+    </div>
+
+    <div class="freshness-bar" id="freshnessBar" style="display:none">
+      <span id="freshnessLabel"></span>
+      <button class="freshness-hint-btn" onclick="showExportHint()">How to update</button>
     </div>
 
     <div class="search-wrap">
@@ -889,6 +961,11 @@
         <button class="filter-btn" data-filter="priority" data-value="2" onclick="toggleFilter(this)">P2</button>
         <button class="filter-btn" data-filter="priority" data-value="3" onclick="toggleFilter(this)">P3</button>
       </div>
+    </div>
+
+    <div class="sidebar-section" id="backupsSection" style="display:none">
+      <div class="sidebar-label">Backups</div>
+      <div id="backupsList"></div>
     </div>
 
     <div id="issueListContainer">
@@ -1047,8 +1124,12 @@ async function loadRepo() {
   parseIssues(content);
   updateURL();
 
-  // Fetch branches in background
+  // Show share button
+  document.getElementById('shareBtn').style.display = '';
+
+  // Fetch branches and check backups in background
   fetchBranches();
+  checkBackups();
 
   hideLoading();
 }
@@ -1154,6 +1235,7 @@ function parseIssues(content) {
 
   filteredIssues = allIssues;
   renderStats();
+  computeFreshness();
   renderIssueList();
 
   // Show view toggle
@@ -1838,6 +1920,136 @@ function applyGraphFocus() {
     } else {
       edge.classList.add('dimmed');
     }
+  });
+}
+
+// ── Data Freshness ──
+function computeFreshness() {
+  if (!allIssues.length) return;
+
+  const latest = allIssues.reduce((max, i) => {
+    const t = new Date(i.updated_at || i.created_at);
+    return t > max ? t : max;
+  }, new Date(0));
+
+  const ageDays = Math.floor((Date.now() - latest) / (1000 * 60 * 60 * 24));
+  const bar = document.getElementById('freshnessBar');
+  const label = document.getElementById('freshnessLabel');
+
+  let cls, text;
+  if (ageDays < 1) {
+    cls = 'freshness-fresh'; text = 'Updated today';
+  } else if (ageDays === 1) {
+    cls = 'freshness-fresh'; text = 'Updated yesterday';
+  } else if (ageDays < 7) {
+    cls = 'freshness-fresh'; text = `Updated ${ageDays} days ago`;
+  } else if (ageDays < 30) {
+    cls = 'freshness-aging'; text = `Last updated ${ageDays} days ago`;
+  } else {
+    const weeks = Math.round(ageDays / 7);
+    cls = 'freshness-stale'; text = `Stale — last updated ${weeks} week${weeks > 1 ? 's' : ''} ago`;
+  }
+
+  label.innerHTML = `<span class="${cls}">${text}</span>`;
+  bar.style.display = '';
+}
+
+function showExportHint() {
+  const repo = repoOwner + '/' + repoName;
+  document.getElementById('modalTitle').textContent = 'Refresh issues from Dolt DB';
+  document.getElementById('modalMeta').innerHTML = '';
+  document.getElementById('modalBody').innerHTML = `
+    <p style="margin-bottom:16px;color:var(--text-muted)">The <code style="font-family:monospace;background:var(--bg-sidebar);padding:2px 5px;border-radius:3px">.beads/issues.jsonl</code> file in <strong>${repo}</strong> may be outdated. To refresh it, export the latest data from the Dolt database:</p>
+    <pre style="background:var(--bg-sidebar);border:1px solid var(--border);border-radius:8px;padding:14px 16px;font-family:'JetBrains Mono',monospace;font-size:.82rem;overflow-x:auto;margin-bottom:16px">bd export</pre>
+    <p style="color:var(--text-muted);font-size:.85rem">This writes all issues to <code style="font-family:monospace;background:var(--bg-sidebar);padding:2px 5px;border-radius:3px">.beads/issues.jsonl</code>. Commit and push the file to see the updated data here.</p>
+    <p style="color:var(--text-muted);font-size:.85rem;margin-top:10px">To export to a specific file:</p>
+    <pre style="background:var(--bg-sidebar);border:1px solid var(--border);border-radius:8px;padding:14px 16px;font-family:'JetBrains Mono',monospace;font-size:.82rem;overflow-x:auto">bd export --output .beads/issues.jsonl</pre>
+  `;
+  document.getElementById('modal').classList.add('show');
+  document.body.style.overflow = 'hidden';
+}
+
+// ── Backups ──
+async function checkBackups() {
+  try {
+    const res = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/.beads/backups?ref=${repoBranch}`);
+    if (!res.ok) return;
+    const files = await res.json();
+    if (!Array.isArray(files) || !files.length) return;
+
+    const section = document.getElementById('backupsSection');
+    const list = document.getElementById('backupsList');
+
+    list.innerHTML = '';
+    files.sort((a, b) => b.name.localeCompare(a.name)).forEach(f => {
+      const item = document.createElement('div');
+      item.className = 'backup-item';
+      const sizeKb = f.size ? (f.size / 1024).toFixed(1) + ' KB' : '';
+      item.innerHTML = `<span>${f.name}</span><span class="backup-size">${sizeKb}</span>`;
+      item.title = `Load backup: ${f.name}`;
+      item.onclick = () => loadBackup(f.download_url, f.name);
+      list.appendChild(item);
+    });
+
+    section.style.display = '';
+  } catch (e) {
+    console.error('Failed to check backups:', e);
+  }
+}
+
+async function loadBackup(url, name) {
+  showLoading(`Loading backup ${name}...`);
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Failed to fetch backup');
+    const content = await res.text();
+    parseIssues(content);
+    showToast(`Loaded backup: ${name}`);
+  } catch (e) {
+    showToast('Failed to load backup');
+  }
+  hideLoading();
+}
+
+// ── Share / README link ──
+function showShareModal() {
+  const url = window.location.href;
+  const repo = repoOwner + '/' + repoName;
+  const baseUrl = window.location.origin + window.location.pathname;
+  const repoUrl = baseUrl + '?repo=' + encodeURIComponent(repo);
+
+  document.getElementById('modalTitle').textContent = 'Share this view';
+  document.getElementById('modalMeta').innerHTML = '';
+  document.getElementById('modalBody').innerHTML = `
+    <p style="margin-bottom:12px;color:var(--text-muted)">Direct link to this view (current issue + branch):</p>
+    <div style="display:flex;gap:8px;margin-bottom:20px">
+      <input id="shareLinkInput" type="text" value="${escapeHtml(url)}" readonly
+        style="flex:1;padding:9px 12px;border:1.5px solid var(--border);border-radius:7px;font-family:'JetBrains Mono',monospace;font-size:.76rem;background:var(--bg-sidebar);color:var(--text);outline:none">
+      <button onclick="copyText('shareLinkInput')" style="padding:9px 16px;background:var(--accent);color:#fff;border:none;border-radius:7px;cursor:pointer;font-size:.8rem;font-weight:500;white-space:nowrap">Copy</button>
+    </div>
+
+    <p style="margin-bottom:12px;color:var(--text-muted)">Add to your README to let anyone browse issues:</p>
+    <pre id="readmeBadge" style="background:var(--bg-sidebar);border:1px solid var(--border);border-radius:8px;padding:12px 16px;font-family:'JetBrains Mono',monospace;font-size:.76rem;overflow-x:auto;margin-bottom:8px;white-space:pre-wrap">[View Issues in BeadsView](${repoUrl})</pre>
+    <button onclick="copyText('readmeBadge')" style="padding:7px 14px;background:none;border:1.5px solid var(--border);border-radius:7px;cursor:pointer;font-size:.76rem;color:var(--text-muted);font-family:'DM Sans',sans-serif;transition:all .2s"
+      onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'"
+      onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">Copy markdown</button>
+  `;
+  document.getElementById('modal').classList.add('show');
+  document.body.style.overflow = 'hidden';
+}
+
+function copyText(elementId) {
+  const el = document.getElementById(elementId);
+  const text = el.tagName === 'INPUT' ? el.value : el.textContent;
+  navigator.clipboard.writeText(text).then(() => showToast('Copied!')).catch(() => {
+    // Fallback
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showToast('Copied!');
   });
 }
 
