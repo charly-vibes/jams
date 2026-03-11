@@ -1,0 +1,1090 @@
+// ═══════════════════════════════════════════════════════
+//  Marginalia — Book Notes PWA
+//  Vanilla JS • IndexedDB • Tesseract.js OCR
+// ═══════════════════════════════════════════════════════
+
+const DB_NAME = 'marginalia';
+const DB_VERSION = 1;
+
+// ─── State ───
+const state = {
+  db: null,
+  books: [],
+  currentBookId: null,
+  captures: [],        // { id, blob, url, ocrText, ocrStatus }
+  captureMode: 'batch', // 'batch' | 'single'
+  ocrWorker: null,
+  ocrReady: false,
+  activeView: 'books',
+  activeFilter: 'all',
+  searchQuery: '',
+};
+
+// ═══════════════════════════════════════════════════════
+//  DATABASE
+// ═══════════════════════════════════════════════════════
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains('books')) {
+        const bookStore = db.createObjectStore('books', { keyPath: 'id' });
+        bookStore.createIndex('title', 'title', { unique: false });
+      }
+      if (!db.objectStoreNames.contains('notes')) {
+        const noteStore = db.createObjectStore('notes', { keyPath: 'id' });
+        noteStore.createIndex('bookId', 'bookId', { unique: false });
+        noteStore.createIndex('highlight', 'highlight', { unique: false });
+      }
+      if (!db.objectStoreNames.contains('photos')) {
+        db.createObjectStore('photos', { keyPath: 'id' });
+      }
+    };
+    req.onsuccess = (e) => resolve(e.target.result);
+    req.onerror = (e) => reject(e.target.error);
+  });
+}
+
+function dbTx(storeName, mode = 'readonly') {
+  const tx = state.db.transaction(storeName, mode);
+  return tx.objectStore(storeName);
+}
+
+function dbGetAll(storeName) {
+  return new Promise((resolve, reject) => {
+    const req = dbTx(storeName).getAll();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function dbPut(storeName, data) {
+  return new Promise((resolve, reject) => {
+    const req = dbTx(storeName, 'readwrite').put(data);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function dbDelete(storeName, key) {
+  return new Promise((resolve, reject) => {
+    const req = dbTx(storeName, 'readwrite').delete(key);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function dbGetByIndex(storeName, indexName, value) {
+  return new Promise((resolve, reject) => {
+    const store = dbTx(storeName);
+    const idx = store.index(indexName);
+    const req = idx.getAll(value);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+// ═══════════════════════════════════════════════════════
+//  OCR
+// ═══════════════════════════════════════════════════════
+
+async function initOCR() {
+  if (state.ocrReady) return;
+  try {
+    state.ocrWorker = await Tesseract.createWorker('eng', 1, {
+      logger: (m) => {
+        if (m.status === 'recognizing text') {
+          updateOCRProgress(m.progress);
+        }
+      },
+    });
+    state.ocrReady = true;
+  } catch (err) {
+    console.error('OCR init failed:', err);
+    showToast('OCR engine failed to load');
+  }
+}
+
+function updateOCRProgress(progress) {
+  const bar = document.querySelector('.ocr-progress-fill');
+  if (bar) bar.style.width = `${Math.round(progress * 100)}%`;
+}
+
+async function runOCR(imageBlob) {
+  if (!state.ocrReady) await initOCR();
+  const result = await state.ocrWorker.recognize(imageBlob);
+  return result.data.text.trim();
+}
+
+// ═══════════════════════════════════════════════════════
+//  HELPERS
+// ═══════════════════════════════════════════════════════
+
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+function formatDate(ts) {
+  return new Date(ts).toLocaleDateString('en-GB', {
+    day: 'numeric', month: 'short', year: 'numeric'
+  });
+}
+
+function showToast(msg) {
+  const existing = document.querySelector('.toast');
+  if (existing) existing.remove();
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2600);
+}
+
+function $(sel) { return document.querySelector(sel); }
+function $$(sel) { return document.querySelectorAll(sel); }
+
+// ═══════════════════════════════════════════════════════
+//  RENDERING
+// ═══════════════════════════════════════════════════════
+
+function switchView(view) {
+  state.activeView = view;
+  $$('.view').forEach(v => v.classList.remove('active'));
+  $(`.view[data-view="${view}"]`).classList.add('active');
+  $$('nav.tabs button').forEach(b => b.classList.remove('active'));
+  $(`nav.tabs button[data-tab="${view}"]`)?.classList.add('active');
+
+  // Show/hide FAB
+  const fab = $('.fab');
+  if (fab) {
+    fab.style.display = (view === 'books' || view === 'book-detail') ? 'flex' : 'none';
+    fab.onclick = view === 'book-detail' ? () => openCaptureForBook() : () => openNewBookModal();
+  }
+}
+
+async function renderBooks() {
+  state.books = await dbGetAll('books');
+  state.books.sort((a, b) => b.updatedAt - a.updatedAt);
+
+  const container = $('#books-list');
+  if (state.books.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">📚</div>
+        <p>No books yet. Tap + to add a book and start capturing your marginalia.</p>
+      </div>`;
+    return;
+  }
+
+  // Count notes per book
+  const allNotes = await dbGetAll('notes');
+  const countMap = {};
+  allNotes.forEach(n => {
+    countMap[n.bookId] = (countMap[n.bookId] || 0) + 1;
+  });
+
+  container.innerHTML = state.books.map(b => `
+    <div class="book-card" data-id="${b.id}">
+      <button class="delete-book" data-id="${b.id}" title="Delete book">×</button>
+      <h3>${esc(b.title)}</h3>
+      <div class="book-author">${esc(b.author || 'Unknown author')}</div>
+      <div class="book-meta">
+        <span class="note-count">${countMap[b.id] || 0} notes</span>
+        <span>${formatDate(b.updatedAt)}</span>
+      </div>
+    </div>
+  `).join('');
+
+  container.querySelectorAll('.book-card').forEach(card => {
+    card.addEventListener('click', (e) => {
+      if (e.target.classList.contains('delete-book')) return;
+      openBookDetail(card.dataset.id);
+    });
+  });
+
+  container.querySelectorAll('.delete-book').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (confirm('Delete this book and all its notes?')) {
+        await deleteBook(btn.dataset.id);
+      }
+    });
+  });
+}
+
+async function deleteBook(bookId) {
+  await dbDelete('books', bookId);
+  const notes = await dbGetByIndex('notes', 'bookId', bookId);
+  for (const n of notes) {
+    if (n.photoId) await dbDelete('photos', n.photoId);
+    await dbDelete('notes', n.id);
+  }
+  showToast('Book deleted');
+  renderBooks();
+}
+
+async function openBookDetail(bookId) {
+  state.currentBookId = bookId;
+  const book = state.books.find(b => b.id === bookId);
+  if (!book) return;
+
+  const notes = await dbGetByIndex('notes', 'bookId', bookId);
+  notes.sort((a, b) => (a.pageNum || 0) - (b.pageNum || 0));
+
+  const detailView = $('.view[data-view="book-detail"]');
+  detailView.innerHTML = `
+    <div class="book-detail-header">
+      <button class="back-btn" id="back-to-books">←</button>
+      <h2>${esc(book.title)}</h2>
+      <button class="btn btn-sm btn-secondary" id="export-book-btn">Export .md</button>
+    </div>
+
+    <div class="search-bar">
+      <span class="search-icon">🔍</span>
+      <input type="text" placeholder="Search notes..." id="note-search" />
+    </div>
+
+    <div class="filter-chips">
+      <button class="filter-chip active" data-filter="all">All</button>
+      <button class="filter-chip" data-filter="note">Notes</button>
+      <button class="filter-chip" data-filter="important">Important</button>
+      <button class="filter-chip" data-filter="question">Questions</button>
+      <button class="filter-chip" data-filter="idea">Ideas</button>
+      <button class="filter-chip" data-filter="quote">Quotes</button>
+    </div>
+
+    <div id="notes-list">${renderNotes(notes)}</div>
+  `;
+
+  $('#back-to-books').onclick = () => {
+    switchView('books');
+    renderBooks();
+  };
+
+  $('#export-book-btn').onclick = () => exportBook(book, notes);
+
+  $('#note-search').oninput = (e) => {
+    state.searchQuery = e.target.value.toLowerCase();
+    filterAndRenderNotes(notes);
+  };
+
+  detailView.querySelectorAll('.filter-chip').forEach(chip => {
+    chip.onclick = () => {
+      detailView.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      state.activeFilter = chip.dataset.filter;
+      filterAndRenderNotes(notes);
+    };
+  });
+
+  bindNoteActions(notes);
+  switchView('book-detail');
+}
+
+function filterAndRenderNotes(notes) {
+  let filtered = notes;
+  if (state.activeFilter !== 'all') {
+    filtered = filtered.filter(n => n.highlight === state.activeFilter);
+  }
+  if (state.searchQuery) {
+    filtered = filtered.filter(n =>
+      (n.text || '').toLowerCase().includes(state.searchQuery) ||
+      (n.tags || []).some(t => t.toLowerCase().includes(state.searchQuery))
+    );
+  }
+  $('#notes-list').innerHTML = renderNotes(filtered);
+  bindNoteActions(filtered);
+}
+
+function renderNotes(notes) {
+  if (notes.length === 0) {
+    return `<div class="empty-state">
+      <div class="empty-icon">📝</div>
+      <p>No notes yet. Capture some pages to get started.</p>
+    </div>`;
+  }
+
+  return notes.map(n => `
+    <div class="note-card highlight-${n.highlight || 'note'}" data-id="${n.id}">
+      <div class="note-text">${esc(n.text || '(no text extracted)')}</div>
+      ${n.pageNum ? `<div class="note-page">p. ${n.pageNum}</div>` : ''}
+      ${(n.tags && n.tags.length) ? `
+        <div class="note-tags">
+          ${n.tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}
+        </div>` : ''}
+      <div class="note-actions">
+        <button data-action="edit" data-id="${n.id}">Edit</button>
+        <button data-action="delete" data-id="${n.id}">Delete</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function bindNoteActions(notes) {
+  $$('.note-actions button').forEach(btn => {
+    btn.onclick = async () => {
+      const noteId = btn.dataset.id;
+      const note = notes.find(n => n.id === noteId);
+      if (!note) return;
+
+      if (btn.dataset.action === 'delete') {
+        if (confirm('Delete this note?')) {
+          if (note.photoId) await dbDelete('photos', note.photoId);
+          await dbDelete('notes', noteId);
+          showToast('Note deleted');
+          openBookDetail(state.currentBookId);
+        }
+      } else if (btn.dataset.action === 'edit') {
+        openEditNoteModal(note);
+      }
+    };
+  });
+}
+
+// ═══════════════════════════════════════════════════════
+//  CAPTURE
+// ═══════════════════════════════════════════════════════
+
+function openCaptureForBook() {
+  state.captures = [];
+  renderCaptureView();
+  switchView('capture');
+}
+
+function renderCaptureView() {
+  const view = $('.view[data-view="capture"]');
+  view.innerHTML = `
+    <div class="capture-header">
+      <h2>Capture Pages</h2>
+      <div class="mode-toggle">
+        <button class="${state.captureMode === 'batch' ? 'active' : ''}" data-mode="batch">Batch</button>
+        <button class="${state.captureMode === 'single' ? 'active' : ''}" data-mode="single">Single</button>
+      </div>
+    </div>
+
+    <div class="camera-zone" id="camera-zone">
+      <div class="camera-icon">📷</div>
+      <p>Tap to capture or select photos</p>
+      <input type="file" id="photo-input" accept="image/*" capture="environment" ${state.captureMode === 'batch' ? 'multiple' : ''} />
+    </div>
+
+    <div class="captures-grid" id="captures-grid"></div>
+
+    ${state.captures.length > 0 ? `
+      <div class="ocr-loading" id="ocr-status" style="display:none">
+        <div class="spinner"></div>
+        <span>Running OCR...</span>
+        <div class="progress-bar" style="flex:1"><div class="progress-fill ocr-progress-fill" style="width:0%"></div></div>
+      </div>
+      <button class="btn btn-primary btn-full" id="process-captures">
+        Process ${state.captures.length} capture${state.captures.length > 1 ? 's' : ''} with OCR
+      </button>
+    ` : ''}
+  `;
+
+  // Mode toggle
+  view.querySelectorAll('.mode-toggle button').forEach(btn => {
+    btn.onclick = () => {
+      state.captureMode = btn.dataset.mode;
+      renderCaptureView();
+    };
+  });
+
+  // Camera zone click
+  $('#camera-zone').onclick = () => $('#photo-input').click();
+
+  // File input
+  $('#photo-input').onchange = async (e) => {
+    const files = Array.from(e.target.files);
+    for (const file of files) {
+      const url = URL.createObjectURL(file);
+      const capture = {
+        id: uid(),
+        blob: file,
+        url,
+        ocrText: '',
+        ocrStatus: 'pending'
+      };
+      state.captures.push(capture);
+
+      if (state.captureMode === 'single') {
+        // In single mode, process immediately
+        renderCaptureView();
+        await processSingleCapture(capture);
+        return;
+      }
+    }
+    renderCaptureView();
+  };
+
+  // Render thumbnails
+  renderThumbnails();
+
+  // Process button
+  const processBtn = $('#process-captures');
+  if (processBtn) {
+    processBtn.onclick = () => processBatchCaptures();
+  }
+}
+
+function renderThumbnails() {
+  const grid = $('#captures-grid');
+  if (!grid) return;
+  grid.innerHTML = state.captures.map(c => `
+    <div class="capture-thumb" data-id="${c.id}">
+      <img src="${c.url}" alt="Capture" />
+      <button class="remove-capture" data-id="${c.id}">×</button>
+      ${c.ocrStatus !== 'pending' ? `
+        <div class="ocr-status ${c.ocrStatus}">${
+          c.ocrStatus === 'processing' ? '...' :
+          c.ocrStatus === 'done' ? '✓' : '✗'
+        }</div>` : ''}
+    </div>
+  `).join('');
+
+  grid.querySelectorAll('.remove-capture').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      state.captures = state.captures.filter(c => c.id !== btn.dataset.id);
+      renderCaptureView();
+    };
+  });
+}
+
+async function processSingleCapture(capture) {
+  const status = $('#ocr-status');
+  if (status) status.style.display = 'flex';
+  capture.ocrStatus = 'processing';
+  renderThumbnails();
+
+  try {
+    const text = await runOCR(capture.blob);
+    capture.ocrText = text;
+    capture.ocrStatus = 'done';
+    renderThumbnails();
+    if (status) status.style.display = 'none';
+    openNewNoteModal(capture);
+  } catch (err) {
+    capture.ocrStatus = 'error';
+    renderThumbnails();
+    if (status) status.style.display = 'none';
+    showToast('OCR failed for this image');
+  }
+}
+
+async function processBatchCaptures() {
+  const pending = state.captures.filter(c => c.ocrStatus === 'pending');
+  if (pending.length === 0) {
+    openBatchReviewModal();
+    return;
+  }
+
+  const status = $('#ocr-status');
+  if (status) status.style.display = 'flex';
+
+  for (const capture of pending) {
+    capture.ocrStatus = 'processing';
+    renderThumbnails();
+    try {
+      const text = await runOCR(capture.blob);
+      capture.ocrText = text;
+      capture.ocrStatus = 'done';
+    } catch (err) {
+      capture.ocrStatus = 'error';
+    }
+    renderThumbnails();
+  }
+
+  if (status) status.style.display = 'none';
+  renderCaptureView();
+  openBatchReviewModal();
+}
+
+// ═══════════════════════════════════════════════════════
+//  MODALS
+// ═══════════════════════════════════════════════════════
+
+function openModal(html) {
+  closeModal();
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `<div class="modal">${html}</div>`;
+  document.body.appendChild(overlay);
+
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeModal();
+  });
+
+  return overlay;
+}
+
+function closeModal() {
+  const m = document.querySelector('.modal-overlay');
+  if (m) m.remove();
+}
+
+// ─── New Book Modal ───
+function openNewBookModal() {
+  const overlay = openModal(`
+    <button class="modal-close" id="modal-close">×</button>
+    <h2>New Book</h2>
+    <div class="form-group">
+      <label>Title</label>
+      <input type="text" id="book-title" placeholder="e.g. Thinking, Fast and Slow" autofocus />
+    </div>
+    <div class="form-group">
+      <label>Author</label>
+      <input type="text" id="book-author" placeholder="e.g. Daniel Kahneman" />
+    </div>
+    <button class="btn btn-primary btn-full" id="save-book">Add Book</button>
+  `);
+
+  overlay.querySelector('#modal-close').onclick = closeModal;
+  overlay.querySelector('#save-book').onclick = async () => {
+    const title = overlay.querySelector('#book-title').value.trim();
+    if (!title) { showToast('Please enter a title'); return; }
+    const book = {
+      id: uid(),
+      title,
+      author: overlay.querySelector('#book-author').value.trim(),
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    await dbPut('books', book);
+    closeModal();
+    showToast('Book added!');
+    renderBooks();
+  };
+}
+
+// ─── New Note Modal (after single capture OCR) ───
+function openNewNoteModal(capture) {
+  const overlay = openModal(`
+    <button class="modal-close" id="modal-close">×</button>
+    <h2>New Note</h2>
+
+    <div class="highlight-picker">
+      <button class="hl-note active" data-hl="note">Note</button>
+      <button class="hl-important" data-hl="important">Key</button>
+      <button class="hl-question" data-hl="question">?</button>
+      <button class="hl-idea" data-hl="idea">Idea</button>
+      <button class="hl-quote" data-hl="quote">Quote</button>
+    </div>
+
+    <div class="form-group">
+      <label>Extracted Text</label>
+      <textarea id="note-text">${esc(capture.ocrText)}</textarea>
+    </div>
+    <div class="form-group">
+      <label>Page Number</label>
+      <input type="number" id="note-page" placeholder="Optional" />
+    </div>
+    <div class="form-group">
+      <label>Tags (press Enter to add)</label>
+      <div class="tags-input-wrap" id="tags-wrap">
+        <input type="text" id="tag-input" placeholder="Add tag..." />
+      </div>
+    </div>
+    <button class="btn btn-primary btn-full" id="save-note">Save Note</button>
+  `);
+
+  let selectedHighlight = 'note';
+  let tags = [];
+
+  overlay.querySelector('#modal-close').onclick = closeModal;
+
+  // Highlight picker
+  overlay.querySelectorAll('.highlight-picker button').forEach(btn => {
+    btn.onclick = () => {
+      overlay.querySelectorAll('.highlight-picker button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      selectedHighlight = btn.dataset.hl;
+    };
+  });
+
+  // Tags
+  setupTagsInput(overlay, tags);
+
+  // Save
+  overlay.querySelector('#save-note').onclick = async () => {
+    const text = overlay.querySelector('#note-text').value.trim();
+    if (!text) { showToast('Please enter some text'); return; }
+
+    // Save photo
+    const photoId = uid();
+    const reader = new FileReader();
+    reader.onload = async () => {
+      await dbPut('photos', { id: photoId, data: reader.result });
+
+      const note = {
+        id: uid(),
+        bookId: state.currentBookId,
+        text,
+        highlight: selectedHighlight,
+        pageNum: overlay.querySelector('#note-page').value || null,
+        tags,
+        photoId,
+        createdAt: Date.now(),
+      };
+      await dbPut('notes', note);
+
+      // Update book timestamp
+      const book = state.books.find(b => b.id === state.currentBookId);
+      if (book) {
+        book.updatedAt = Date.now();
+        await dbPut('books', book);
+      }
+
+      closeModal();
+      showToast('Note saved!');
+      openBookDetail(state.currentBookId);
+    };
+    reader.readAsDataURL(capture.blob);
+  };
+}
+
+// ─── Batch Review Modal ───
+function openBatchReviewModal() {
+  const done = state.captures.filter(c => c.ocrStatus === 'done');
+  if (done.length === 0) {
+    showToast('No captures to review');
+    return;
+  }
+
+  let currentIdx = 0;
+  let notesData = done.map(c => ({
+    capture: c,
+    text: c.ocrText,
+    highlight: 'note',
+    pageNum: '',
+    tags: [],
+  }));
+
+  function renderReview() {
+    const nd = notesData[currentIdx];
+    const overlay = openModal(`
+      <button class="modal-close" id="modal-close">×</button>
+      <h2>Review ${currentIdx + 1} of ${done.length}</h2>
+
+      <div style="margin-bottom:12px;">
+        <img src="${nd.capture.url}" style="width:100%;max-height:180px;object-fit:contain;border-radius:var(--radius);background:#eee;" />
+      </div>
+
+      <div class="highlight-picker">
+        <button class="hl-note ${nd.highlight === 'note' ? 'active' : ''}" data-hl="note">Note</button>
+        <button class="hl-important ${nd.highlight === 'important' ? 'active' : ''}" data-hl="important">Key</button>
+        <button class="hl-question ${nd.highlight === 'question' ? 'active' : ''}" data-hl="question">?</button>
+        <button class="hl-idea ${nd.highlight === 'idea' ? 'active' : ''}" data-hl="idea">Idea</button>
+        <button class="hl-quote ${nd.highlight === 'quote' ? 'active' : ''}" data-hl="quote">Quote</button>
+      </div>
+
+      <div class="form-group">
+        <label>Extracted Text</label>
+        <textarea id="note-text">${esc(nd.text)}</textarea>
+      </div>
+      <div class="form-group">
+        <label>Page Number</label>
+        <input type="number" id="note-page" value="${nd.pageNum}" placeholder="Optional" />
+      </div>
+      <div class="form-group">
+        <label>Tags (press Enter to add)</label>
+        <div class="tags-input-wrap" id="tags-wrap">
+          ${nd.tags.map(t => `<span class="tag">${esc(t)} <span class="remove-tag" data-tag="${esc(t)}">×</span></span>`).join('')}
+          <input type="text" id="tag-input" placeholder="Add tag..." />
+        </div>
+      </div>
+
+      <div style="display:flex;gap:8px;">
+        ${currentIdx > 0 ? '<button class="btn btn-secondary" id="review-prev" style="flex:1">← Prev</button>' : ''}
+        <button class="btn btn-secondary" id="review-skip" style="flex:1">Skip</button>
+        ${currentIdx < done.length - 1
+          ? '<button class="btn btn-amber" id="review-next" style="flex:1">Next →</button>'
+          : '<button class="btn btn-primary" id="review-save-all" style="flex:1">Save All</button>'
+        }
+      </div>
+    `);
+
+    overlay.querySelector('#modal-close').onclick = closeModal;
+
+    // Highlight
+    overlay.querySelectorAll('.highlight-picker button').forEach(btn => {
+      btn.onclick = () => {
+        overlay.querySelectorAll('.highlight-picker button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        nd.highlight = btn.dataset.hl;
+      };
+    });
+
+    // Tags
+    setupTagsInput(overlay, nd.tags);
+
+    // Save current state on navigate
+    function saveCurrentState() {
+      nd.text = overlay.querySelector('#note-text').value;
+      nd.pageNum = overlay.querySelector('#note-page').value;
+    }
+
+    const prevBtn = overlay.querySelector('#review-prev');
+    if (prevBtn) prevBtn.onclick = () => { saveCurrentState(); currentIdx--; closeModal(); renderReview(); };
+
+    const skipBtn = overlay.querySelector('#review-skip');
+    skipBtn.onclick = () => {
+      notesData[currentIdx].skip = true;
+      if (currentIdx < done.length - 1) { currentIdx++; closeModal(); renderReview(); }
+      else { closeModal(); saveAllBatchNotes(notesData); }
+    };
+
+    const nextBtn = overlay.querySelector('#review-next');
+    if (nextBtn) nextBtn.onclick = () => { saveCurrentState(); currentIdx++; closeModal(); renderReview(); };
+
+    const saveAllBtn = overlay.querySelector('#review-save-all');
+    if (saveAllBtn) saveAllBtn.onclick = () => { saveCurrentState(); closeModal(); saveAllBatchNotes(notesData); };
+  }
+
+  renderReview();
+}
+
+async function saveAllBatchNotes(notesData) {
+  let saved = 0;
+  for (const nd of notesData) {
+    if (nd.skip) continue;
+    const text = nd.text.trim();
+    if (!text) continue;
+
+    // Save photo
+    const photoId = uid();
+    const dataUrl = await blobToDataURL(nd.capture.blob);
+    await dbPut('photos', { id: photoId, data: dataUrl });
+
+    const note = {
+      id: uid(),
+      bookId: state.currentBookId,
+      text,
+      highlight: nd.highlight,
+      pageNum: nd.pageNum || null,
+      tags: nd.tags,
+      photoId,
+      createdAt: Date.now(),
+    };
+    await dbPut('notes', note);
+    saved++;
+  }
+
+  // Update book timestamp
+  const book = state.books.find(b => b.id === state.currentBookId);
+  if (book) {
+    book.updatedAt = Date.now();
+    await dbPut('books', book);
+  }
+
+  state.captures = [];
+  showToast(`${saved} note${saved !== 1 ? 's' : ''} saved!`);
+  openBookDetail(state.currentBookId);
+}
+
+function blobToDataURL(blob) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.readAsDataURL(blob);
+  });
+}
+
+// ─── Edit Note Modal ───
+function openEditNoteModal(note) {
+  const tags = [...(note.tags || [])];
+  const overlay = openModal(`
+    <button class="modal-close" id="modal-close">×</button>
+    <h2>Edit Note</h2>
+
+    <div class="highlight-picker">
+      <button class="hl-note ${note.highlight === 'note' ? 'active' : ''}" data-hl="note">Note</button>
+      <button class="hl-important ${note.highlight === 'important' ? 'active' : ''}" data-hl="important">Key</button>
+      <button class="hl-question ${note.highlight === 'question' ? 'active' : ''}" data-hl="question">?</button>
+      <button class="hl-idea ${note.highlight === 'idea' ? 'active' : ''}" data-hl="idea">Idea</button>
+      <button class="hl-quote ${note.highlight === 'quote' ? 'active' : ''}" data-hl="quote">Quote</button>
+    </div>
+
+    <div class="form-group">
+      <label>Text</label>
+      <textarea id="note-text">${esc(note.text)}</textarea>
+    </div>
+    <div class="form-group">
+      <label>Page Number</label>
+      <input type="number" id="note-page" value="${note.pageNum || ''}" />
+    </div>
+    <div class="form-group">
+      <label>Tags (press Enter to add)</label>
+      <div class="tags-input-wrap" id="tags-wrap">
+        ${tags.map(t => `<span class="tag">${esc(t)} <span class="remove-tag" data-tag="${esc(t)}">×</span></span>`).join('')}
+        <input type="text" id="tag-input" placeholder="Add tag..." />
+      </div>
+    </div>
+    <button class="btn btn-primary btn-full" id="save-note">Update Note</button>
+  `);
+
+  let selectedHighlight = note.highlight || 'note';
+
+  overlay.querySelector('#modal-close').onclick = closeModal;
+
+  overlay.querySelectorAll('.highlight-picker button').forEach(btn => {
+    btn.onclick = () => {
+      overlay.querySelectorAll('.highlight-picker button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      selectedHighlight = btn.dataset.hl;
+    };
+  });
+
+  setupTagsInput(overlay, tags);
+
+  overlay.querySelector('#save-note').onclick = async () => {
+    note.text = overlay.querySelector('#note-text').value.trim();
+    note.highlight = selectedHighlight;
+    note.pageNum = overlay.querySelector('#note-page').value || null;
+    note.tags = tags;
+    await dbPut('notes', note);
+    closeModal();
+    showToast('Note updated');
+    openBookDetail(state.currentBookId);
+  };
+}
+
+// ─── Tags Input Helper ───
+function setupTagsInput(container, tags) {
+  const wrap = container.querySelector('#tags-wrap');
+  const input = container.querySelector('#tag-input');
+
+  // Remove existing tag handlers
+  wrap.querySelectorAll('.remove-tag').forEach(rt => {
+    rt.onclick = () => {
+      const tag = rt.dataset.tag;
+      const idx = tags.indexOf(tag);
+      if (idx > -1) tags.splice(idx, 1);
+      rt.parentElement.remove();
+    };
+  });
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const val = input.value.trim();
+      if (val && !tags.includes(val)) {
+        tags.push(val);
+        const span = document.createElement('span');
+        span.className = 'tag';
+        span.innerHTML = `${esc(val)} <span class="remove-tag" data-tag="${esc(val)}">×</span>`;
+        span.querySelector('.remove-tag').onclick = () => {
+          tags.splice(tags.indexOf(val), 1);
+          span.remove();
+        };
+        wrap.insertBefore(span, input);
+      }
+      input.value = '';
+    }
+  });
+
+  wrap.onclick = () => input.focus();
+}
+
+// ═══════════════════════════════════════════════════════
+//  EXPORT
+// ═══════════════════════════════════════════════════════
+
+function exportBook(book, notes) {
+  const highlightEmoji = {
+    note: '📝',
+    important: '🔴',
+    question: '❓',
+    idea: '💡',
+    quote: '💬',
+  };
+
+  let md = `# ${book.title}\n`;
+  if (book.author) md += `*${book.author}*\n`;
+  md += `\nExported from Marginalia — ${formatDate(Date.now())}\n\n---\n\n`;
+
+  // Group by highlight type
+  const grouped = {};
+  notes.forEach(n => {
+    const hl = n.highlight || 'note';
+    if (!grouped[hl]) grouped[hl] = [];
+    grouped[hl].push(n);
+  });
+
+  const order = ['important', 'quote', 'idea', 'question', 'note'];
+  for (const hl of order) {
+    if (!grouped[hl]) continue;
+    const emoji = highlightEmoji[hl] || '📝';
+    md += `## ${emoji} ${hl.charAt(0).toUpperCase() + hl.slice(1)}s\n\n`;
+    for (const n of grouped[hl]) {
+      md += `- ${n.text}`;
+      if (n.pageNum) md += ` *(p. ${n.pageNum})*`;
+      if (n.tags && n.tags.length) md += `  \n  Tags: ${n.tags.map(t => `#${t}`).join(' ')}`;
+      md += '\n\n';
+    }
+  }
+
+  // Show preview and download
+  const overlay = openModal(`
+    <button class="modal-close" id="modal-close">×</button>
+    <h2>Export to Markdown</h2>
+    <p style="font-size:0.85rem;color:var(--ink-muted);margin-bottom:12px;">
+      Ready for Obsidian. Copy or download below.
+    </p>
+    <div class="export-preview">${esc(md)}</div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-secondary" id="copy-md" style="flex:1">Copy to Clipboard</button>
+      <button class="btn btn-primary" id="download-md" style="flex:1">Download .md</button>
+    </div>
+  `);
+
+  overlay.querySelector('#modal-close').onclick = closeModal;
+
+  overlay.querySelector('#copy-md').onclick = async () => {
+    await navigator.clipboard.writeText(md);
+    showToast('Copied to clipboard!');
+  };
+
+  overlay.querySelector('#download-md').onclick = () => {
+    const blob = new Blob([md], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${book.title.replace(/[^a-zA-Z0-9 ]/g, '').replace(/\s+/g, '-')}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Downloading...');
+  };
+}
+
+// ═══════════════════════════════════════════════════════
+//  SETTINGS VIEW
+// ═══════════════════════════════════════════════════════
+
+function renderSettings() {
+  const view = $('.view[data-view="settings"]');
+  view.innerHTML = `
+    <h2 style="font-family:var(--font-display);margin-bottom:20px;">Settings</h2>
+
+    <div class="book-card" style="border-left-color:var(--sage);cursor:default;">
+      <h3>OCR Engine</h3>
+      <p style="font-size:0.85rem;color:var(--ink-muted);margin-top:4px;">
+        Tesseract.js v5 — runs entirely offline in your browser.
+        ${state.ocrReady ? '<span style="color:var(--sage);">● Ready</span>' : '<span style="color:var(--amber);">○ Will load on first use</span>'}
+      </p>
+      <button class="btn btn-sm btn-secondary" style="margin-top:10px;" id="preload-ocr">
+        ${state.ocrReady ? 'OCR Loaded ✓' : 'Pre-load OCR Engine'}
+      </button>
+    </div>
+
+    <div class="book-card" style="border-left-color:var(--danger);cursor:default;">
+      <h3>Data Management</h3>
+      <p style="font-size:0.85rem;color:var(--ink-muted);margin-top:4px;">
+        All data is stored locally in your browser using IndexedDB.
+      </p>
+      <div style="display:flex;gap:8px;margin-top:10px;">
+        <button class="btn btn-sm btn-secondary" id="export-all">Export All Data</button>
+        <button class="btn btn-sm btn-secondary" id="import-data">Import Data</button>
+        <input type="file" id="import-file" accept=".json" style="display:none" />
+      </div>
+    </div>
+
+    <div class="book-card" style="border-left-color:var(--ink-muted);cursor:default;">
+      <h3>About</h3>
+      <p style="font-size:0.85rem;color:var(--ink-muted);margin-top:4px;">
+        <strong>Marginalia</strong> — capture post-it notes from your books and transform them into structured, searchable knowledge.
+      </p>
+      <p style="font-size:0.8rem;color:var(--ink-muted);margin-top:6px;">
+        PWA • Offline-first • Obsidian-compatible
+      </p>
+    </div>
+  `;
+
+  const preloadBtn = view.querySelector('#preload-ocr');
+  preloadBtn.onclick = async () => {
+    preloadBtn.textContent = 'Loading...';
+    preloadBtn.disabled = true;
+    await initOCR();
+    preloadBtn.textContent = 'OCR Loaded ✓';
+  };
+
+  view.querySelector('#export-all').onclick = async () => {
+    const books = await dbGetAll('books');
+    const notes = await dbGetAll('notes');
+    const data = JSON.stringify({ books, notes, exportedAt: Date.now() }, null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `marginalia-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Exported!');
+  };
+
+  view.querySelector('#import-data').onclick = () => view.querySelector('#import-file').click();
+  view.querySelector('#import-file').onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      if (data.books) for (const b of data.books) await dbPut('books', b);
+      if (data.notes) for (const n of data.notes) await dbPut('notes', n);
+      showToast('Data imported!');
+      renderBooks();
+    } catch (err) {
+      showToast('Invalid backup file');
+    }
+  };
+}
+
+// ═══════════════════════════════════════════════════════
+//  ESCAPE HTML
+// ═══════════════════════════════════════════════════════
+
+function esc(str) {
+  if (!str) return '';
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// ═══════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════
+
+async function init() {
+  state.db = await openDB();
+
+  // Render books
+  await renderBooks();
+  renderSettings();
+
+  // Tab navigation
+  $$('nav.tabs button').forEach(btn => {
+    btn.onclick = () => {
+      const tab = btn.dataset.tab;
+      if (tab === 'books') {
+        state.currentBookId = null;
+        renderBooks();
+      }
+      switchView(tab);
+    };
+  });
+
+  // FAB
+  const fab = $('.fab');
+  fab.onclick = () => openNewBookModal();
+
+  switchView('books');
+
+  // Register service worker
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  }
+}
+
+document.addEventListener('DOMContentLoaded', init);

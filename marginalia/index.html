@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+  <meta name="theme-color" content="#c4956a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="description" content="Capture post-it notes from books and turn them into structured Obsidian notes">
+  <title>Marginalia — Book Notes</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📖</text></svg>">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a href="../" class="home-link">&larr;</a>
+  <div id="app">
+    <header>
+      <h1><em>Marginalia</em></h1>
+      <div class="subtitle">Book Notes &bull; Capture &bull; Remember</div>
+    </header>
+
+    <nav class="tabs">
+      <button data-tab="books" class="active">
+        <span class="tab-icon">📚</span> Books
+      </button>
+      <button data-tab="capture">
+        <span class="tab-icon">📷</span> Capture
+      </button>
+      <button data-tab="settings">
+        <span class="tab-icon">⚙</span> Settings
+      </button>
+    </nav>
+
+    <main>
+      <div class="view active" data-view="books">
+        <div id="books-list"></div>
+      </div>
+
+      <div class="view" data-view="book-detail"></div>
+
+      <div class="view" data-view="capture">
+        <div class="empty-state">
+          <div class="empty-icon">📷</div>
+          <p>Select a book first, then capture pages from it.</p>
+        </div>
+      </div>
+
+      <div class="view" data-view="settings"></div>
+    </main>
+
+    <button class="fab" title="Add">+</button>
+  </div>
+
+  <footer>
+    <a href="https://github.com/charly-vibes/jams/tree/main/marginalia" target="_blank" rel="noopener noreferrer">View source on GitHub</a>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

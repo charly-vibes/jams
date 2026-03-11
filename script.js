@@ -13,7 +13,8 @@ const APPS = [
     'idea-builder',
     'beads-viewer',
     'commit-insights',
-    'sensor-log'
+    'sensor-log',
+    'marginalia'
 ];
 
 document.addEventListener('DOMContentLoaded', async () => {

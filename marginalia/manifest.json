@@ -1,0 +1,22 @@
+{
+  "name": "Marginalia — Book Notes",
+  "short_name": "Marginalia",
+  "description": "Capture post-it notes from books and turn them into structured Obsidian notes",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#1a1612",
+  "theme_color": "#c4956a",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
