@@ -879,6 +879,29 @@ main::-webkit-scrollbar-thumb { background: var(--parchment-dark); border-radius
   opacity: 0.8;
 }
 
+/* ─── Crop Modal ─── */
+.crop-container {
+  touch-action: none;
+  overflow: hidden;
+  display: flex;
+  justify-content: center;
+  background: var(--parchment-dark);
+  border-radius: var(--radius);
+  margin-top: 8px;
+}
+
+.crop-container canvas {
+  display: block;
+  max-width: 100%;
+  cursor: crosshair;
+}
+
+.crop-hint {
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+  margin-bottom: 4px;
+}
+
 /* ─── Footer ─── */
 footer {
   text-align: center;

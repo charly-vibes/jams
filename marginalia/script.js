@@ -114,8 +114,245 @@ function updateOCRProgress(progress) {
 
 async function runOCR(imageBlob) {
   if (!state.ocrReady) await initOCR();
-  const result = await state.ocrWorker.recognize(imageBlob);
+  const preprocessed = await preprocessImage(imageBlob);
+  const result = await state.ocrWorker.recognize(preprocessed, { tessedit_pageseg_mode: '6' });
   return result.data.text.trim();
+}
+
+// ─── Image Preprocessing for OCR ───
+
+function preprocessImage(blob) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(blob);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      try {
+        const shorter = Math.min(img.naturalWidth, img.naturalHeight);
+        const scale = shorter < 1000 ? 2 : 1;
+        const w = img.naturalWidth * scale;
+        const h = img.naturalHeight * scale;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+
+        const imageData = ctx.getImageData(0, 0, w, h);
+        const data = imageData.data;
+
+        // Grayscale
+        const gray = new Uint8Array(w * h);
+        for (let i = 0; i < gray.length; i++) {
+          const j = i * 4;
+          gray[i] = Math.round(0.299 * data[j] + 0.587 * data[j + 1] + 0.114 * data[j + 2]);
+        }
+
+        // Auto-levels: find 1st/99th percentile
+        const hist = new Uint32Array(256);
+        for (let i = 0; i < gray.length; i++) hist[gray[i]]++;
+        const total = gray.length;
+        const loTarget = total * 0.01;
+        const hiTarget = total * 0.99;
+        let lo = 0, hi = 255, cumul = 0;
+        for (let v = 0; v < 256; v++) {
+          cumul += hist[v];
+          if (cumul >= loTarget) { lo = v; break; }
+        }
+        cumul = 0;
+        for (let v = 0; v < 256; v++) {
+          cumul += hist[v];
+          if (cumul >= hiTarget) { hi = v; break; }
+        }
+        const range = hi - lo || 1;
+        for (let i = 0; i < gray.length; i++) {
+          gray[i] = Math.max(0, Math.min(255, Math.round((gray[i] - lo) * 255 / range)));
+        }
+
+        // Adaptive threshold using integral image (summed area table)
+        const integral = new Float64Array(w * h);
+        for (let y = 0; y < h; y++) {
+          let rowSum = 0;
+          for (let x = 0; x < w; x++) {
+            rowSum += gray[y * w + x];
+            integral[y * w + x] = rowSum + (y > 0 ? integral[(y - 1) * w + x] : 0);
+          }
+        }
+
+        const halfWin = 7; // 15x15 window → half = 7
+        const offset = 10;
+        for (let y = 0; y < h; y++) {
+          for (let x = 0; x < w; x++) {
+            const y1 = Math.max(0, y - halfWin - 1);
+            const y2 = Math.min(h - 1, y + halfWin);
+            const x1 = Math.max(0, x - halfWin - 1);
+            const x2 = Math.min(w - 1, x + halfWin);
+
+            const A = (y1 > 0 && x1 > 0) ? integral[y1 * w + x1] : 0;
+            const B = (y1 > 0) ? integral[y1 * w + x2] : 0;
+            const C = (x1 > 0) ? integral[y2 * w + x1] : 0;
+            const D = integral[y2 * w + x2];
+
+            // Handle edge correctly: if y1=0 or x1=0 we use the row above y1
+            const count = (y2 - (y1 > 0 ? y1 : -1)) * (x2 - (x1 > 0 ? x1 : -1));
+            const mean = (D - B - C + A) / count;
+            const val = gray[y * w + x] > (mean - offset) ? 255 : 0;
+
+            const j = (y * w + x) * 4;
+            data[j] = data[j + 1] = data[j + 2] = val;
+            data[j + 3] = 255;
+          }
+        }
+
+        ctx.putImageData(imageData, 0, 0);
+        canvas.toBlob((result) => resolve(result), 'image/png');
+      } catch (err) {
+        reject(err);
+      }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Failed to load image')); };
+    img.src = url;
+  });
+}
+
+// ─── Crop UI ───
+
+function openCropModal(blob) {
+  return new Promise((resolve) => {
+    const imgUrl = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      const overlay = openModal(`
+        <button class="modal-close" id="crop-close">×</button>
+        <h2>Crop Text Region</h2>
+        <p class="crop-hint">Drag to select the text area, or skip to use the full image.</p>
+        <div class="crop-container" id="crop-container">
+          <canvas id="crop-canvas"></canvas>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px;">
+          <button class="btn btn-secondary" id="crop-skip" style="flex:1">Skip Crop</button>
+          <button class="btn btn-primary" id="crop-apply" style="flex:1">Crop & Process</button>
+        </div>
+      `);
+
+      const canvas = overlay.querySelector('#crop-canvas');
+      const container = overlay.querySelector('#crop-container');
+      const ctx = canvas.getContext('2d');
+
+      // Size canvas to fit container width, maintaining aspect ratio
+      const maxW = container.clientWidth || 400;
+      const ratio = img.naturalHeight / img.naturalWidth;
+      const dispW = Math.min(maxW, img.naturalWidth);
+      const dispH = Math.round(dispW * ratio);
+      canvas.width = dispW;
+      canvas.height = dispH;
+      canvas.style.width = dispW + 'px';
+      canvas.style.height = dispH + 'px';
+
+      ctx.drawImage(img, 0, 0, dispW, dispH);
+
+      let dragging = false;
+      let startX = 0, startY = 0, curX = 0, curY = 0;
+      let hasCrop = false;
+
+      function drawOverlay() {
+        ctx.clearRect(0, 0, dispW, dispH);
+        ctx.drawImage(img, 0, 0, dispW, dispH);
+        if (!hasCrop) return;
+
+        const rx = Math.min(startX, curX);
+        const ry = Math.min(startY, curY);
+        const rw = Math.abs(curX - startX);
+        const rh = Math.abs(curY - startY);
+
+        // Semi-transparent overlay outside crop
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+        ctx.fillRect(0, 0, dispW, ry);
+        ctx.fillRect(0, ry, rx, rh);
+        ctx.fillRect(rx + rw, ry, dispW - rx - rw, rh);
+        ctx.fillRect(0, ry + rh, dispW, dispH - ry - rh);
+
+        // Border on crop rect
+        ctx.strokeStyle = '#c4956a';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(rx, ry, rw, rh);
+      }
+
+      function getPos(e) {
+        const rect = canvas.getBoundingClientRect();
+        const clientX = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
+        const clientY = e.clientY ?? e.touches?.[0]?.clientY ?? 0;
+        return {
+          x: Math.max(0, Math.min(dispW, clientX - rect.left)),
+          y: Math.max(0, Math.min(dispH, clientY - rect.top))
+        };
+      }
+
+      canvas.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        dragging = true;
+        hasCrop = true;
+        const pos = getPos(e);
+        startX = curX = pos.x;
+        startY = curY = pos.y;
+        canvas.setPointerCapture(e.pointerId);
+      });
+
+      canvas.addEventListener('pointermove', (e) => {
+        if (!dragging) return;
+        e.preventDefault();
+        const pos = getPos(e);
+        curX = pos.x;
+        curY = pos.y;
+        drawOverlay();
+      });
+
+      canvas.addEventListener('pointerup', (e) => {
+        dragging = false;
+        drawOverlay();
+      });
+
+      function finish(cropped) {
+        URL.revokeObjectURL(imgUrl);
+        closeModal();
+        resolve(cropped);
+      }
+
+      overlay.querySelector('#crop-close').onclick = () => finish(blob);
+      overlay.querySelector('#crop-skip').onclick = () => finish(blob);
+
+      overlay.querySelector('#crop-apply').onclick = () => {
+        const rw = Math.abs(curX - startX);
+        const rh = Math.abs(curY - startY);
+        // Zero-area = skip
+        if (!hasCrop || rw < 5 || rh < 5) {
+          finish(blob);
+          return;
+        }
+
+        const rx = Math.min(startX, curX);
+        const ry = Math.min(startY, curY);
+
+        // Scale from display coords back to natural image coords
+        const scaleX = img.naturalWidth / dispW;
+        const scaleY = img.naturalHeight / dispH;
+        const sx = Math.round(rx * scaleX);
+        const sy = Math.round(ry * scaleY);
+        const sw = Math.round(rw * scaleX);
+        const sh = Math.round(rh * scaleY);
+
+        const cropCanvas = document.createElement('canvas');
+        cropCanvas.width = sw;
+        cropCanvas.height = sh;
+        const cropCtx = cropCanvas.getContext('2d');
+        cropCtx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+        cropCanvas.toBlob((croppedBlob) => finish(croppedBlob), 'image/png');
+      };
+    };
+    img.onerror = () => { URL.revokeObjectURL(imgUrl); resolve(blob); };
+    img.src = imgUrl;
+  });
 }
 
 // ═══════════════════════════════════════════════════════
@@ -227,6 +464,8 @@ async function deleteBook(bookId) {
 
 async function openBookDetail(bookId) {
   state.currentBookId = bookId;
+  state.activeFilter = 'all';
+  state.searchQuery = '';
   const book = state.books.find(b => b.id === bookId);
   if (!book) return;
 
@@ -347,7 +586,14 @@ function bindNoteActions(notes) {
 //  CAPTURE
 // ═══════════════════════════════════════════════════════
 
+function revokeCaptures() {
+  for (const c of state.captures) {
+    if (c.url) URL.revokeObjectURL(c.url);
+  }
+}
+
 function openCaptureForBook() {
+  revokeCaptures();
   state.captures = [];
   renderCaptureView();
   switchView('capture');
@@ -410,8 +656,9 @@ function renderCaptureView() {
       state.captures.push(capture);
 
       if (state.captureMode === 'single') {
-        // In single mode, process immediately
+        // In single mode, crop then process
         renderCaptureView();
+        capture.blob = await openCropModal(capture.blob);
         await processSingleCapture(capture);
         return;
       }
@@ -447,6 +694,8 @@ function renderThumbnails() {
   grid.querySelectorAll('.remove-capture').forEach(btn => {
     btn.onclick = (e) => {
       e.stopPropagation();
+      const removed = state.captures.find(c => c.id === btn.dataset.id);
+      if (removed && removed.url) URL.revokeObjectURL(removed.url);
       state.captures = state.captures.filter(c => c.id !== btn.dataset.id);
       renderCaptureView();
     };
@@ -485,6 +734,7 @@ async function processBatchCaptures() {
   if (status) status.style.display = 'flex';
 
   for (const capture of pending) {
+    capture.blob = await openCropModal(capture.blob);
     capture.ocrStatus = 'processing';
     renderThumbnails();
     try {
@@ -542,9 +792,11 @@ function openNewBookModal() {
   `);
 
   overlay.querySelector('#modal-close').onclick = closeModal;
-  overlay.querySelector('#save-book').onclick = async () => {
+  const saveBookBtn = overlay.querySelector('#save-book');
+  saveBookBtn.onclick = async () => {
     const title = overlay.querySelector('#book-title').value.trim();
     if (!title) { showToast('Please enter a title'); return; }
+    saveBookBtn.disabled = true;
     const book = {
       id: uid(),
       title,
@@ -608,22 +860,26 @@ function openNewNoteModal(capture) {
   setupTagsInput(overlay, tags);
 
   // Save
-  overlay.querySelector('#save-note').onclick = async () => {
+  const saveBtn = overlay.querySelector('#save-note');
+  saveBtn.onclick = async () => {
     const text = overlay.querySelector('#note-text').value.trim();
     if (!text) { showToast('Please enter some text'); return; }
 
-    // Save photo
-    const photoId = uid();
-    const reader = new FileReader();
-    reader.onload = async () => {
-      await dbPut('photos', { id: photoId, data: reader.result });
+    saveBtn.disabled = true;
 
+    try {
+      // Save photo
+      const photoId = uid();
+      const dataUrl = await blobToDataURL(capture.blob);
+      await dbPut('photos', { id: photoId, data: dataUrl });
+
+      const pageVal = overlay.querySelector('#note-page').value;
       const note = {
         id: uid(),
         bookId: state.currentBookId,
         text,
         highlight: selectedHighlight,
-        pageNum: overlay.querySelector('#note-page').value || null,
+        pageNum: pageVal ? parseInt(pageVal, 10) : null,
         tags,
         photoId,
         createdAt: Date.now(),
@@ -640,8 +896,11 @@ function openNewNoteModal(capture) {
       closeModal();
       showToast('Note saved!');
       openBookDetail(state.currentBookId);
-    };
-    reader.readAsDataURL(capture.blob);
+    } catch (err) {
+      saveBtn.disabled = false;
+      showToast('Failed to save note');
+      console.error('Save note error:', err);
+    }
   };
 }
 
@@ -763,7 +1022,7 @@ async function saveAllBatchNotes(notesData) {
       bookId: state.currentBookId,
       text,
       highlight: nd.highlight,
-      pageNum: nd.pageNum || null,
+      pageNum: nd.pageNum ? parseInt(nd.pageNum, 10) : null,
       tags: nd.tags,
       photoId,
       createdAt: Date.now(),
@@ -779,15 +1038,17 @@ async function saveAllBatchNotes(notesData) {
     await dbPut('books', book);
   }
 
+  revokeCaptures();
   state.captures = [];
   showToast(`${saved} note${saved !== 1 ? 's' : ''} saved!`);
   openBookDetail(state.currentBookId);
 }
 
 function blobToDataURL(blob) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(blob);
   });
 }
@@ -839,10 +1100,15 @@ function openEditNoteModal(note) {
 
   setupTagsInput(overlay, tags);
 
-  overlay.querySelector('#save-note').onclick = async () => {
-    note.text = overlay.querySelector('#note-text').value.trim();
+  const updateBtn = overlay.querySelector('#save-note');
+  updateBtn.onclick = async () => {
+    const text = overlay.querySelector('#note-text').value.trim();
+    if (!text) { showToast('Please enter some text'); return; }
+    updateBtn.disabled = true;
+    const pageVal = overlay.querySelector('#note-page').value;
+    note.text = text;
     note.highlight = selectedHighlight;
-    note.pageNum = overlay.querySelector('#note-page').value || null;
+    note.pageNum = pageVal ? parseInt(pageVal, 10) : null;
     note.tags = tags;
     await dbPut('notes', note);
     closeModal();
@@ -1013,7 +1279,8 @@ function renderSettings() {
   view.querySelector('#export-all').onclick = async () => {
     const books = await dbGetAll('books');
     const notes = await dbGetAll('notes');
-    const data = JSON.stringify({ books, notes, exportedAt: Date.now() }, null, 2);
+    const photos = await dbGetAll('photos');
+    const data = JSON.stringify({ books, notes, photos, exportedAt: Date.now() }, null, 2);
     const blob = new Blob([data], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1033,6 +1300,7 @@ function renderSettings() {
       const data = JSON.parse(text);
       if (data.books) for (const b of data.books) await dbPut('books', b);
       if (data.notes) for (const n of data.notes) await dbPut('notes', n);
+      if (data.photos) for (const p of data.photos) await dbPut('photos', p);
       showToast('Data imported!');
       renderBooks();
     } catch (err) {
@@ -1057,7 +1325,17 @@ function esc(str) {
 // ═══════════════════════════════════════════════════════
 
 async function init() {
-  state.db = await openDB();
+  try {
+    state.db = await openDB();
+  } catch (err) {
+    console.error('IndexedDB failed:', err);
+    document.querySelector('main').innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">⚠️</div>
+        <p>Could not open database. This may happen in private browsing mode or if storage is restricted. Please try in a regular browser window.</p>
+      </div>`;
+    return;
+  }
 
   // Render books
   await renderBooks();
@@ -1067,6 +1345,14 @@ async function init() {
   $$('nav.tabs button').forEach(btn => {
     btn.onclick = () => {
       const tab = btn.dataset.tab;
+      if (tab === 'capture') {
+        if (state.currentBookId) {
+          openCaptureForBook();
+        } else {
+          switchView('capture');
+        }
+        return;
+      }
       if (tab === 'books') {
         state.currentBookId = null;
         renderBooks();
@@ -1078,6 +1364,18 @@ async function init() {
   // FAB
   const fab = $('.fab');
   fab.onclick = () => openNewBookModal();
+
+  // Escape key closes modals
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeModal();
+  });
+
+  // Warn about unsaved captures
+  window.addEventListener('beforeunload', (e) => {
+    if (state.captures.length > 0) {
+      e.preventDefault();
+    }
+  });
 
   switchView('books');
 

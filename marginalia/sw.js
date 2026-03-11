@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marginalia-v1';
+const CACHE_NAME = 'marginalia-v2';
 const ASSETS = [
   './',
   './index.html',
