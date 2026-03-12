@@ -34,6 +34,8 @@ const state = {
   preferredOcrPass: localStorage.getItem('marginalia-ocr-pass') || null,
   disabledOcrPasses: JSON.parse(localStorage.getItem('marginalia-ocr-disabled') || '[]'),
   adjustParams: loadAdjustParams(),
+  autoBackup: JSON.parse(localStorage.getItem('marginalia-autobackup') || '{"enabled":false,"intervalMin":60,"includePhotos":true,"includeSettings":true}'),
+  autoBackupTimer: null,
   activeView: 'books',
   activeFilter: 'all',
   searchQuery: '',
@@ -2322,6 +2324,75 @@ function exportBook(book, notes) {
 }
 
 // ═══════════════════════════════════════════════════════
+//  AUTO-BACKUP
+// ═══════════════════════════════════════════════════════
+
+async function buildBackupData({ includePhotos = true, includeSettings = true } = {}) {
+  const books = await dbGetAll('books');
+  const notes = await dbGetAll('notes');
+  const data = { books, notes, exportedAt: Date.now() };
+  if (includePhotos) data.photos = await dbGetAll('photos');
+  if (includeSettings) {
+    data.settings = {
+      ocrLang: localStorage.getItem('marginalia-ocr-lang'),
+      ocrPass: localStorage.getItem('marginalia-ocr-pass'),
+      ocrDisabled: localStorage.getItem('marginalia-ocr-disabled'),
+      adjust: localStorage.getItem('marginalia-adjust'),
+      autoBackup: localStorage.getItem('marginalia-autobackup'),
+    };
+  }
+  return data;
+}
+
+function downloadBackup(data) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `marginalia-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function saveAutoBackupConfig(config) {
+  state.autoBackup = config;
+  localStorage.setItem('marginalia-autobackup', JSON.stringify(config));
+}
+
+async function runAutoBackup() {
+  try {
+    const cfg = state.autoBackup;
+    const data = await buildBackupData({ includePhotos: cfg.includePhotos, includeSettings: cfg.includeSettings });
+    downloadBackup(data);
+    localStorage.setItem('marginalia-last-backup', Date.now().toString());
+    showToast('Auto-backup saved');
+  } catch (err) {
+    console.error('Auto-backup failed:', err);
+  }
+}
+
+function startAutoBackup() {
+  stopAutoBackup();
+  if (!state.autoBackup.enabled) return;
+  const ms = state.autoBackup.intervalMin * 60 * 1000;
+  state.autoBackupTimer = setInterval(runAutoBackup, ms);
+}
+
+function stopAutoBackup() {
+  if (state.autoBackupTimer) {
+    clearInterval(state.autoBackupTimer);
+    state.autoBackupTimer = null;
+  }
+}
+
+function formatLastBackup() {
+  const ts = localStorage.getItem('marginalia-last-backup');
+  if (!ts) return 'Never';
+  const d = new Date(parseInt(ts));
+  return d.toLocaleString();
+}
+
+// ═══════════════════════════════════════════════════════
 //  SETTINGS VIEW
 // ═══════════════════════════════════════════════════════
 
@@ -2391,6 +2462,38 @@ function renderSettings() {
       </div>
     </div>
 
+    <div class="book-card" style="border-left-color:var(--amber);cursor:default;">
+      <h3>Auto-Backup</h3>
+      <p style="font-size:0.85rem;color:var(--ink-muted);margin-top:4px;">
+        Periodically download a backup file while the app is open.
+      </p>
+      <div style="margin-top:8px;font-size:0.85rem;">
+        <label style="display:flex;align-items:center;gap:6px;margin-bottom:8px;cursor:pointer;">
+          <input type="checkbox" id="autobackup-enabled" ${state.autoBackup.enabled ? 'checked' : ''}> Enable auto-backup
+        </label>
+        <div class="form-group" style="margin-bottom:8px;">
+          <label>Interval</label>
+          <select id="autobackup-interval" ${state.autoBackup.enabled ? '' : 'disabled'}>
+            <option value="30" ${state.autoBackup.intervalMin === 30 ? 'selected' : ''}>Every 30 minutes</option>
+            <option value="60" ${state.autoBackup.intervalMin === 60 ? 'selected' : ''}>Every hour</option>
+            <option value="120" ${state.autoBackup.intervalMin === 120 ? 'selected' : ''}>Every 2 hours</option>
+            <option value="360" ${state.autoBackup.intervalMin === 360 ? 'selected' : ''}>Every 6 hours</option>
+            <option value="720" ${state.autoBackup.intervalMin === 720 ? 'selected' : ''}>Every 12 hours</option>
+          </select>
+        </div>
+        <label style="display:flex;align-items:center;gap:6px;margin-bottom:4px;cursor:pointer;">
+          <input type="checkbox" id="autobackup-photos" ${state.autoBackup.includePhotos ? 'checked' : ''} ${state.autoBackup.enabled ? '' : 'disabled'}> Include photos
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;margin-bottom:4px;cursor:pointer;">
+          <input type="checkbox" id="autobackup-settings" ${state.autoBackup.includeSettings ? 'checked' : ''} ${state.autoBackup.enabled ? '' : 'disabled'}> Include settings
+        </label>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:10px;">
+        <button class="btn btn-sm btn-secondary" id="autobackup-now" ${state.autoBackup.enabled ? '' : 'disabled'}>Backup Now</button>
+        <span style="font-size:0.8rem;color:var(--ink-muted);">Last: ${formatLastBackup()}</span>
+      </div>
+    </div>
+
     <div class="book-card" style="border-left-color:var(--ink-muted);cursor:default;">
       <h3>About</h3>
       <p style="font-size:0.85rem;color:var(--ink-muted);margin-top:4px;">
@@ -2447,25 +2550,8 @@ function renderSettings() {
   view.querySelector('#export-all').onclick = async () => {
     const includePhotos = view.querySelector('#export-photos').checked;
     const includeSettings = view.querySelector('#export-settings').checked;
-    const books = await dbGetAll('books');
-    const notes = await dbGetAll('notes');
-    const data = { books, notes, exportedAt: Date.now() };
-    if (includePhotos) data.photos = await dbGetAll('photos');
-    if (includeSettings) {
-      data.settings = {
-        ocrLang: localStorage.getItem('marginalia-ocr-lang'),
-        ocrPass: localStorage.getItem('marginalia-ocr-pass'),
-        ocrDisabled: localStorage.getItem('marginalia-ocr-disabled'),
-        adjust: localStorage.getItem('marginalia-adjust'),
-      };
-    }
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `marginalia-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const data = await buildBackupData({ includePhotos, includeSettings });
+    downloadBackup(data);
     showToast('Exported!');
   };
 
@@ -2484,12 +2570,36 @@ function renderSettings() {
         if (data.settings.ocrPass) { setPreferredOcrPass(data.settings.ocrPass); }
         if (data.settings.ocrDisabled) { setDisabledOcrPasses(JSON.parse(data.settings.ocrDisabled)); }
         if (data.settings.adjust) { localStorage.setItem('marginalia-adjust', data.settings.adjust); state.adjustParams = { ...DEFAULT_ADJUST, ...JSON.parse(data.settings.adjust) }; }
+        if (data.settings.autoBackup) { saveAutoBackupConfig(JSON.parse(data.settings.autoBackup)); startAutoBackup(); }
       }
       showToast('Data imported!');
       renderBooks();
     } catch (err) {
       showToast('Invalid backup file');
     }
+  };
+
+  // Auto-backup handlers
+  const updateAutoBackup = () => {
+    const cfg = {
+      enabled: view.querySelector('#autobackup-enabled').checked,
+      intervalMin: parseInt(view.querySelector('#autobackup-interval').value),
+      includePhotos: view.querySelector('#autobackup-photos').checked,
+      includeSettings: view.querySelector('#autobackup-settings').checked,
+    };
+    saveAutoBackupConfig(cfg);
+    startAutoBackup();
+    renderSettings();
+  };
+
+  view.querySelector('#autobackup-enabled').onchange = updateAutoBackup;
+  view.querySelector('#autobackup-interval').onchange = updateAutoBackup;
+  view.querySelector('#autobackup-photos').onchange = updateAutoBackup;
+  view.querySelector('#autobackup-settings').onchange = updateAutoBackup;
+
+  view.querySelector('#autobackup-now').onclick = async () => {
+    await runAutoBackup();
+    renderSettings();
   };
 }
 
@@ -2653,6 +2763,9 @@ async function init() {
   });
 
   switchView('books');
+
+  // Start auto-backup if enabled
+  startAutoBackup();
 
   // Register service worker
   if ('serviceWorker' in navigator) {
