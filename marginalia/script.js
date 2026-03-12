@@ -31,6 +31,7 @@ const state = {
   ocrReady: false,
   _ocrLoadedLang: null,
   ocrLang: localStorage.getItem('marginalia-ocr-lang') || 'eng',
+  preferredOcrPass: localStorage.getItem('marginalia-ocr-pass') || null,
   adjustParams: loadAdjustParams(),
   activeView: 'books',
   activeFilter: 'all',
@@ -168,6 +169,15 @@ function setOCRLang(lang) {
   }
 }
 
+function setPreferredOcrPass(passName) {
+  state.preferredOcrPass = passName;
+  if (passName) {
+    localStorage.setItem('marginalia-ocr-pass', passName);
+  } else {
+    localStorage.removeItem('marginalia-ocr-pass');
+  }
+}
+
 function updateOCRProgress(progress, label) {
   const bar = document.querySelector('.ocr-progress-fill');
   if (bar) bar.style.width = `${Math.round(progress * 100)}%`;
@@ -194,6 +204,8 @@ function scoreResult(result) {
   return totalConf / words.length;
 }
 
+const OCR_CONFIDENCE_THRESHOLD = 85;
+
 async function runOCR(imageBlob, onPassResult) {
   if (!state.ocrReady) await initOCR();
 
@@ -202,9 +214,36 @@ async function runOCR(imageBlob, onPassResult) {
   let bestText = '';
   let bestScore = -1;
 
+  // If a preferred pass is set, try it first
+  const prefIdx = state.preferredOcrPass
+    ? OCR_PASSES.findIndex(p => p.name === state.preferredOcrPass) : -1;
+
+  if (prefIdx >= 0) {
+    const pass = OCR_PASSES[prefIdx];
+    updateOCRProgress(0, `Preferred pass: ${pass.name}`);
+    const preprocessed = await preprocessImage(imageBlob, pass.prep, img);
+    const result = await state.ocrWorker.recognize(preprocessed, {
+      tessedit_pageseg_mode: pass.psm,
+    });
+    const score = scoreResult(result);
+    const text = result.data.text.trim();
+    const passResult = { name: pass.name, text, score };
+    passes.push(passResult);
+    if (score > bestScore && text.length > 0) { bestScore = score; bestText = text; }
+    if (onPassResult) onPassResult({ index: 0, total: OCR_PASSES.length, ...passResult });
+
+    // If confidence is high enough, skip remaining passes
+    if (score >= OCR_CONFIDENCE_THRESHOLD && text.length > 0) {
+      updateOCRProgress(1, 'Done');
+      return { bestText, passes, preferredUsed: true };
+    }
+  }
+
+  // Run all passes (skip preferred if already ran)
   for (let i = 0; i < OCR_PASSES.length; i++) {
+    if (i === prefIdx) continue; // already ran
     const pass = OCR_PASSES[i];
-    const passLabel = `Pass ${i + 1}/${OCR_PASSES.length}: ${pass.name}`;
+    const passLabel = `Pass ${passes.length + 1}/${OCR_PASSES.length}: ${pass.name}`;
     updateOCRProgress(0, passLabel);
 
     const preprocessed = await preprocessImage(imageBlob, pass.prep, img);
@@ -223,12 +262,12 @@ async function runOCR(imageBlob, onPassResult) {
     }
 
     if (onPassResult) {
-      onPassResult({ index: i, total: OCR_PASSES.length, ...passResult });
+      onPassResult({ index: passes.length - 1, total: OCR_PASSES.length, ...passResult });
     }
   }
 
   updateOCRProgress(1, 'Done');
-  return { bestText, passes };
+  return { bestText, passes, preferredUsed: false };
 }
 
 function showPassResult({ index, total, name, text, score }) {
@@ -268,6 +307,7 @@ function openPassPicker(passes, currentText, imageBlob) {
     let selectedIdx = passes.findIndex(p => p.text === currentText && p.text);
     if (selectedIdx < 0) selectedIdx = passes.findIndex(p => p.text);
     let selectedText = selectedIdx >= 0 ? passes[selectedIdx].text : currentText;
+    let selectedPassName = selectedIdx >= 0 ? passes[selectedIdx].name : null;
 
     const passesHtml = passes.map((p, i) => {
       const scoreClass = p.score >= 80 ? 'good' : p.score >= 50 ? 'ok' : 'poor';
@@ -310,13 +350,18 @@ function openPassPicker(passes, currentText, imageBlob) {
         badge.className = 'pass-selected-badge';
         badge.textContent = 'selected';
         item.querySelector('.pass-header').appendChild(badge);
-        selectedText = passes[parseInt(item.dataset.index)].text;
+        const idx = parseInt(item.dataset.index);
+        selectedText = passes[idx].text;
+        selectedPassName = passes[idx].name;
       };
     });
 
     const finish = () => { closeModal(); resolve(selectedText); };
     overlay.querySelector('#picker-close').onclick = finish;
-    overlay.querySelector('#picker-confirm').onclick = finish;
+    overlay.querySelector('#picker-confirm').onclick = () => {
+      if (selectedPassName) setPreferredOcrPass(selectedPassName);
+      finish();
+    };
 
     const adjustBtn = overlay.querySelector('#picker-adjust');
     if (adjustBtn) {
@@ -1626,18 +1671,23 @@ async function processSingleCapture(capture) {
   renderThumbnails();
 
   try {
-    const { bestText, passes } = await runOCR(capture.blob, showPassResult);
+    const { bestText, passes, preferredUsed } = await runOCR(capture.blob, showPassResult);
     capture.ocrPasses = passes;
     capture.ocrStatus = 'done';
     renderThumbnails();
     if (status) status.style.display = 'none';
     clearPassResults();
 
-    const passesWithText = passes.filter(p => p.text);
-    if (passesWithText.length > 1) {
-      capture.ocrText = await openPassPicker(passes, bestText, capture.blob);
-    } else {
+    if (preferredUsed) {
+      // Preferred pass scored >= 85%, use directly
       capture.ocrText = bestText;
+    } else {
+      const passesWithText = passes.filter(p => p.text);
+      if (passesWithText.length > 1) {
+        capture.ocrText = await openPassPicker(passes, bestText, capture.blob);
+      } else {
+        capture.ocrText = bestText;
+      }
     }
 
     openNewNoteModal(capture);
@@ -2286,6 +2336,16 @@ function renderSettings() {
       <button class="btn btn-sm btn-secondary" id="preload-ocr">
         ${state.ocrReady ? 'OCR Loaded ✓' : 'Pre-load OCR Engine'}
       </button>
+      <div style="margin-top:10px;font-size:0.85rem;">
+        <label>Preferred OCR Pass</label>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
+          <span style="color:var(--ink-muted);">${state.preferredOcrPass ? state.preferredOcrPass : 'None — all passes run every time'}</span>
+          ${state.preferredOcrPass ? '<button class="btn btn-sm btn-secondary" id="clear-ocr-pass">Clear</button>' : ''}
+        </div>
+        <p style="font-size:0.8rem;color:var(--ink-muted);margin-top:4px;">
+          Set automatically when you pick a pass. If confidence ≥ ${OCR_CONFIDENCE_THRESHOLD}%, only that pass runs.
+        </p>
+      </div>
     </div>
 
     <div class="book-card" style="border-left-color:var(--danger);cursor:default;">
@@ -2334,6 +2394,15 @@ function renderSettings() {
     preloadBtn.textContent = 'OCR Loaded ✓';
   };
 
+  const clearPassBtn = view.querySelector('#clear-ocr-pass');
+  if (clearPassBtn) {
+    clearPassBtn.onclick = () => {
+      setPreferredOcrPass(null);
+      renderSettings();
+      showToast('Preferred pass cleared');
+    };
+  }
+
   view.querySelector('#export-all').onclick = async () => {
     const includePhotos = view.querySelector('#export-photos').checked;
     const includeSettings = view.querySelector('#export-settings').checked;
@@ -2344,6 +2413,7 @@ function renderSettings() {
     if (includeSettings) {
       data.settings = {
         ocrLang: localStorage.getItem('marginalia-ocr-lang'),
+        ocrPass: localStorage.getItem('marginalia-ocr-pass'),
         adjust: localStorage.getItem('marginalia-adjust'),
       };
     }
@@ -2369,6 +2439,7 @@ function renderSettings() {
       if (data.photos) for (const p of data.photos) await dbPut('photos', p);
       if (data.settings) {
         if (data.settings.ocrLang) { localStorage.setItem('marginalia-ocr-lang', data.settings.ocrLang); setOCRLang(data.settings.ocrLang); }
+        if (data.settings.ocrPass) { setPreferredOcrPass(data.settings.ocrPass); }
         if (data.settings.adjust) { localStorage.setItem('marginalia-adjust', data.settings.adjust); state.adjustParams = { ...DEFAULT_ADJUST, ...JSON.parse(data.settings.adjust) }; }
       }
       showToast('Data imported!');
