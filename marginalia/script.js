@@ -246,7 +246,7 @@ function clearPassResults() {
 
 // ─── Pass Picker Modal ───
 
-function openPassPicker(passes, currentText) {
+function openPassPicker(passes, currentText, imageBlob) {
   return new Promise((resolve) => {
     let selectedText = currentText;
 
@@ -270,12 +270,13 @@ function openPassPicker(passes, currentText) {
       <button class="modal-close" id="picker-close">×</button>
       <h2>Choose OCR Result</h2>
       <p style="font-size:0.85rem;color:var(--ink-muted);margin-bottom:12px;">
-        Tap a result to select it.
+        Tap a result to select it, or adjust the image and re-run OCR.
       </p>
       <div id="pass-pick-list">${passesHtml}</div>
-      <button class="btn btn-primary btn-full" id="picker-confirm" style="margin-top:12px;">
-        Use Selected
-      </button>
+      <div style="display:flex;gap:8px;margin-top:12px;">
+        ${imageBlob ? '<button class="btn btn-secondary" id="picker-adjust" style="flex:1">Adjust Image</button>' : ''}
+        <button class="btn btn-primary" id="picker-confirm" style="flex:1">Use Selected</button>
+      </div>
     `);
 
     overlay.querySelectorAll('.pass-pick-item:not(.disabled)').forEach(item => {
@@ -297,6 +298,21 @@ function openPassPicker(passes, currentText) {
     const finish = () => { closeModal(); resolve(selectedText); };
     overlay.querySelector('#picker-close').onclick = finish;
     overlay.querySelector('#picker-confirm').onclick = finish;
+
+    const adjustBtn = overlay.querySelector('#picker-adjust');
+    if (adjustBtn) {
+      adjustBtn.onclick = async () => {
+        const adjBlob = await openAdjustModal(imageBlob);
+        if (!adjBlob) {
+          // User cancelled adjust — reopen picker
+          resolve(await openPassPicker(passes, selectedText, imageBlob));
+          return;
+        }
+        // Run OCR on adjusted image, then open a new picker
+        const { bestText, passes: newPasses } = await runOCR(adjBlob);
+        resolve(await openPassPicker(newPasses, bestText, adjBlob));
+      };
+    }
   });
 }
 
@@ -556,6 +572,211 @@ function openCropModal(blob) {
       };
     };
     img.onerror = () => { URL.revokeObjectURL(imgUrl); resolve(blob); };
+    img.src = imgUrl;
+  });
+}
+
+// ─── Image Adjust UI ───
+
+function openAdjustModal(blob) {
+  return new Promise((resolve) => {
+    const imgUrl = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      const overlay = openModal(`
+        <button class="modal-close" id="adj-close">×</button>
+        <h2>Adjust Image</h2>
+        <div class="adjust-preview" id="adj-preview">
+          <canvas id="adj-canvas"></canvas>
+        </div>
+        <div class="adjust-controls">
+          <div class="adjust-slider">
+            <label>Brightness <span id="val-brightness">0</span></label>
+            <input type="range" id="adj-brightness" min="-100" max="100" value="0" />
+          </div>
+          <div class="adjust-slider">
+            <label>Contrast <span id="val-contrast">0</span></label>
+            <input type="range" id="adj-contrast" min="-100" max="100" value="0" />
+          </div>
+          <div class="adjust-slider">
+            <label>Threshold <span id="val-threshold">off</span></label>
+            <input type="range" id="adj-threshold" min="0" max="255" value="0" />
+          </div>
+          <div class="adjust-toggles">
+            <label class="adjust-toggle">
+              <input type="checkbox" id="adj-invert" /> Invert
+            </label>
+            <span class="adjust-channels">
+              <label class="adjust-toggle ch-r">
+                <input type="checkbox" id="adj-ch-r" checked /> R
+              </label>
+              <label class="adjust-toggle ch-g">
+                <input type="checkbox" id="adj-ch-g" checked /> G
+              </label>
+              <label class="adjust-toggle ch-b">
+                <input type="checkbox" id="adj-ch-b" checked /> B
+              </label>
+            </span>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px;">
+          <button class="btn btn-secondary" id="adj-reset" style="flex:1">Reset</button>
+          <button class="btn btn-primary" id="adj-apply" style="flex:1">Run OCR</button>
+        </div>
+      `);
+
+      const canvas = overlay.querySelector('#adj-canvas');
+      const container = overlay.querySelector('#adj-preview');
+      const ctx = canvas.getContext('2d');
+
+      const maxW = container.clientWidth || 400;
+      const ratio = img.naturalHeight / img.naturalWidth;
+      const dispW = Math.min(maxW, img.naturalWidth);
+      const dispH = Math.round(dispW * ratio);
+      canvas.width = dispW;
+      canvas.height = dispH;
+
+      // Draw original at display size
+      const origCanvas = document.createElement('canvas');
+      origCanvas.width = dispW;
+      origCanvas.height = dispH;
+      const origCtx = origCanvas.getContext('2d');
+      origCtx.drawImage(img, 0, 0, dispW, dispH);
+      const origData = origCtx.getImageData(0, 0, dispW, dispH);
+
+      const sliderBrightness = overlay.querySelector('#adj-brightness');
+      const sliderContrast = overlay.querySelector('#adj-contrast');
+      const sliderThreshold = overlay.querySelector('#adj-threshold');
+      const chkInvert = overlay.querySelector('#adj-invert');
+      const chkR = overlay.querySelector('#adj-ch-r');
+      const chkG = overlay.querySelector('#adj-ch-g');
+      const chkB = overlay.querySelector('#adj-ch-b');
+
+      function render() {
+        const brightness = parseInt(sliderBrightness.value);
+        const contrast = parseInt(sliderContrast.value);
+        const thresholdVal = parseInt(sliderThreshold.value);
+        const invert = chkInvert.checked;
+        const useR = chkR.checked, useG = chkG.checked, useB = chkB.checked;
+
+        overlay.querySelector('#val-brightness').textContent = brightness;
+        overlay.querySelector('#val-contrast').textContent = contrast;
+        overlay.querySelector('#val-threshold').textContent = thresholdVal === 0 ? 'off' : thresholdVal;
+
+        const src = origData.data;
+        const out = ctx.createImageData(dispW, dispH);
+        const dst = out.data;
+
+        // Contrast factor: map -100..100 to multiplier
+        const cf = (259 * (contrast + 255)) / (255 * (259 - contrast));
+
+        for (let i = 0; i < src.length; i += 4) {
+          let r = useR ? src[i] : 0;
+          let g = useG ? src[i + 1] : 0;
+          let b = useB ? src[i + 2] : 0;
+
+          // Brightness
+          r += brightness; g += brightness; b += brightness;
+
+          // Contrast
+          r = cf * (r - 128) + 128;
+          g = cf * (g - 128) + 128;
+          b = cf * (b - 128) + 128;
+
+          // Clamp
+          r = Math.max(0, Math.min(255, r));
+          g = Math.max(0, Math.min(255, g));
+          b = Math.max(0, Math.min(255, b));
+
+          // Threshold (applied to luminance)
+          if (thresholdVal > 0) {
+            const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+            const v = lum > thresholdVal ? 255 : 0;
+            r = g = b = v;
+          }
+
+          // Invert
+          if (invert) { r = 255 - r; g = 255 - g; b = 255 - b; }
+
+          dst[i] = r;
+          dst[i + 1] = g;
+          dst[i + 2] = b;
+          dst[i + 3] = 255;
+        }
+
+        ctx.putImageData(out, 0, 0);
+      }
+
+      render();
+
+      [sliderBrightness, sliderContrast, sliderThreshold].forEach(s =>
+        s.addEventListener('input', render)
+      );
+      [chkInvert, chkR, chkG, chkB].forEach(c =>
+        c.addEventListener('change', render)
+      );
+
+      overlay.querySelector('#adj-reset').onclick = () => {
+        sliderBrightness.value = 0;
+        sliderContrast.value = 0;
+        sliderThreshold.value = 0;
+        chkInvert.checked = false;
+        chkR.checked = true; chkG.checked = true; chkB.checked = true;
+        render();
+      };
+
+      overlay.querySelector('#adj-close').onclick = () => {
+        URL.revokeObjectURL(imgUrl);
+        closeModal();
+        resolve(null);
+      };
+
+      overlay.querySelector('#adj-apply').onclick = () => {
+        // Render at full resolution
+        const fullCanvas = document.createElement('canvas');
+        fullCanvas.width = img.naturalWidth;
+        fullCanvas.height = img.naturalHeight;
+        const fullCtx = fullCanvas.getContext('2d');
+        fullCtx.drawImage(img, 0, 0);
+        const fullOrig = fullCtx.getImageData(0, 0, img.naturalWidth, img.naturalHeight);
+
+        const brightness = parseInt(sliderBrightness.value);
+        const contrast = parseInt(sliderContrast.value);
+        const thresholdVal = parseInt(sliderThreshold.value);
+        const invert = chkInvert.checked;
+        const useR = chkR.checked, useG = chkG.checked, useB = chkB.checked;
+        const cf = (259 * (contrast + 255)) / (255 * (259 - contrast));
+
+        const s = fullOrig.data;
+        for (let i = 0; i < s.length; i += 4) {
+          let r = useR ? s[i] : 0;
+          let g = useG ? s[i + 1] : 0;
+          let b = useB ? s[i + 2] : 0;
+          r += brightness; g += brightness; b += brightness;
+          r = cf * (r - 128) + 128;
+          g = cf * (g - 128) + 128;
+          b = cf * (b - 128) + 128;
+          r = Math.max(0, Math.min(255, r));
+          g = Math.max(0, Math.min(255, g));
+          b = Math.max(0, Math.min(255, b));
+          if (thresholdVal > 0) {
+            const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+            const v = lum > thresholdVal ? 255 : 0;
+            r = g = b = v;
+          }
+          if (invert) { r = 255 - r; g = 255 - g; b = 255 - b; }
+          s[i] = r; s[i + 1] = g; s[i + 2] = b;
+        }
+        fullCtx.putImageData(fullOrig, 0, 0);
+
+        URL.revokeObjectURL(imgUrl);
+        fullCanvas.toBlob((adjBlob) => {
+          closeModal();
+          resolve(adjBlob);
+        }, 'image/png');
+      };
+    };
+    img.onerror = () => { URL.revokeObjectURL(imgUrl); resolve(null); };
     img.src = imgUrl;
   });
 }
@@ -1167,7 +1388,7 @@ async function processSingleCapture(capture) {
 
     const passesWithText = passes.filter(p => p.text);
     if (passesWithText.length > 1) {
-      capture.ocrText = await openPassPicker(passes, bestText);
+      capture.ocrText = await openPassPicker(passes, bestText, capture.blob);
     } else {
       capture.ocrText = bestText;
     }
@@ -1471,7 +1692,7 @@ function openBatchReviewModal() {
     if (viewPassesBtn) {
       viewPassesBtn.onclick = async () => {
         saveCurrentState();
-        const selected = await openPassPicker(nd.capture.ocrPasses, nd.text);
+        const selected = await openPassPicker(nd.capture.ocrPasses, nd.text, nd.capture.blob);
         nd.text = selected;
         renderReview();
       };
@@ -1652,7 +1873,7 @@ async function openEditNoteModal(note) {
 
         const passesWithText = passes.filter(p => p.text);
         if (passesWithText.length > 1) {
-          const selected = await openPassPicker(passes, bestText);
+          const selected = await openPassPicker(passes, bestText, blob);
           note.text = selected;
         } else {
           note.text = bestText;
@@ -1966,6 +2187,7 @@ function renderHelp() {
         <li>Hold the camera steady and fill the frame with the text.</li>
         <li>Use the crop tool to select just the text area.</li>
         <li>The app runs 5 OCR passes (raw, contrast, binarize, block, sharp) and shows progress as each completes. Afterwards, you can compare all results and pick the best one.</li>
+        <li>If none of the passes produce good results, use <strong>Adjust Image</strong> in the pass picker to manually tweak brightness, contrast, threshold, invert, or isolate color channels, then re-run OCR.</li>
         <li>You can always edit the extracted text before saving.</li>
       </ul>
     </div>
