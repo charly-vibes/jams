@@ -32,6 +32,7 @@ const state = {
   _ocrLoadedLang: null,
   ocrLang: localStorage.getItem('marginalia-ocr-lang') || 'eng',
   preferredOcrPass: localStorage.getItem('marginalia-ocr-pass') || null,
+  disabledOcrPasses: JSON.parse(localStorage.getItem('marginalia-ocr-disabled') || '[]'),
   adjustParams: loadAdjustParams(),
   activeView: 'books',
   activeFilter: 'all',
@@ -178,6 +179,11 @@ function setPreferredOcrPass(passName) {
   }
 }
 
+function setDisabledOcrPasses(disabled) {
+  state.disabledOcrPasses = disabled;
+  localStorage.setItem('marginalia-ocr-disabled', JSON.stringify(disabled));
+}
+
 function updateOCRProgress(progress, label) {
   const bar = document.querySelector('.ocr-progress-fill');
   if (bar) bar.style.width = `${Math.round(progress * 100)}%`;
@@ -214,8 +220,10 @@ async function runOCR(imageBlob, onPassResult) {
   let bestText = '';
   let bestScore = -1;
 
-  // If a preferred pass is set, try it first
-  const prefIdx = state.preferredOcrPass
+  const disabled = state.disabledOcrPasses || [];
+
+  // If a preferred pass is set (and not disabled), try it first
+  const prefIdx = state.preferredOcrPass && !disabled.includes(state.preferredOcrPass)
     ? OCR_PASSES.findIndex(p => p.name === state.preferredOcrPass) : -1;
 
   if (prefIdx >= 0) {
@@ -239,10 +247,11 @@ async function runOCR(imageBlob, onPassResult) {
     }
   }
 
-  // Run all passes (skip preferred if already ran)
+  // Run all passes (skip preferred if already ran, skip disabled)
   for (let i = 0; i < OCR_PASSES.length; i++) {
     if (i === prefIdx) continue; // already ran
     const pass = OCR_PASSES[i];
+    if (disabled.includes(pass.name)) continue;
     const passLabel = `Pass ${passes.length + 1}/${OCR_PASSES.length}: ${pass.name}`;
     updateOCRProgress(0, passLabel);
 
@@ -2346,6 +2355,20 @@ function renderSettings() {
           Set automatically when you pick a pass. If confidence ≥ ${OCR_CONFIDENCE_THRESHOLD}%, only that pass runs.
         </p>
       </div>
+      <div style="margin-top:10px;font-size:0.85rem;">
+        <label>Enabled Passes</label>
+        <div style="margin-top:4px;">
+          ${OCR_PASSES.map(p => `
+            <label style="display:flex;align-items:center;gap:6px;margin-bottom:4px;cursor:pointer;">
+              <input type="checkbox" class="ocr-pass-toggle" data-pass="${p.name}" ${state.disabledOcrPasses.includes(p.name) ? '' : 'checked'}>
+              ${p.name} <span style="color:var(--ink-muted);font-size:0.8rem;">(${p.prep}, PSM ${p.psm})</span>
+            </label>
+          `).join('')}
+        </div>
+        <p style="font-size:0.8rem;color:var(--ink-muted);margin-top:4px;">
+          Disable passes you don't need to speed up OCR. At least one must remain enabled.
+        </p>
+      </div>
     </div>
 
     <div class="book-card" style="border-left-color:var(--danger);cursor:default;">
@@ -2394,6 +2417,24 @@ function renderSettings() {
     preloadBtn.textContent = 'OCR Loaded ✓';
   };
 
+  view.querySelectorAll('.ocr-pass-toggle').forEach(cb => {
+    cb.onchange = () => {
+      const enabled = [...view.querySelectorAll('.ocr-pass-toggle:checked')];
+      if (enabled.length === 0) {
+        cb.checked = true;
+        showToast('At least one pass must be enabled');
+        return;
+      }
+      const disabled = [...view.querySelectorAll('.ocr-pass-toggle:not(:checked)')].map(el => el.dataset.pass);
+      setDisabledOcrPasses(disabled);
+      // Clear preferred pass if it was just disabled
+      if (state.preferredOcrPass && disabled.includes(state.preferredOcrPass)) {
+        setPreferredOcrPass(null);
+        renderSettings();
+      }
+    };
+  });
+
   const clearPassBtn = view.querySelector('#clear-ocr-pass');
   if (clearPassBtn) {
     clearPassBtn.onclick = () => {
@@ -2414,6 +2455,7 @@ function renderSettings() {
       data.settings = {
         ocrLang: localStorage.getItem('marginalia-ocr-lang'),
         ocrPass: localStorage.getItem('marginalia-ocr-pass'),
+        ocrDisabled: localStorage.getItem('marginalia-ocr-disabled'),
         adjust: localStorage.getItem('marginalia-adjust'),
       };
     }
@@ -2440,6 +2482,7 @@ function renderSettings() {
       if (data.settings) {
         if (data.settings.ocrLang) { localStorage.setItem('marginalia-ocr-lang', data.settings.ocrLang); setOCRLang(data.settings.ocrLang); }
         if (data.settings.ocrPass) { setPreferredOcrPass(data.settings.ocrPass); }
+        if (data.settings.ocrDisabled) { setDisabledOcrPasses(JSON.parse(data.settings.ocrDisabled)); }
         if (data.settings.adjust) { localStorage.setItem('marginalia-adjust', data.settings.adjust); state.adjustParams = { ...DEFAULT_ADJUST, ...JSON.parse(data.settings.adjust) }; }
       }
       showToast('Data imported!');
