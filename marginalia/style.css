@@ -1000,6 +1000,24 @@ main::-webkit-scrollbar-thumb { background: var(--parchment-dark); border-radius
 .adjust-toggle.ch-g { color: #27ae60; }
 .adjust-toggle.ch-b { color: #2980b9; }
 
+.adjust-active-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(196, 149, 106, 0.12);
+  border: 1px solid var(--amber-light);
+  border-radius: var(--radius);
+  font-size: 0.78rem;
+  color: var(--ink-light);
+  margin-bottom: 12px;
+}
+
+.adjust-active-hint .btn {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
 /* ─── Pass Picker ─── */
 .pass-pick-item {
   background: white;
