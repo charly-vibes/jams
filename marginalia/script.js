@@ -158,6 +158,7 @@ function updateOCRProgress(progress, label) {
 const OCR_PASSES = [
   { name: 'raw',      psm: '3',  prep: 'upscale' },
   { name: 'contrast', psm: '3',  prep: 'contrast' },
+  { name: 'binarize', psm: '6',  prep: 'binarize' },
   { name: 'block',    psm: '6',  prep: 'upscale' },
   { name: 'sharp',    psm: '6',  prep: 'sharpen' },
 ];
@@ -171,10 +172,11 @@ function scoreResult(result) {
   return totalConf / words.length;
 }
 
-async function runOCR(imageBlob) {
+async function runOCR(imageBlob, onPassResult) {
   if (!state.ocrReady) await initOCR();
 
   state._ocrCancelled = false;
+  state._ocrAcceptedText = null;
   const img = await loadImage(imageBlob);
   let bestText = '';
   let bestScore = -1;
@@ -183,7 +185,7 @@ async function runOCR(imageBlob) {
     if (state._ocrCancelled) break;
 
     const pass = OCR_PASSES[i];
-    const passLabel = `OCR pass ${i + 1}/${OCR_PASSES.length}...`;
+    const passLabel = `Pass ${i + 1}/${OCR_PASSES.length}: ${pass.name}`;
     updateOCRProgress(0, passLabel);
 
     const preprocessed = await preprocessImage(imageBlob, pass.prep, img);
@@ -199,35 +201,53 @@ async function runOCR(imageBlob) {
       bestText = text;
     }
 
-    // After first pass, show accept-early button
-    if (i === 0 && bestText && bestScore < CONFIDENCE_THRESHOLD) {
-      showAcceptEarlyButton();
+    if (onPassResult) {
+      onPassResult({ index: i, total: OCR_PASSES.length, name: pass.name, text, score });
     }
 
+    if (state._ocrCancelled) break;
     if (bestScore >= CONFIDENCE_THRESHOLD) break;
   }
 
-  hideAcceptEarlyButton();
-  updateOCRProgress(1, 'Running OCR...');
-  return bestText;
+  updateOCRProgress(1, 'Done');
+  return state._ocrAcceptedText || bestText;
 }
 
-function showAcceptEarlyButton() {
-  const status = document.querySelector('#ocr-status');
-  if (!status || status.querySelector('#accept-early')) return;
-  const btn = document.createElement('button');
-  btn.id = 'accept-early';
-  btn.className = 'btn btn-sm btn-secondary';
-  btn.textContent = 'Use this';
-  btn.style.marginLeft = '8px';
-  btn.style.flexShrink = '0';
-  btn.onclick = () => { state._ocrCancelled = true; };
-  status.appendChild(btn);
+function showPassResult({ index, total, name, text, score }) {
+  let container = $('#ocr-passes');
+  if (!container) return;
+  container.style.display = 'block';
+
+  const scoreClass = score >= 80 ? 'good' : score >= 50 ? 'ok' : 'poor';
+  const preview = text ? esc(text) : '<em>No text detected</em>';
+
+  const passEl = document.createElement('div');
+  passEl.className = 'ocr-pass-result';
+  passEl.innerHTML = `
+    <div class="pass-header">
+      <span class="pass-label">${name}</span>
+      <span class="pass-score ${scoreClass}">${Math.round(score)}%</span>
+      ${text ? '<button class="btn btn-sm btn-amber pass-use">Use this</button>' : ''}
+    </div>
+    <div class="pass-text">${preview}</div>
+  `;
+
+  if (text) {
+    passEl.querySelector('.pass-use').onclick = () => {
+      state._ocrAcceptedText = text;
+      state._ocrCancelled = true;
+    };
+  }
+
+  container.appendChild(passEl);
 }
 
-function hideAcceptEarlyButton() {
-  const btn = document.querySelector('#accept-early');
-  if (btn) btn.remove();
+function clearPassResults() {
+  const container = $('#ocr-passes');
+  if (container) {
+    container.innerHTML = '';
+    container.style.display = 'none';
+  }
 }
 
 // ─── Image Preprocessing Variants ───
@@ -294,6 +314,32 @@ async function preprocessImage(blob, mode, cachedImg) {
     const range = hi - lo || 1;
     for (let i = 0; i < len; i++) {
       const v = Math.max(0, Math.min(255, Math.round((gray[i] - lo) * 255 / range)));
+      const j = i * 4;
+      d[j] = d[j + 1] = d[j + 2] = v;
+    }
+  } else if (mode === 'binarize') {
+    // Otsu's threshold — converts to pure black/white
+    const hist = new Uint32Array(256);
+    for (let i = 0; i < len; i++) hist[gray[i]]++;
+    let sumAll = 0;
+    for (let i = 0; i < 256; i++) sumAll += i * hist[i];
+    let sumBg = 0, wBg = 0;
+    let bestVariance = 0, threshold = 128;
+    for (let t = 0; t < 256; t++) {
+      wBg += hist[t];
+      if (wBg === 0) continue;
+      const wFg = len - wBg;
+      if (wFg === 0) break;
+      sumBg += t * hist[t];
+      const diff = sumBg / wBg - (sumAll - sumBg) / wFg;
+      const variance = wBg * wFg * diff * diff;
+      if (variance > bestVariance) {
+        bestVariance = variance;
+        threshold = t;
+      }
+    }
+    for (let i = 0; i < len; i++) {
+      const v = gray[i] > threshold ? 255 : 0;
       const j = i * 4;
       d[j] = d[j + 1] = d[j + 2] = v;
     }
@@ -916,6 +962,7 @@ function renderCaptureView() {
         <span>Running OCR...</span>
         <div class="progress-bar" style="flex:1"><div class="progress-fill ocr-progress-fill" style="width:0%"></div></div>
       </div>
+      <div id="ocr-passes" style="display:none"></div>
       <button class="btn btn-primary btn-full" id="process-captures">
         Process ${state.captures.length} capture${state.captures.length > 1 ? 's' : ''} with OCR
       </button>
@@ -1028,20 +1075,23 @@ function renderThumbnails() {
 async function processSingleCapture(capture) {
   const status = $('#ocr-status');
   if (status) status.style.display = 'flex';
+  clearPassResults();
   capture.ocrStatus = 'processing';
   renderThumbnails();
 
   try {
-    const text = await runOCR(capture.blob);
+    const text = await runOCR(capture.blob, showPassResult);
     capture.ocrText = text;
     capture.ocrStatus = 'done';
     renderThumbnails();
     if (status) status.style.display = 'none';
+    clearPassResults();
     openNewNoteModal(capture);
   } catch (err) {
     capture.ocrStatus = 'error';
     renderThumbnails();
     if (status) status.style.display = 'none';
+    clearPassResults();
     showToast('OCR failed for this image');
   }
 }
@@ -1056,12 +1106,18 @@ async function processBatchCaptures() {
   const status = $('#ocr-status');
   if (status) status.style.display = 'flex';
 
-  for (const capture of pending) {
-    // In batch mode, skip crop (user can crop individual captures via thumbnails)
+  for (let ci = 0; ci < pending.length; ci++) {
+    const capture = pending[ci];
+    clearPassResults();
     capture.ocrStatus = 'processing';
     renderThumbnails();
+
+    const batchLabel = `Image ${ci + 1}/${pending.length}`;
+    const statusSpan = document.querySelector('#ocr-status span');
+    if (statusSpan) statusSpan.textContent = batchLabel;
+
     try {
-      const text = await runOCR(capture.blob);
+      const text = await runOCR(capture.blob, showPassResult);
       capture.ocrText = text;
       capture.ocrStatus = 'done';
     } catch (err) {
@@ -1071,6 +1127,7 @@ async function processBatchCaptures() {
   }
 
   if (status) status.style.display = 'none';
+  clearPassResults();
   renderCaptureView();
   openBatchReviewModal();
 }
@@ -1728,7 +1785,7 @@ function renderHelp() {
         <li>Use good lighting — avoid shadows across the text.</li>
         <li>Hold the camera steady and fill the frame with the text.</li>
         <li>Use the crop tool to select just the text area.</li>
-        <li>The app tries multiple OCR strategies automatically and picks the best result. Tap <strong>Use this</strong> to accept early if the first pass looks good.</li>
+        <li>The app runs multiple OCR passes (raw, contrast, binarize, block, sharp) and shows each result with a confidence score. Tap <strong>Use this</strong> on any pass to accept it immediately.</li>
         <li>You can always edit the extracted text before saving.</li>
       </ul>
     </div>

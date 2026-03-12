@@ -822,6 +822,64 @@ main::-webkit-scrollbar-thumb { background: var(--parchment-dark); border-radius
   to { transform: rotate(360deg); }
 }
 
+/* ─── OCR Pass Results ─── */
+#ocr-passes {
+  margin-bottom: 12px;
+}
+
+.ocr-pass-result {
+  background: white;
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  margin-bottom: 8px;
+  box-shadow: var(--shadow-sm);
+  border-left: 3px solid var(--parchment-dark);
+}
+
+.pass-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.pass-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--ink-muted);
+}
+
+.pass-score {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 10px;
+}
+
+.pass-score.good { background: var(--postit-green); color: #3d5e34; }
+.pass-score.ok { background: var(--postit-yellow); color: var(--ink-light); }
+.pass-score.poor { background: #f8d7d0; color: var(--rust); }
+
+.pass-header .pass-use {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.pass-text {
+  font-size: 0.82rem;
+  color: var(--ink-light);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  max-height: 120px;
+  overflow-y: auto;
+  background: var(--parchment);
+  padding: 8px 10px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+}
+
 /* ─── Search ─── */
 .search-bar {
   display: flex;
