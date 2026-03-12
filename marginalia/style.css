@@ -902,6 +902,81 @@ main::-webkit-scrollbar-thumb { background: var(--parchment-dark); border-radius
   margin-bottom: 4px;
 }
 
+/* ─── Capture Zones (side by side) ─── */
+.capture-zones {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.capture-zones .camera-zone {
+  margin-bottom: 0;
+  padding: 24px 12px;
+}
+
+.capture-zones .camera-zone .camera-icon {
+  font-size: 2rem;
+}
+
+/* Single zone when speech not supported */
+.capture-zones:has(> :only-child) {
+  grid-template-columns: 1fr;
+}
+
+/* ─── Dictate Button (recording state) ─── */
+.dictate-btn.recording {
+  background: var(--danger);
+  color: white;
+  border-color: var(--danger);
+  animation: pulse-recording 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse-recording {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+/* ─── Help View ─── */
+.help-section {
+  background: white;
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 12px;
+  box-shadow: var(--shadow-sm);
+  border-left: 4px solid var(--amber);
+}
+
+.help-section h3 {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  margin-bottom: 8px;
+  color: var(--ink);
+}
+
+.help-section p {
+  font-size: 0.85rem;
+  color: var(--ink-light);
+  line-height: 1.55;
+  margin-bottom: 6px;
+}
+
+.help-section p:last-child {
+  margin-bottom: 0;
+}
+
+.help-section ul {
+  margin: 6px 0;
+  padding-left: 20px;
+  font-size: 0.85rem;
+  color: var(--ink-light);
+  line-height: 1.55;
+}
+
+.help-section li {
+  margin-bottom: 4px;
+}
+
 /* ─── Footer ─── */
 footer {
   text-align: center;

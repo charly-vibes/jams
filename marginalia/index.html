@@ -28,6 +28,9 @@
       <button data-tab="capture">
         <span class="tab-icon">📷</span> Capture
       </button>
+      <button data-tab="help">
+        <span class="tab-icon">?</span> Help
+      </button>
       <button data-tab="settings">
         <span class="tab-icon">⚙</span> Settings
       </button>
@@ -41,11 +44,13 @@
       <div class="view" data-view="book-detail"></div>
 
       <div class="view" data-view="capture">
-        <div class="empty-state">
+        <div class="empty-state" id="capture-empty">
           <div class="empty-icon">📷</div>
-          <p>Select a book first, then capture pages from it.</p>
+          <p>Open a book first, then use the + button to capture pages from it.</p>
         </div>
       </div>
+
+      <div class="view" data-view="help"></div>
 
       <div class="view" data-view="settings"></div>
     </main>

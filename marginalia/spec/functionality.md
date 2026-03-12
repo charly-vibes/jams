@@ -8,6 +8,7 @@ A PWA for capturing post-it notes and marginalia from physical books, running OC
 
 - **Book Library**: Add, browse, and manage books with note counts and timestamps
 - **Photo Capture**: Snap photos of book pages with post-it notes (single or batch mode)
+- **Speech-to-Text**: Dictate notes using the Web Speech API — available in capture view and all note modals. Language follows the OCR language setting.
 - **OCR Processing**: Tesseract.js v5 runs entirely in-browser with multi-pass OCR — tries up to 4 preprocessing/PSM combinations, scores each by word confidence, and keeps the best result. Stops early if confidence exceeds 65%. Supports 17 languages via a Settings dropdown.
 - **Language Selection**: Choose OCR language in Settings (English default); persisted in localStorage. Worker reinitializes automatically when language changes.
 - **Crop UI**: Interactive crop modal before OCR lets users select the text region, improving results on cluttered photos
@@ -16,6 +17,7 @@ A PWA for capturing post-it notes and marginalia from physical books, running OC
 - **Search & Filter**: Full-text search and filter notes by highlight type within each book
 - **Markdown Export**: Export a book's notes as Obsidian-compatible Markdown, grouped by highlight type
 - **Data Management**: Import/export all data as JSON backup
+- **Help & Tutorial**: Built-in help tab with step-by-step guide covering all features
 - **Offline-First PWA**: Service worker caching for offline use, installable on mobile
 
 ## Requirements
@@ -31,8 +33,8 @@ A PWA for capturing post-it notes and marginalia from physical books, running OC
 ### Workflow
 1. Add a book (title + author)
 2. Open the book, tap + to enter capture mode
-3. Take/select photos of pages with post-its
-4. OCR extracts text automatically
+3. Take/select photos of pages with post-its, or dictate a note via speech
+4. OCR extracts text automatically (photo) or speech is transcribed (dictate)
 5. Review, categorize, tag, and save notes
 6. Export to Markdown when ready
 

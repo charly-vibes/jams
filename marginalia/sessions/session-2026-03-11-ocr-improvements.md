@@ -76,9 +76,27 @@ Added multi-language support:
 - Settings view has a `<select>` dropdown; changing it calls `setOCRLang` and resets the pre-load button
 - Lazy reinit: the worker isn't recreated until the next OCR run (or if the user taps "Pre-load OCR Engine")
 
+### 5. Speech-to-Text
+
+Added Web Speech API (`SpeechRecognition`) as an alternative input method:
+
+- **Capture view**: Side-by-side zones for camera and dictation (hidden if browser doesn't support speech)
+- **Note modals**: Dictate button below textarea in new note, edit note, and dictate-only modals. Toggles between recording/stopped state.
+- `startDictation(textarea, btn)` — creates a recognition session with `continuous: true`, `interimResults: true`. Maps `state.ocrLang` Tesseract codes to BCP-47 locale tags for speech recognition language.
+- `openDictateNoteModal()` — standalone modal for creating notes without photos, accessible from the capture view dictate zone.
+- Recording state shown with red pulsing button via `.dictate-btn.recording` CSS class.
+
+### 6. Help & Tutorial Tab
+
+- New nav tab with `?` icon, renders a static help view with step-by-step sections
+- Covers: adding books, capture modes, crop tool, OCR, speech-to-text, search/filter, markdown export, settings, OCR tips, offline use
+- Styled with `.help-section` cards (white background, amber left border)
+- Content-aware: shows dictation sections only when `speechSupported` is true, includes dynamic language count from `OCR_LANGUAGES`
+
 ## Files Modified
 
-- `marginalia/script.js` — `preprocessImage`, `openCropModal`, PSM 6 config, capture flow integration, language selection
-- `marginalia/style.css` — `.crop-container`, `.crop-hint` styles
-- `marginalia/sw.js` — cache version bump to `v2`
-- `marginalia/spec/functionality.md` — documented OCR pipeline, crop UI, and language selection
+- `marginalia/index.html` — added help tab and view panel
+- `marginalia/script.js` — speech-to-text, dictate modal, help view, capture zone layout
+- `marginalia/style.css` — capture zones grid, recording animation, help section styles
+- `marginalia/sw.js` — cache version bump to `v4`
+- `marginalia/spec/functionality.md` — documented speech-to-text and help tab

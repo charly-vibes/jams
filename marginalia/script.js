@@ -437,6 +437,174 @@ function openCropModal(blob) {
 }
 
 // ═══════════════════════════════════════════════════════
+//  SPEECH-TO-TEXT
+// ═══════════════════════════════════════════════════════
+
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const speechSupported = !!SpeechRecognition;
+
+function startDictation(textarea, btn) {
+  if (!speechSupported) {
+    showToast('Speech recognition not supported in this browser');
+    return null;
+  }
+
+  const recognition = new SpeechRecognition();
+  recognition.lang = state.ocrLang === 'eng' ? 'en-US'
+    : state.ocrLang === 'fra' ? 'fr-FR'
+    : state.ocrLang === 'deu' ? 'de-DE'
+    : state.ocrLang === 'spa' ? 'es-ES'
+    : state.ocrLang === 'ita' ? 'it-IT'
+    : state.ocrLang === 'por' ? 'pt-BR'
+    : state.ocrLang === 'rus' ? 'ru-RU'
+    : state.ocrLang === 'pol' ? 'pl-PL'
+    : state.ocrLang === 'nld' ? 'nl-NL'
+    : state.ocrLang === 'jpn' ? 'ja-JP'
+    : state.ocrLang === 'kor' ? 'ko-KR'
+    : state.ocrLang === 'ara' ? 'ar-SA'
+    : state.ocrLang === 'hin' ? 'hi-IN'
+    : state.ocrLang === 'tur' ? 'tr-TR'
+    : state.ocrLang === 'ukr' ? 'uk-UA'
+    : state.ocrLang.startsWith('chi') ? 'zh-CN'
+    : 'en-US';
+
+  recognition.continuous = true;
+  recognition.interimResults = true;
+
+  let finalTranscript = textarea.value;
+  const originalText = textarea.value;
+
+  btn.classList.add('recording');
+  btn.textContent = '⏹ Stop';
+
+  recognition.onresult = (e) => {
+    let interim = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) {
+        finalTranscript += (finalTranscript ? ' ' : '') + e.results[i][0].transcript;
+      } else {
+        interim += e.results[i][0].transcript;
+      }
+    }
+    textarea.value = finalTranscript + (interim ? ' ' + interim : '');
+  };
+
+  recognition.onerror = (e) => {
+    if (e.error !== 'aborted') showToast('Speech error: ' + e.error);
+    btn.classList.remove('recording');
+    btn.textContent = '🎤 Dictate';
+  };
+
+  recognition.onend = () => {
+    btn.classList.remove('recording');
+    btn.textContent = '🎤 Dictate';
+  };
+
+  recognition.start();
+  return recognition;
+}
+
+function setupDictateButton(container) {
+  const btn = container.querySelector('.dictate-btn');
+  const textarea = container.querySelector('#note-text');
+  if (!btn || !textarea) return;
+  if (!speechSupported) { btn.style.display = 'none'; return; }
+
+  let activeRecognition = null;
+  btn.onclick = () => {
+    if (activeRecognition) {
+      activeRecognition.stop();
+      activeRecognition = null;
+    } else {
+      activeRecognition = startDictation(textarea, btn);
+    }
+  };
+}
+
+function openDictateNoteModal() {
+  const overlay = openModal(`
+    <button class="modal-close" id="modal-close">×</button>
+    <h2>Dictate Note</h2>
+
+    <div class="highlight-picker">
+      <button class="hl-note active" data-hl="note">Note</button>
+      <button class="hl-important" data-hl="important">Key</button>
+      <button class="hl-question" data-hl="question">?</button>
+      <button class="hl-idea" data-hl="idea">Idea</button>
+      <button class="hl-quote" data-hl="quote">Quote</button>
+    </div>
+
+    <div class="form-group">
+      <label>Text</label>
+      <textarea id="note-text" placeholder="Tap Dictate or type your note..."></textarea>
+      <button class="btn btn-sm btn-secondary dictate-btn" style="margin-top:6px;">🎤 Dictate</button>
+    </div>
+    <div class="form-group">
+      <label>Page Number</label>
+      <input type="number" id="note-page" placeholder="Optional" />
+    </div>
+    <div class="form-group">
+      <label>Tags (press Enter to add)</label>
+      <div class="tags-input-wrap" id="tags-wrap">
+        <input type="text" id="tag-input" placeholder="Add tag..." />
+      </div>
+    </div>
+    <button class="btn btn-primary btn-full" id="save-note">Save Note</button>
+  `);
+
+  let selectedHighlight = 'note';
+  let tags = [];
+
+  overlay.querySelector('#modal-close').onclick = closeModal;
+
+  overlay.querySelectorAll('.highlight-picker button').forEach(btn => {
+    btn.onclick = () => {
+      overlay.querySelectorAll('.highlight-picker button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      selectedHighlight = btn.dataset.hl;
+    };
+  });
+
+  setupTagsInput(overlay, tags);
+  setupDictateButton(overlay);
+
+  const saveBtn = overlay.querySelector('#save-note');
+  saveBtn.onclick = async () => {
+    const text = overlay.querySelector('#note-text').value.trim();
+    if (!text) { showToast('Please enter some text'); return; }
+    saveBtn.disabled = true;
+
+    try {
+      const pageVal = overlay.querySelector('#note-page').value;
+      const note = {
+        id: uid(),
+        bookId: state.currentBookId,
+        text,
+        highlight: selectedHighlight,
+        pageNum: pageVal ? parseInt(pageVal, 10) : null,
+        tags,
+        photoId: null,
+        createdAt: Date.now(),
+      };
+      await dbPut('notes', note);
+
+      const book = state.books.find(b => b.id === state.currentBookId);
+      if (book) {
+        book.updatedAt = Date.now();
+        await dbPut('books', book);
+      }
+
+      closeModal();
+      showToast('Note saved!');
+      openBookDetail(state.currentBookId);
+    } catch (err) {
+      saveBtn.disabled = false;
+      showToast('Failed to save note');
+    }
+  };
+}
+
+// ═══════════════════════════════════════════════════════
 //  HELPERS
 // ═══════════════════════════════════════════════════════
 
@@ -691,10 +859,17 @@ function renderCaptureView() {
       </div>
     </div>
 
-    <div class="camera-zone" id="camera-zone">
-      <div class="camera-icon">📷</div>
-      <p>Tap to capture or select photos</p>
-      <input type="file" id="photo-input" accept="image/*" capture="environment" ${state.captureMode === 'batch' ? 'multiple' : ''} />
+    <div class="capture-zones">
+      <div class="camera-zone" id="camera-zone">
+        <div class="camera-icon">📷</div>
+        <p>Tap to capture or select photos</p>
+        <input type="file" id="photo-input" accept="image/*" capture="environment" ${state.captureMode === 'batch' ? 'multiple' : ''} />
+      </div>
+      ${speechSupported ? `
+      <div class="camera-zone" id="dictate-zone">
+        <div class="camera-icon">🎤</div>
+        <p>Dictate a note</p>
+      </div>` : ''}
     </div>
 
     <div class="captures-grid" id="captures-grid"></div>
@@ -721,6 +896,10 @@ function renderCaptureView() {
 
   // Camera zone click
   $('#camera-zone').onclick = () => $('#photo-input').click();
+
+  // Dictate zone click
+  const dictateZone = $('#dictate-zone');
+  if (dictateZone) dictateZone.onclick = () => openDictateNoteModal();
 
   // File input
   $('#photo-input').onchange = async (e) => {
@@ -909,6 +1088,7 @@ function openNewNoteModal(capture) {
     <div class="form-group">
       <label>Extracted Text</label>
       <textarea id="note-text">${esc(capture.ocrText)}</textarea>
+      <button class="btn btn-sm btn-secondary dictate-btn" style="margin-top:6px;">🎤 Dictate</button>
     </div>
     <div class="form-group">
       <label>Page Number</label>
@@ -939,6 +1119,7 @@ function openNewNoteModal(capture) {
 
   // Tags
   setupTagsInput(overlay, tags);
+  setupDictateButton(overlay);
 
   // Save
   const saveBtn = overlay.querySelector('#save-note');
@@ -1152,6 +1333,7 @@ function openEditNoteModal(note) {
     <div class="form-group">
       <label>Text</label>
       <textarea id="note-text">${esc(note.text)}</textarea>
+      <button class="btn btn-sm btn-secondary dictate-btn" style="margin-top:6px;">🎤 Dictate</button>
     </div>
     <div class="form-group">
       <label>Page Number</label>
@@ -1180,6 +1362,7 @@ function openEditNoteModal(note) {
   });
 
   setupTagsInput(overlay, tags);
+  setupDictateButton(overlay);
 
   const updateBtn = overlay.querySelector('#save-note');
   updateBtn.onclick = async () => {
@@ -1404,6 +1587,93 @@ function renderSettings() {
 }
 
 // ═══════════════════════════════════════════════════════
+//  HELP VIEW
+// ═══════════════════════════════════════════════════════
+
+function renderHelp() {
+  const view = $('.view[data-view="help"]');
+  view.innerHTML = `
+    <h2 style="font-family:var(--font-display);margin-bottom:20px;">How to Use Marginalia</h2>
+
+    <div class="help-section">
+      <h3>1. Add a Book</h3>
+      <p>Tap the <strong>+</strong> button on the Books tab to create a new book entry with its title and author.</p>
+    </div>
+
+    <div class="help-section">
+      <h3>2. Capture Notes</h3>
+      <p>Open a book, then tap <strong>+</strong> to enter capture mode. You have two options:</p>
+      <ul>
+        <li><strong>📷 Photo capture</strong> — take a photo of a book page or post-it note. The app will run OCR to extract the text.</li>
+        ${speechSupported ? '<li><strong>🎤 Dictate</strong> — speak your note aloud and it will be transcribed using your browser\'s speech recognition.</li>' : ''}
+      </ul>
+    </div>
+
+    <div class="help-section">
+      <h3>3. Crop for Better OCR</h3>
+      <p>After taking a photo, a <strong>crop modal</strong> appears. Drag a rectangle around just the text you want to read. This dramatically improves OCR accuracy by removing background clutter.</p>
+      <p>Tap <strong>Skip Crop</strong> to use the full image.</p>
+    </div>
+
+    <div class="help-section">
+      <h3>4. Capture Modes</h3>
+      <ul>
+        <li><strong>Single</strong> — process one photo at a time. Good for careful, one-by-one capture.</li>
+        <li><strong>Batch</strong> — take multiple photos first, then process them all. Good for quickly snapping several pages.</li>
+      </ul>
+    </div>
+
+    <div class="help-section">
+      <h3>5. Review &amp; Categorize</h3>
+      <p>After OCR, review the extracted text and edit if needed. Classify each note:</p>
+      <ul>
+        <li><strong>Note</strong> — general note</li>
+        <li><strong>Key</strong> — important passage</li>
+        <li><strong>?</strong> — question or something to revisit</li>
+        <li><strong>Idea</strong> — your own idea sparked by the text</li>
+        <li><strong>Quote</strong> — exact quotation</li>
+      </ul>
+      <p>You can also add a page number and tags for organization.</p>
+    </div>
+
+    <div class="help-section">
+      <h3>6. Search &amp; Filter</h3>
+      <p>Inside a book, use the <strong>search bar</strong> to find notes by text or tag. Use the <strong>filter chips</strong> to show only a specific category.</p>
+    </div>
+
+    <div class="help-section">
+      <h3>7. Export to Markdown</h3>
+      <p>Tap <strong>Export .md</strong> in a book to generate Obsidian-compatible Markdown. Notes are grouped by category. You can copy to clipboard or download the file.</p>
+    </div>
+
+    <div class="help-section">
+      <h3>8. Settings</h3>
+      <ul>
+        <li><strong>OCR Language</strong> — change the recognition language (${OCR_LANGUAGES.length} supported). The dictation language follows this setting.</li>
+        <li><strong>Pre-load OCR</strong> — load the OCR engine ahead of time so capture is faster.</li>
+        <li><strong>Import/Export</strong> — back up all your data as JSON, or restore from a backup.</li>
+      </ul>
+    </div>
+
+    <div class="help-section">
+      <h3>Tips for Better OCR</h3>
+      <ul>
+        <li>Use good lighting — avoid shadows across the text.</li>
+        <li>Hold the camera steady and fill the frame with the text.</li>
+        <li>Use the crop tool to select just the text area.</li>
+        <li>The app tries multiple OCR strategies automatically and picks the best result.</li>
+        <li>You can always edit the extracted text before saving.</li>
+      </ul>
+    </div>
+
+    <div class="help-section">
+      <h3>Offline Use</h3>
+      <p>Marginalia works offline. All data is stored locally in your browser. Install it as an app from your browser's menu for the best experience.</p>
+    </div>
+  `;
+}
+
+// ═══════════════════════════════════════════════════════
 //  ESCAPE HTML
 // ═══════════════════════════════════════════════════════
 
@@ -1431,9 +1701,10 @@ async function init() {
     return;
   }
 
-  // Render books
+  // Render views
   await renderBooks();
   renderSettings();
+  renderHelp();
 
   // Tab navigation
   $$('nav.tabs button').forEach(btn => {
