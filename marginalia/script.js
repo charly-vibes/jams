@@ -7,19 +7,6 @@ const DB_NAME = 'marginalia';
 const DB_VERSION = 1;
 
 // ─── State ───
-const DEFAULT_ADJUST = { brightness: 0, contrast: 0, threshold: 0, invert: false, chR: true, chG: true, chB: true, deconv: false, stain1: null, stain2: null };
-
-function loadAdjustParams() {
-  try {
-    const saved = localStorage.getItem('marginalia-adjust');
-    return saved ? { ...DEFAULT_ADJUST, ...JSON.parse(saved) } : { ...DEFAULT_ADJUST };
-  } catch { return { ...DEFAULT_ADJUST }; }
-}
-
-function saveAdjustParams(params) {
-  state.adjustParams = params;
-  localStorage.setItem('marginalia-adjust', JSON.stringify(params));
-}
 
 const state = {
   db: null,
@@ -33,7 +20,6 @@ const state = {
   ocrLang: localStorage.getItem('marginalia-ocr-lang') || 'eng',
   preferredOcrPass: localStorage.getItem('marginalia-ocr-pass') || null,
   disabledOcrPasses: JSON.parse(localStorage.getItem('marginalia-ocr-disabled') || '[]'),
-  adjustParams: loadAdjustParams(),
   autoBackup: JSON.parse(localStorage.getItem('marginalia-autobackup') || '{"enabled":false,"intervalMin":60,"includePhotos":true,"includeSettings":true}'),
   autoBackupTimer: null,
   activeView: 'books',
@@ -312,7 +298,7 @@ function clearPassResults() {
 
 // ─── Pass Picker Modal ───
 
-function openPassPicker(passes, currentText, imageBlob) {
+function openPassPicker(passes, currentText) {
   return new Promise((resolve) => {
     // Find the best-matching index (first pass whose text matches)
     let selectedIdx = passes.findIndex(p => p.text === currentText && p.text);
@@ -340,11 +326,10 @@ function openPassPicker(passes, currentText, imageBlob) {
       <button class="modal-close" id="picker-close">×</button>
       <h2>Choose OCR Result</h2>
       <p style="font-size:0.85rem;color:var(--ink-muted);margin-bottom:12px;">
-        Tap a result to select it${imageBlob ? ', or adjust the image and re-run OCR' : ''}.
+        Tap a result to select it. For advanced tuning, use <a href="../ocr-lab/" style="color:var(--amber);">OCR Lab</a>.
       </p>
       <div id="pass-pick-list">${passesHtml}</div>
       <div style="display:flex;gap:8px;margin-top:12px;">
-        ${imageBlob ? '<button class="btn btn-secondary" id="picker-adjust" style="flex:1">Adjust & Re-OCR</button>' : ''}
         <button class="btn btn-primary" id="picker-confirm" style="flex:1">Use Selected</button>
       </div>
     `);
@@ -373,155 +358,7 @@ function openPassPicker(passes, currentText, imageBlob) {
       if (selectedPassName) setPreferredOcrPass(selectedPassName);
       finish();
     };
-
-    const adjustBtn = overlay.querySelector('#picker-adjust');
-    if (adjustBtn) {
-      adjustBtn.onclick = async () => {
-        const adjBlob = await openAdjustModal(imageBlob);
-        if (!adjBlob) {
-          // User cancelled adjust — reopen picker
-          resolve(await openPassPicker(passes, selectedText, imageBlob));
-          return;
-        }
-        // Run OCR on adjusted image, then open a new picker
-        const { bestText, passes: newPasses } = await runOCR(adjBlob);
-        resolve(await openPassPicker(newPasses, bestText, adjBlob));
-      };
-    }
   });
-}
-
-// ─── Color Deconvolution (Beer-Lambert) ───
-
-function rgbToOD(r, g, b) {
-  return [
-    -Math.log(Math.max(r, 1) / 255) / Math.LN10,
-    -Math.log(Math.max(g, 1) / 255) / Math.LN10,
-    -Math.log(Math.max(b, 1) / 255) / Math.LN10,
-  ];
-}
-
-function normalizeVec(v) {
-  const len = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
-  return len > 1e-6 ? [v[0] / len, v[1] / len, v[2] / len] : [1, 0, 0];
-}
-
-function crossProduct(a, b) {
-  return [
-    a[1] * b[2] - a[2] * b[1],
-    a[2] * b[0] - a[0] * b[2],
-    a[0] * b[1] - a[1] * b[0],
-  ];
-}
-
-function invert3x3(m) {
-  const [a, b, c] = m;
-  const det = a[0] * (b[1] * c[2] - b[2] * c[1])
-            - a[1] * (b[0] * c[2] - b[2] * c[0])
-            + a[2] * (b[0] * c[1] - b[1] * c[0]);
-  if (Math.abs(det) < 1e-10) return null;
-  const d = 1 / det;
-  return [
-    [(b[1]*c[2] - b[2]*c[1])*d, (a[2]*c[1] - a[1]*c[2])*d, (a[1]*b[2] - a[2]*b[1])*d],
-    [(b[2]*c[0] - b[0]*c[2])*d, (a[0]*c[2] - a[2]*c[0])*d, (a[2]*b[0] - a[0]*b[2])*d],
-    [(b[0]*c[1] - b[1]*c[0])*d, (a[1]*c[0] - a[0]*c[1])*d, (a[0]*b[1] - a[1]*b[0])*d],
-  ];
-}
-
-function buildDeconvParams(stain1, stain2) {
-  const od1 = normalizeVec(rgbToOD(stain1[0], stain1[1], stain1[2]));
-  if (stain2) {
-    const od2 = normalizeVec(rgbToOD(stain2[0], stain2[1], stain2[2]));
-    const od3 = normalizeVec(crossProduct(od1, od2));
-    const inv = invert3x3([od1, od2, od3]);
-    return inv ? { mode: 2, inv } : null;
-  }
-  return { mode: 1, vec: od1 };
-}
-
-// ─── Image Adjustment Pipeline ───
-
-function applyAdjustments(srcData, dstData, params) {
-  const { brightness, contrast, threshold, invert, chR, chG, chB, deconv, stain1, stain2 } = params;
-  const cf = (259 * (contrast + 255)) / (255 * (259 - contrast));
-  const src = srcData.data;
-  const dst = dstData.data;
-
-  // Pre-compute deconvolution
-  let dp = null;
-  if (deconv && stain1) dp = buildDeconvParams(stain1, stain2);
-
-  for (let i = 0; i < src.length; i += 4) {
-    let r, g, b;
-
-    if (dp) {
-      if (dp.mode === 2) {
-        // Two-stain deconvolution: extract text channel (orthogonal complement)
-        const od = rgbToOD(src[i], src[i + 1], src[i + 2]);
-        const c = dp.inv[2][0] * od[0] + dp.inv[2][1] * od[1] + dp.inv[2][2] * od[2];
-        r = g = b = Math.max(0, Math.min(255, 255 * Math.pow(10, -Math.max(0, c))));
-      } else {
-        // Single-stain: subtract stain projection, keep residual
-        const od = rgbToOD(src[i], src[i + 1], src[i + 2]);
-        const dot = od[0] * dp.vec[0] + od[1] * dp.vec[1] + od[2] * dp.vec[2];
-        const rx = od[0] - dot * dp.vec[0];
-        const ry = od[1] - dot * dp.vec[1];
-        const rz = od[2] - dot * dp.vec[2];
-        const mag = Math.sqrt(rx * rx + ry * ry + rz * rz);
-        r = g = b = Math.max(0, Math.min(255, 255 * Math.pow(10, -mag)));
-      }
-    } else {
-      r = chR ? src[i] : 0;
-      g = chG ? src[i + 1] : 0;
-      b = chB ? src[i + 2] : 0;
-    }
-
-    r += brightness; g += brightness; b += brightness;
-    r = cf * (r - 128) + 128;
-    g = cf * (g - 128) + 128;
-    b = cf * (b - 128) + 128;
-    r = Math.max(0, Math.min(255, r));
-    g = Math.max(0, Math.min(255, g));
-    b = Math.max(0, Math.min(255, b));
-
-    if (threshold > 0) {
-      const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-      const v = lum > threshold ? 255 : 0;
-      r = g = b = v;
-    }
-    if (invert) { r = 255 - r; g = 255 - g; b = 255 - b; }
-
-    dst[i] = r; dst[i + 1] = g; dst[i + 2] = b; dst[i + 3] = 255;
-  }
-}
-
-function isAdjustDefault(params) {
-  return params.brightness === 0 && params.contrast === 0 && params.threshold === 0
-    && !params.invert && params.chR && params.chG && params.chB
-    && !params.deconv && !params.stain1 && !params.stain2;
-}
-
-const MAX_ADJUST_DIM = 2000;
-
-async function applyAdjustToBlob(blob, params) {
-  if (isAdjustDefault(params)) return blob;
-  const img = await loadImage(blob);
-  let w = img.naturalWidth, h = img.naturalHeight;
-  // Cap resolution
-  if (w > MAX_ADJUST_DIM || h > MAX_ADJUST_DIM) {
-    const scale = MAX_ADJUST_DIM / Math.max(w, h);
-    w = Math.round(w * scale);
-    h = Math.round(h * scale);
-  }
-  const canvas = document.createElement('canvas');
-  canvas.width = w; canvas.height = h;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(img, 0, 0, w, h);
-  const srcData = ctx.getImageData(0, 0, w, h);
-  const dstData = ctx.createImageData(w, h);
-  applyAdjustments(srcData, dstData, params);
-  ctx.putImageData(dstData, 0, 0);
-  return canvasToBlob(canvas);
 }
 
 // ─── Image Preprocessing Variants ───
@@ -780,290 +617,6 @@ function openCropModal(blob) {
       };
     };
     img.onerror = () => { URL.revokeObjectURL(imgUrl); resolve(blob); };
-    img.src = imgUrl;
-  });
-}
-
-// ─── Image Adjust UI ───
-
-function openAdjustModal(blob) {
-  return new Promise((resolve) => {
-    const imgUrl = URL.createObjectURL(blob);
-    const img = new Image();
-    img.onload = () => {
-      const p = state.adjustParams;
-      const overlay = openModal(`
-        <button class="modal-close" id="adj-close">×</button>
-        <h2>Adjust Image</h2>
-        <div class="adjust-preview" id="adj-preview">
-          <canvas id="adj-canvas"></canvas>
-        </div>
-        <div class="adjust-controls">
-          <div class="adjust-slider">
-            <label>Brightness <span id="val-brightness">${p.brightness}</span></label>
-            <input type="range" id="adj-brightness" min="-100" max="100" value="${p.brightness}" />
-          </div>
-          <div class="adjust-slider">
-            <label>Contrast <span id="val-contrast">${p.contrast}</span></label>
-            <input type="range" id="adj-contrast" min="-100" max="100" value="${p.contrast}" />
-          </div>
-          <div class="adjust-slider">
-            <label>Threshold <span id="val-threshold">${p.threshold === 0 ? 'off' : p.threshold}</span></label>
-            <input type="range" id="adj-threshold" min="0" max="255" value="${p.threshold}" />
-          </div>
-          <div class="adjust-toggles">
-            <label class="adjust-toggle">
-              <input type="checkbox" id="adj-invert" ${p.invert ? 'checked' : ''} /> Invert
-            </label>
-            <span class="adjust-channels">
-              <label class="adjust-toggle ch-r">
-                <input type="checkbox" id="adj-ch-r" ${p.chR ? 'checked' : ''} /> R
-              </label>
-              <label class="adjust-toggle ch-g">
-                <input type="checkbox" id="adj-ch-g" ${p.chG ? 'checked' : ''} /> G
-              </label>
-              <label class="adjust-toggle ch-b">
-                <input type="checkbox" id="adj-ch-b" ${p.chB ? 'checked' : ''} /> B
-              </label>
-            </span>
-          </div>
-        </div>
-        <div class="deconv-section">
-          <div class="deconv-header" id="deconv-toggle">▸ Color Separation</div>
-          <div class="deconv-panel" id="deconv-panel" style="${p.stain1 ? '' : 'display:none'}">
-            <p style="font-size:0.8rem;color:var(--ink-muted);margin-bottom:8px;">
-              Tap the preview image to sample colors to remove (e.g. ruled lines, highlighter).
-            </p>
-            <div class="deconv-swatches">
-              <div class="deconv-swatch">
-                <div class="swatch-preview" id="swatch-1" ${p.stain1 ? `style="background:rgb(${p.stain1.join(',')})"` : ''}></div>
-                <span id="swatch-label-1">${p.stain1 ? 'Color 1' : 'Tap image'}</span>
-                <button class="swatch-clear" id="clear-1" ${p.stain1 ? '' : 'style="display:none"'}>×</button>
-              </div>
-              <div class="deconv-swatch">
-                <div class="swatch-preview" id="swatch-2" ${p.stain2 ? `style="background:rgb(${p.stain2.join(',')})"` : ''}></div>
-                <span id="swatch-label-2">${p.stain2 ? 'Color 2' : 'Tap image'}</span>
-                <button class="swatch-clear" id="clear-2" ${p.stain2 ? '' : 'style="display:none"'}>×</button>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div style="display:flex;gap:8px;margin-top:12px;">
-          <button class="btn btn-secondary" id="adj-reset" style="flex:1">Reset</button>
-          <button class="btn btn-secondary" id="adj-skip" style="flex:1">Skip</button>
-          <button class="btn btn-primary" id="adj-apply" style="flex:1">Apply & OCR</button>
-        </div>
-      `);
-
-      const canvas = overlay.querySelector('#adj-canvas');
-      const container = overlay.querySelector('#adj-preview');
-      const ctx = canvas.getContext('2d');
-
-      // Wait for layout before reading container width
-      requestAnimationFrame(() => {
-        const maxW = container.clientWidth || 400;
-        const ratio = img.naturalHeight / img.naturalWidth;
-        const dispW = Math.min(maxW, img.naturalWidth);
-        const dispH = Math.round(dispW * ratio);
-        canvas.width = dispW;
-        canvas.height = dispH;
-
-        const origCanvas = document.createElement('canvas');
-        origCanvas.width = dispW;
-        origCanvas.height = dispH;
-        const origCtx = origCanvas.getContext('2d');
-        origCtx.drawImage(img, 0, 0, dispW, dispH);
-        const origData = origCtx.getImageData(0, 0, dispW, dispH);
-
-        // Color deconvolution state
-        let localStain1 = p.stain1 ? [...p.stain1] : null;
-        let localStain2 = p.stain2 ? [...p.stain2] : null;
-        let deconvActive = !!(p.deconv && localStain1);
-        let samplingActive = false;
-
-        const els = {
-          brightness: overlay.querySelector('#adj-brightness'),
-          contrast: overlay.querySelector('#adj-contrast'),
-          threshold: overlay.querySelector('#adj-threshold'),
-          invert: overlay.querySelector('#adj-invert'),
-          chR: overlay.querySelector('#adj-ch-r'),
-          chG: overlay.querySelector('#adj-ch-g'),
-          chB: overlay.querySelector('#adj-ch-b'),
-        };
-
-        function getParams() {
-          return {
-            brightness: parseInt(els.brightness.value),
-            contrast: parseInt(els.contrast.value),
-            threshold: parseInt(els.threshold.value),
-            invert: els.invert.checked,
-            chR: els.chR.checked, chG: els.chG.checked, chB: els.chB.checked,
-            deconv: deconvActive, stain1: localStain1, stain2: localStain2,
-          };
-        }
-
-        let renderPending = false;
-        function render() {
-          if (renderPending) return;
-          renderPending = true;
-          requestAnimationFrame(() => {
-            renderPending = false;
-            const params = getParams();
-            overlay.querySelector('#val-brightness').textContent = params.brightness;
-            overlay.querySelector('#val-contrast').textContent = params.contrast;
-            overlay.querySelector('#val-threshold').textContent = params.threshold === 0 ? 'off' : params.threshold;
-
-            // Disable apply when all channels off (unless deconv active)
-            const applyBtn = overlay.querySelector('#adj-apply');
-            if (params.deconv && params.stain1) {
-              applyBtn.disabled = false;
-            } else {
-              applyBtn.disabled = !params.chR && !params.chG && !params.chB;
-            }
-            // Dim channels when deconv active (channels are bypassed)
-            overlay.querySelector('.adjust-channels').style.opacity = params.deconv && params.stain1 ? '0.3' : '1';
-
-            const dstData = ctx.createImageData(dispW, dispH);
-            applyAdjustments(origData, dstData, params);
-            ctx.putImageData(dstData, 0, 0);
-          });
-        }
-
-        render();
-
-        [els.brightness, els.contrast, els.threshold].forEach(s =>
-          s.addEventListener('input', render)
-        );
-        [els.invert, els.chR, els.chG, els.chB].forEach(c =>
-          c.addEventListener('change', render)
-        );
-
-        // ─── Color Separation (deconvolution) ───
-        const deconvToggle = overlay.querySelector('#deconv-toggle');
-        const deconvPanel = overlay.querySelector('#deconv-panel');
-
-        if (localStain1) {
-          deconvToggle.textContent = '▾ Color Separation';
-          samplingActive = true;
-          canvas.style.cursor = 'crosshair';
-        }
-
-        deconvToggle.onclick = () => {
-          const isOpen = deconvPanel.style.display !== 'none';
-          deconvPanel.style.display = isOpen ? 'none' : 'block';
-          deconvToggle.textContent = isOpen ? '▸ Color Separation' : '▾ Color Separation';
-          samplingActive = !isOpen;
-          canvas.style.cursor = samplingActive ? 'crosshair' : 'default';
-        };
-
-        function updateSwatches() {
-          const s1 = overlay.querySelector('#swatch-1');
-          const l1 = overlay.querySelector('#swatch-label-1');
-          const c1 = overlay.querySelector('#clear-1');
-          if (localStain1) {
-            s1.style.background = `rgb(${localStain1.join(',')})`;
-            l1.textContent = 'Color 1';
-            c1.style.display = '';
-          } else {
-            s1.style.background = '';
-            l1.textContent = 'Tap image';
-            c1.style.display = 'none';
-          }
-          const s2 = overlay.querySelector('#swatch-2');
-          const l2 = overlay.querySelector('#swatch-label-2');
-          const c2 = overlay.querySelector('#clear-2');
-          if (localStain2) {
-            s2.style.background = `rgb(${localStain2.join(',')})`;
-            l2.textContent = 'Color 2';
-            c2.style.display = '';
-          } else {
-            s2.style.background = '';
-            l2.textContent = 'Tap image';
-            c2.style.display = 'none';
-          }
-          deconvActive = !!localStain1;
-          render();
-        }
-
-        canvas.addEventListener('click', (e) => {
-          if (!samplingActive) return;
-          const rect = canvas.getBoundingClientRect();
-          const x = Math.round((e.clientX - rect.left) * (dispW / rect.width));
-          const y = Math.round((e.clientY - rect.top) * (dispH / rect.height));
-          let rSum = 0, gSum = 0, bSum = 0, count = 0;
-          for (let dy = -2; dy <= 2; dy++) {
-            for (let dx = -2; dx <= 2; dx++) {
-              const px = x + dx, py = y + dy;
-              if (px >= 0 && px < dispW && py >= 0 && py < dispH) {
-                const idx = (py * dispW + px) * 4;
-                rSum += origData.data[idx];
-                gSum += origData.data[idx + 1];
-                bSum += origData.data[idx + 2];
-                count++;
-              }
-            }
-          }
-          const sampled = [Math.round(rSum / count), Math.round(gSum / count), Math.round(bSum / count)];
-          if (!localStain1) {
-            localStain1 = sampled;
-          } else if (!localStain2) {
-            localStain2 = sampled;
-          } else {
-            localStain1 = localStain2;
-            localStain2 = sampled;
-          }
-          updateSwatches();
-        });
-
-        overlay.querySelector('#clear-1').onclick = () => {
-          localStain1 = localStain2;
-          localStain2 = null;
-          updateSwatches();
-        };
-
-        overlay.querySelector('#clear-2').onclick = () => {
-          localStain2 = null;
-          updateSwatches();
-        };
-
-        overlay.querySelector('#adj-reset').onclick = () => {
-          els.brightness.value = 0;
-          els.contrast.value = 0;
-          els.threshold.value = 0;
-          els.invert.checked = false;
-          els.chR.checked = true; els.chG.checked = true; els.chB.checked = true;
-          localStain1 = null; localStain2 = null; deconvActive = false;
-          updateSwatches();
-        };
-
-        overlay.querySelector('#adj-close').onclick = () => {
-          URL.revokeObjectURL(imgUrl);
-          closeModal();
-          resolve(null);
-        };
-
-        overlay.querySelector('#adj-skip').onclick = () => {
-          URL.revokeObjectURL(imgUrl);
-          closeModal();
-          resolve(blob); // return original unchanged
-        };
-
-        overlay.querySelector('#adj-apply').onclick = async () => {
-          const params = getParams();
-          saveAdjustParams(params);
-          URL.revokeObjectURL(imgUrl);
-          if (isAdjustDefault(params)) {
-            closeModal();
-            resolve(blob);
-            return;
-          }
-          const adjBlob = await applyAdjustToBlob(blob, params);
-          closeModal();
-          resolve(adjBlob);
-        };
-      });
-    };
-    img.onerror = () => { URL.revokeObjectURL(imgUrl); resolve(null); };
     img.src = imgUrl;
   });
 }
@@ -1542,13 +1095,6 @@ function renderCaptureView() {
 
     <div class="captures-grid" id="captures-grid"></div>
 
-    ${!isAdjustDefault(state.adjustParams) ? `
-      <div class="adjust-active-hint">
-        Image adjustments active — will auto-apply to all captures.
-        <button class="btn btn-sm btn-secondary" id="clear-adjust">Clear</button>
-      </div>
-    ` : ''}
-
     ${state.captures.length > 0 ? `
       <div class="ocr-loading" id="ocr-status" style="display:none">
         <div class="spinner"></div>
@@ -1579,13 +1125,6 @@ function renderCaptureView() {
     };
   });
 
-  // Clear adjust settings
-  const clearAdjustBtn = $('#clear-adjust');
-  if (clearAdjustBtn) clearAdjustBtn.onclick = () => {
-    saveAdjustParams({ ...DEFAULT_ADJUST });
-    renderCaptureView();
-  };
-
   // Camera zone click
   $('#camera-zone').onclick = () => $('#photo-input').click();
 
@@ -1614,11 +1153,9 @@ function renderCaptureView() {
       state.captures.push(capture);
 
       if (state.captureMode === 'single') {
-        // In single mode: crop → adjust → OCR
+        // In single mode: crop → OCR
         renderCaptureView();
         capture.blob = await openCropModal(capture.blob);
-        const adjusted = await openAdjustModal(capture.blob);
-        if (adjusted) capture.blob = adjusted;
         await processSingleCapture(capture);
         return;
       }
@@ -1695,7 +1232,7 @@ async function processSingleCapture(capture) {
     } else {
       const passesWithText = passes.filter(p => p.text);
       if (passesWithText.length > 1) {
-        capture.ocrText = await openPassPicker(passes, bestText, capture.blob);
+        capture.ocrText = await openPassPicker(passes, bestText);
       } else {
         capture.ocrText = bestText;
       }
@@ -1732,9 +1269,7 @@ async function processBatchCaptures() {
     if (statusSpan) statusSpan.textContent = batchLabel;
 
     try {
-      // Auto-apply saved adjust params in batch mode
-      const ocrBlob = await applyAdjustToBlob(capture.blob, state.adjustParams);
-      const { bestText, passes } = await runOCR(ocrBlob, showPassResult);
+      const { bestText, passes } = await runOCR(capture.blob, showPassResult);
       capture.ocrText = bestText;
       capture.ocrPasses = passes;
       capture.ocrStatus = 'done';
@@ -2002,7 +1537,7 @@ function openBatchReviewModal() {
     if (viewPassesBtn) {
       viewPassesBtn.onclick = async () => {
         saveCurrentState();
-        const selected = await openPassPicker(nd.capture.ocrPasses, nd.text, nd.capture.blob);
+        const selected = await openPassPicker(nd.capture.ocrPasses, nd.text);
         nd.text = selected;
         renderReview();
       };
@@ -2162,11 +1697,6 @@ async function openEditNoteModal(note) {
 
       try {
         const blob = await dataURLToBlob(photoData);
-        const adjusted = await openAdjustModal(blob);
-        if (!adjusted) {
-          openEditNoteModal(note);
-          return;
-        }
 
         // Show progress — reuse a temporary status bar
         const tempOverlay = openModal(`
@@ -2179,13 +1709,13 @@ async function openEditNoteModal(note) {
           <div id="ocr-passes" style="display:none"></div>
         `);
 
-        const { bestText, passes } = await runOCR(adjusted, showPassResult);
+        const { bestText, passes } = await runOCR(blob, showPassResult);
         clearPassResults();
         closeModal();
 
         const passesWithText = passes.filter(p => p.text);
         if (passesWithText.length > 1) {
-          note.text = await openPassPicker(passes, bestText, blob);
+          note.text = await openPassPicker(passes, bestText);
         } else {
           note.text = bestText;
         }
@@ -2337,7 +1867,6 @@ async function buildBackupData({ includePhotos = true, includeSettings = true } 
       ocrLang: localStorage.getItem('marginalia-ocr-lang'),
       ocrPass: localStorage.getItem('marginalia-ocr-pass'),
       ocrDisabled: localStorage.getItem('marginalia-ocr-disabled'),
-      adjust: localStorage.getItem('marginalia-adjust'),
       autoBackup: localStorage.getItem('marginalia-autobackup'),
     };
   }
@@ -2569,7 +2098,6 @@ function renderSettings() {
         if (data.settings.ocrLang) { localStorage.setItem('marginalia-ocr-lang', data.settings.ocrLang); setOCRLang(data.settings.ocrLang); }
         if (data.settings.ocrPass) { setPreferredOcrPass(data.settings.ocrPass); }
         if (data.settings.ocrDisabled) { setDisabledOcrPasses(JSON.parse(data.settings.ocrDisabled)); }
-        if (data.settings.adjust) { localStorage.setItem('marginalia-adjust', data.settings.adjust); state.adjustParams = { ...DEFAULT_ADJUST, ...JSON.parse(data.settings.adjust) }; }
         if (data.settings.autoBackup) { saveAutoBackupConfig(JSON.parse(data.settings.autoBackup)); startAutoBackup(); }
       }
       showToast('Data imported!');
@@ -2682,9 +2210,7 @@ function renderHelp() {
         <li>Hold the camera steady and fill the frame with the text.</li>
         <li>Use the crop tool to select just the text area.</li>
         <li>The app runs 5 OCR passes (raw, contrast, binarize, block, sharp) and shows progress as each completes. Afterwards, you can compare all results and pick the best one.</li>
-        <li>In <strong>single mode</strong>, an image adjustment step appears before OCR. Tweak brightness, contrast, threshold, invert, or isolate color channels. Settings are saved and auto-applied to batch captures.</li>
-        <li>Use <strong>Color Separation</strong> in the adjust screen to remove background colors like ruled lines or highlighter marks — tap the preview to sample the color to remove.</li>
-        <li>You can also <strong>Adjust &amp; Re-OCR</strong> from the pass picker or the edit screen if results are poor.</li>
+        <li>For advanced preprocessing (shadow removal, binarization, color deconvolution, etc.), use <a href="../ocr-lab/" style="color:var(--amber)"><strong>OCR Lab</strong></a> — a dedicated tuning workbench for dialing in the best settings for your photos.</li>
         <li>You can always edit the extracted text before saving.</li>
       </ul>
     </div>
