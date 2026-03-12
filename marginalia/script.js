@@ -2293,6 +2293,14 @@ function renderSettings() {
       <p style="font-size:0.85rem;color:var(--ink-muted);margin-top:4px;">
         All data is stored locally in your browser using IndexedDB.
       </p>
+      <div style="margin-top:8px;font-size:0.85rem;">
+        <label style="display:flex;align-items:center;gap:6px;margin-bottom:4px;cursor:pointer;">
+          <input type="checkbox" id="export-photos" checked> Include photos
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;margin-bottom:4px;cursor:pointer;">
+          <input type="checkbox" id="export-settings" checked> Include settings
+        </label>
+      </div>
       <div style="display:flex;gap:8px;margin-top:10px;">
         <button class="btn btn-sm btn-secondary" id="export-all">Export All Data</button>
         <button class="btn btn-sm btn-secondary" id="import-data">Import Data</button>
@@ -2327,11 +2335,19 @@ function renderSettings() {
   };
 
   view.querySelector('#export-all').onclick = async () => {
+    const includePhotos = view.querySelector('#export-photos').checked;
+    const includeSettings = view.querySelector('#export-settings').checked;
     const books = await dbGetAll('books');
     const notes = await dbGetAll('notes');
-    const photos = await dbGetAll('photos');
-    const data = JSON.stringify({ books, notes, photos, exportedAt: Date.now() }, null, 2);
-    const blob = new Blob([data], { type: 'application/json' });
+    const data = { books, notes, exportedAt: Date.now() };
+    if (includePhotos) data.photos = await dbGetAll('photos');
+    if (includeSettings) {
+      data.settings = {
+        ocrLang: localStorage.getItem('marginalia-ocr-lang'),
+        adjust: localStorage.getItem('marginalia-adjust'),
+      };
+    }
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -2351,6 +2367,10 @@ function renderSettings() {
       if (data.books) for (const b of data.books) await dbPut('books', b);
       if (data.notes) for (const n of data.notes) await dbPut('notes', n);
       if (data.photos) for (const p of data.photos) await dbPut('photos', p);
+      if (data.settings) {
+        if (data.settings.ocrLang) { localStorage.setItem('marginalia-ocr-lang', data.settings.ocrLang); setOCRLang(data.settings.ocrLang); }
+        if (data.settings.adjust) { localStorage.setItem('marginalia-adjust', data.settings.adjust); state.adjustParams = { ...DEFAULT_ADJUST, ...JSON.parse(data.settings.adjust) }; }
+      }
       showToast('Data imported!');
       renderBooks();
     } catch (err) {
