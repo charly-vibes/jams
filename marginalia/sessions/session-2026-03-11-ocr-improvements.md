@@ -8,14 +8,19 @@ Tesseract.js OCR on raw phone photos of book pages and post-it notes produced po
 
 ### 1. Canvas Image Preprocessing (`preprocessImage`)
 
-Added a preprocessing pipeline that runs before Tesseract receives the image:
+After several iterations, the preprocessing was stripped down to **upscale only**:
 
-- **Upscale**: If the shorter image dimension is under 1000px, scale 2x. Tesseract performs best around 300 DPI; phone crops can be too small.
-- **Grayscale**: Weighted luminance conversion (0.299R + 0.587G + 0.114B) — matches human perception and removes color noise from post-it backgrounds.
-- **Auto-levels**: Histogram scan to find 1st and 99th percentile values, then remap the full range to 0–255. This normalizes photos taken in different lighting conditions.
-- **Unsharp mask**: Mild sharpening (3×3 box blur, 0.5 strength) to crisp up text edges without destroying grayscale information.
+- **Upscale**: 3x if shorter dimension < 750px, 2x if < 1500px, passthrough if already large enough. Uses `imageSmoothingQuality: 'high'` for clean interpolation.
+- **No color/contrast manipulation**: Tesseract's internal preprocessing is better than anything we can do on canvas.
 
-An earlier iteration used adaptive thresholding (integral-image summed area table, 15×15 window) to binarize the image, but this was counterproductive — it destroyed anti-aliasing and grayscale gradients that Tesseract's own internal Otsu binarization relies on. Removing it and letting Tesseract handle binarization produced significantly better results.
+### What didn't work (removed)
+
+- **Adaptive threshold** (integral-image SAT, 15×15 window): Binarized to pure black/white, destroying anti-aliasing and grayscale gradients Tesseract needs. Made OCR significantly worse.
+- **Grayscale + auto-levels**: Histogram stretching (1st/99th percentile remap) interfered with Tesseract's own contrast normalization.
+- **Unsharp mask** (3×3 box blur, 0.5 strength): Added noise without meaningful benefit on phone photos.
+- **PSM 6**: "Single uniform block" assumption failed on full book pages.
+
+**Lesson**: Tesseract.js handles its own binarization, contrast, and grayscale conversion well. The only thing it genuinely needs help with is resolution — phone crops can be too small for reliable character recognition.
 
 ### 2. Tesseract PSM (default / auto)
 

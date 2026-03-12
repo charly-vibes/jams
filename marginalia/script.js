@@ -164,80 +164,23 @@ function preprocessImage(blob) {
     const url = URL.createObjectURL(blob);
     img.onload = () => {
       URL.revokeObjectURL(url);
+      // Only upscale small images — Tesseract needs ~300 DPI to work well
+      const shorter = Math.min(img.naturalWidth, img.naturalHeight);
+      if (shorter >= 1500) {
+        resolve(blob); // Already large enough, pass through untouched
+        return;
+      }
       try {
-        const shorter = Math.min(img.naturalWidth, img.naturalHeight);
-        const scale = shorter < 1000 ? 2 : 1;
+        const scale = shorter < 750 ? 3 : 2;
         const w = img.naturalWidth * scale;
         const h = img.naturalHeight * scale;
-
         const canvas = document.createElement('canvas');
         canvas.width = w;
         canvas.height = h;
         const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(img, 0, 0, w, h);
-
-        const imageData = ctx.getImageData(0, 0, w, h);
-        const data = imageData.data;
-
-        // Grayscale
-        const gray = new Uint8Array(w * h);
-        for (let i = 0; i < gray.length; i++) {
-          const j = i * 4;
-          gray[i] = Math.round(0.299 * data[j] + 0.587 * data[j + 1] + 0.114 * data[j + 2]);
-        }
-
-        // Auto-levels: find 1st/99th percentile
-        const hist = new Uint32Array(256);
-        for (let i = 0; i < gray.length; i++) hist[gray[i]]++;
-        const total = gray.length;
-        const loTarget = total * 0.01;
-        const hiTarget = total * 0.99;
-        let lo = 0, hi = 255, cumul = 0;
-        for (let v = 0; v < 256; v++) {
-          cumul += hist[v];
-          if (cumul >= loTarget) { lo = v; break; }
-        }
-        cumul = 0;
-        for (let v = 0; v < 256; v++) {
-          cumul += hist[v];
-          if (cumul >= hiTarget) { hi = v; break; }
-        }
-        const range = hi - lo || 1;
-        for (let i = 0; i < gray.length; i++) {
-          gray[i] = Math.max(0, Math.min(255, Math.round((gray[i] - lo) * 255 / range)));
-        }
-
-        // Unsharp mask: sharpen edges to help Tesseract distinguish characters
-        // Blur with a 3x3 box kernel, then blend: sharp = original + strength*(original - blurred)
-        const blurred = new Uint8Array(w * h);
-        for (let y = 0; y < h; y++) {
-          for (let x = 0; x < w; x++) {
-            let sum = 0, count = 0;
-            for (let dy = -1; dy <= 1; dy++) {
-              for (let dx = -1; dx <= 1; dx++) {
-                const ny = y + dy, nx = x + dx;
-                if (ny >= 0 && ny < h && nx >= 0 && nx < w) {
-                  sum += gray[ny * w + nx];
-                  count++;
-                }
-              }
-            }
-            blurred[y * w + x] = Math.round(sum / count);
-          }
-        }
-        const strength = 0.5;
-        for (let i = 0; i < gray.length; i++) {
-          gray[i] = Math.max(0, Math.min(255, Math.round(gray[i] + strength * (gray[i] - blurred[i]))));
-        }
-
-        // Write grayscale back — let Tesseract handle its own binarization
-        for (let i = 0; i < gray.length; i++) {
-          const j = i * 4;
-          data[j] = data[j + 1] = data[j + 2] = gray[i];
-          data[j + 3] = 255;
-        }
-
-        ctx.putImageData(imageData, 0, 0);
         canvas.toBlob((result) => resolve(result), 'image/png');
       } catch (err) {
         reject(err);
