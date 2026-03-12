@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+  <title>OCR Lab</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a href="../" class="home-link">&larr;</a>
+  <main>
+    <h1>OCR Lab</h1>
+
+    <section id="image-input">
+      <label class="file-btn" for="file-upload">Load Image</label>
+      <input type="file" id="file-upload" accept="image/*">
+      <button id="camera-btn" class="file-btn" style="display:none">Camera</button>
+      <span id="file-name" class="file-name"></span>
+    </section>
+
+    <section id="preview-section" class="disabled-section">
+      <div id="preview-wrap">
+        <canvas id="preview-canvas"></canvas>
+        <div id="processing-overlay" class="hidden">
+          <div class="spinner"></div>
+          <span>Processing…</span>
+        </div>
+        <div id="preview-hint" class="preview-hint">Tap image to toggle original</div>
+      </div>
+      <p class="empty-prompt" id="empty-prompt">Load an image to begin</p>
+    </section>
+
+    <!-- Pipeline Controls -->
+    <fieldset id="pipeline-controls" disabled>
+      <legend>Preprocessing Pipeline</legend>
+
+      <details open>
+        <summary>Image Preparation</summary>
+
+        <div class="step">
+          <label><input type="checkbox" data-step="scale" checked> Scale</label>
+          <div class="step-params" data-for="scale">
+            <label>Factor
+              <select id="scale-factor">
+                <option value="1">1x</option>
+                <option value="1.5">1.5x</option>
+                <option value="2" selected>2x</option>
+                <option value="3">3x</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <div class="step">
+          <label><input type="checkbox" data-step="shadow"> Shadow Removal</label>
+          <div class="step-params" data-for="shadow">
+            <label>Kernel Size
+              <input type="range" id="shadow-kernel" min="11" max="41" step="2" value="21">
+              <span class="range-val" data-for="shadow-kernel">21</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="step">
+          <label><input type="checkbox" data-step="denoise"> Denoise</label>
+          <div class="step-params" data-for="denoise">
+            <label>Kernel
+              <select id="denoise-kernel">
+                <option value="3" selected>3</option>
+                <option value="5">5</option>
+                <option value="7">7</option>
+              </select>
+            </label>
+          </div>
+        </div>
+      </details>
+
+      <details>
+        <summary>Contrast &amp; Color</summary>
+
+        <div class="step">
+          <label><input type="checkbox" data-step="channels"> Channel Selection</label>
+          <div class="step-params" data-for="channels">
+            <label><input type="checkbox" id="ch-r" checked> R</label>
+            <label><input type="checkbox" id="ch-g" checked> G</label>
+            <label><input type="checkbox" id="ch-b" checked> B</label>
+          </div>
+        </div>
+
+        <div class="step">
+          <label><input type="checkbox" data-step="deconv"> Color Deconvolution</label>
+          <div class="step-params" data-for="deconv">
+            <div class="stain-samples">
+              <button id="sample-stain1" class="stain-btn">Sample Stain 1</button>
+              <span id="stain1-swatch" class="swatch"></span>
+              <button id="sample-stain2" class="stain-btn">Sample Stain 2</button>
+              <span id="stain2-swatch" class="swatch"></span>
+            </div>
+            <button id="clear-stains" class="btn-small">Clear</button>
+          </div>
+        </div>
+
+        <div class="step">
+          <label><input type="checkbox" data-step="autoLevels" checked> Auto-Levels</label>
+        </div>
+
+        <div class="step">
+          <label><input type="checkbox" data-step="brightness"> Brightness / Contrast</label>
+          <div class="step-params" data-for="brightness">
+            <label>Brightness
+              <input type="range" id="brightness-val" min="-100" max="100" value="0">
+              <span class="range-val" data-for="brightness-val">0</span>
+            </label>
+            <label>Contrast
+              <input type="range" id="contrast-val" min="-100" max="100" value="0">
+              <span class="range-val" data-for="contrast-val">0</span>
+            </label>
+          </div>
+        </div>
+      </details>
+
+      <details>
+        <summary>Binarization &amp; Output</summary>
+
+        <div class="step">
+          <label><input type="checkbox" data-step="sharpen"> Sharpen</label>
+          <div class="step-params" data-for="sharpen">
+            <label>Strength
+              <input type="range" id="sharpen-strength" min="0.5" max="3.0" step="0.1" value="1.0">
+              <span class="range-val" data-for="sharpen-strength">1.0</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="step">
+          <label><input type="checkbox" data-step="binarize" checked> Binarize</label>
+          <div class="step-params" data-for="binarize">
+            <label>Method
+              <select id="binarize-method">
+                <option value="none">None</option>
+                <option value="otsu">Otsu (global)</option>
+                <option value="adaptiveGaussian" selected>Adaptive Gaussian</option>
+              </select>
+            </label>
+            <div id="adaptive-params">
+              <label>Block Size
+                <input type="range" id="binarize-block" min="11" max="51" step="2" value="31">
+                <span class="range-val" data-for="binarize-block">31</span>
+              </label>
+              <label>C
+                <input type="range" id="binarize-c" min="-20" max="20" step="1" value="5">
+                <span class="range-val" data-for="binarize-c">5</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="step">
+          <label><input type="checkbox" data-step="morphology"> Morphology</label>
+          <div class="step-params" data-for="morphology">
+            <label>Operation
+              <select id="morph-op">
+                <option value="opening" selected>Opening (remove specks)</option>
+                <option value="closing">Closing (reconnect strokes)</option>
+              </select>
+            </label>
+            <label>Kernel
+              <select id="morph-kernel">
+                <option value="2">2</option>
+                <option value="3" selected>3</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <div class="step">
+          <label><input type="checkbox" data-step="invert"> Invert</label>
+        </div>
+
+        <div class="step">
+          <label><input type="checkbox" data-step="padding" checked> Border Padding</label>
+          <div class="step-params" data-for="padding">
+            <label>Size (px)
+              <input type="range" id="padding-size" min="0" max="30" value="10">
+              <span class="range-val" data-for="padding-size">10</span>
+            </label>
+          </div>
+        </div>
+      </details>
+    </fieldset>
+
+    <!-- Tesseract Config -->
+    <fieldset id="tess-config" disabled>
+      <legend>Tesseract Configuration</legend>
+      <label>Page Segmentation Mode
+        <select id="psm-mode">
+          <option value="3">3 — Fully automatic</option>
+          <option value="4">4 — Single column</option>
+          <option value="6">6 — Single block of text</option>
+          <option value="7">7 — Single line</option>
+          <option value="8">8 — Single word</option>
+          <option value="11" selected>11 — Sparse text</option>
+          <option value="13">13 — Raw line</option>
+        </select>
+      </label>
+      <label>Language
+        <select id="ocr-lang">
+          <option value="eng" selected>English</option>
+          <option value="fra">French</option>
+          <option value="deu">German</option>
+          <option value="spa">Spanish</option>
+          <option value="ita">Italian</option>
+          <option value="por">Portuguese</option>
+          <option value="rus">Russian</option>
+          <option value="pol">Polish</option>
+          <option value="nld">Dutch</option>
+          <option value="jpn">Japanese</option>
+          <option value="chi_sim">Chinese (Simplified)</option>
+          <option value="chi_tra">Chinese (Traditional)</option>
+          <option value="kor">Korean</option>
+          <option value="ara">Arabic</option>
+          <option value="hin">Hindi</option>
+          <option value="tur">Turkish</option>
+          <option value="ukr">Ukrainian</option>
+        </select>
+      </label>
+    </fieldset>
+
+    <!-- Actions -->
+    <section id="actions" class="disabled-section">
+      <button id="run-ocr" class="btn-primary" disabled>Run OCR</button>
+    </section>
+
+    <!-- Results -->
+    <section id="results" class="hidden">
+      <h2>Results</h2>
+      <div id="confidence-badge"></div>
+      <textarea id="ocr-text" readonly rows="8"></textarea>
+    </section>
+
+    <!-- Profiles -->
+    <fieldset id="profiles-section">
+      <legend>Profiles</legend>
+      <div class="profile-row">
+        <select id="profile-list">
+          <option value="">— select —</option>
+        </select>
+        <button id="profile-load" class="btn-small">Load</button>
+        <button id="profile-delete" class="btn-small btn-danger">Delete</button>
+      </div>
+      <div class="profile-row">
+        <input type="text" id="profile-name" placeholder="Profile name">
+        <button id="profile-save" class="btn-small">Save</button>
+      </div>
+    </fieldset>
+
+    <!-- Export -->
+    <section id="export-section">
+      <button id="export-btn" class="btn-primary">Export Config</button>
+    </section>
+
+  </main>
+
+  <footer>
+    <a href="https://github.com/charly-vibes/jams/tree/main/ocr-lab" target="_blank" rel="noopener noreferrer">View source on GitHub</a>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
