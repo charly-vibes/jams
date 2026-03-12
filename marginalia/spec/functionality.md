@@ -9,9 +9,11 @@ A PWA for capturing post-it notes and marginalia from physical books, running OC
 - **Book Library**: Add, browse, and manage books with note counts and timestamps
 - **Photo Capture**: Snap photos of book pages with post-it notes (single or batch mode)
 - **Speech-to-Text**: Dictate notes using the Web Speech API — available in capture view and all note modals. Language follows the OCR language setting.
-- **OCR Processing**: Tesseract.js v5 runs entirely in-browser with multi-pass OCR — tries up to 4 preprocessing/PSM combinations, scores each by word confidence, and keeps the best result. Stops early if confidence exceeds 65%. Supports 17 languages via a Settings dropdown.
+- **OCR Processing**: Tesseract.js v5 runs entirely in-browser with multi-pass OCR — 5 preprocessing/PSM combinations (raw, contrast, binarize, block, sharp), scored by word confidence. All passes always run; user can compare results in a pass picker modal. Supports 17 languages via a Settings dropdown.
 - **Language Selection**: Choose OCR language in Settings (English default); persisted in localStorage. Worker reinitializes automatically when language changes.
 - **Crop UI**: Interactive crop modal before OCR lets users select the text region, improving results on cluttered photos
+- **Image Adjustment**: Pre-OCR adjustment with brightness, contrast, threshold, invert, and RGB channel isolation. Settings persist across captures and auto-apply in batch mode.
+- **Color Deconvolution**: Beer-Lambert based color separation for removing background colors (ruled lines, highlighter marks) before OCR. Tap the preview image to sample up to 2 colors to remove; single-stain projection or two-stain matrix inversion extracts the text channel as grayscale.
 - **Note Categorization**: Classify notes as Note, Key/Important, Question, Idea, or Quote with color-coded highlights
 - **Tagging**: Add custom tags to notes for organization
 - **Search & Filter**: Full-text search and filter notes by highlight type within each book
@@ -39,18 +41,21 @@ A PWA for capturing post-it notes and marginalia from physical books, running OC
 6. Export to Markdown when ready
 
 ### Capture Modes
-- **Single**: Process one photo at a time — crop modal → OCR → review immediately
-- **Batch**: Capture multiple photos, optionally crop individual thumbnails, then process all → step through review
+- **Single**: Process one photo at a time — crop → adjust → OCR → pass picker → review immediately
+- **Batch**: Capture multiple photos, optionally crop thumbnails, then process all with saved adjust settings → step through review with pass comparison
 
 ### OCR Pipeline
 1. **Crop** (optional): User drags a rectangle to isolate the text region; skip returns the full image
-2. **Multi-pass recognition**: Up to 4 passes with different preprocessing variants and PSM modes:
-   - Pass 1: Upscale only, PSM 3 (auto segmentation)
-   - Pass 2: Grayscale + auto-levels contrast, PSM 3
-   - Pass 3: Upscale only, PSM 6 (single text block)
-   - Pass 4: Grayscale + unsharp mask, PSM 6
-3. **Scoring**: Each pass scored by average word confidence from Tesseract. Stops early if confidence > 65%. User can tap "Use this" to accept the current best result early. Best result returned.
+2. **Adjust** (optional): Brightness, contrast, threshold, invert, RGB channels, and color deconvolution. Settings persist in localStorage for reuse.
+3. **Multi-pass recognition**: 5 passes always run with different preprocessing:
+   - raw: Upscale only, PSM 3
+   - contrast: Grayscale + auto-levels, PSM 3
+   - binarize: Otsu's threshold, PSM 6
+   - block: Upscale only, PSM 6
+   - sharp: Grayscale + unsharp mask, PSM 6
+4. **Pass Picker**: All passes displayed with confidence scores; user selects the best result. "Adjust & Re-OCR" button allows tweaking and re-running from the picker.
+5. **Color Deconvolution**: Beer-Lambert optical density decomposition. Converts RGB to OD space, builds a stain matrix from sampled colors, inverts to separate channels. Supports 1-stain (projection subtraction) and 2-stain (3x3 matrix inversion with orthogonal complement) modes.
 
 ### Data Storage
 All data lives in IndexedDB with three stores: books, notes, photos.
-Photos are stored as base64 data URLs.
+Photos are stored as base64 data URLs alongside notes for future re-OCR.
