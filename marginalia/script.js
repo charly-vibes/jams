@@ -61,6 +61,14 @@ function dbGetAll(storeName) {
   });
 }
 
+function dbGet(storeName, key) {
+  return new Promise((resolve, reject) => {
+    const req = dbTx(storeName).get(key);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
 function dbPut(storeName, data) {
   return new Promise((resolve, reject) => {
     const req = dbTx(storeName, 'readwrite').put(data);
@@ -871,8 +879,12 @@ function renderNotes(notes) {
     </div>`;
   }
 
+  // Load photos async after render
+  setTimeout(() => loadNotePhotos(notes), 0);
+
   return notes.map(n => `
     <div class="note-card highlight-${n.highlight || 'note'}" data-id="${n.id}">
+      ${n.photoId ? `<div class="note-photo" data-photo-id="${n.photoId}"></div>` : ''}
       <div class="note-text">${esc(n.text || '(no text extracted)')}</div>
       ${n.pageNum ? `<div class="note-page">p. ${n.pageNum}</div>` : ''}
       ${(n.tags && n.tags.length) ? `
@@ -885,6 +897,30 @@ function renderNotes(notes) {
       </div>
     </div>
   `).join('');
+}
+
+async function loadNotePhotos(notes) {
+  for (const n of notes) {
+    if (!n.photoId) continue;
+    const el = document.querySelector(`.note-photo[data-photo-id="${n.photoId}"]`);
+    if (!el || el.dataset.loaded) continue;
+    try {
+      const photo = await dbGet('photos', n.photoId);
+      if (photo && photo.data) {
+        el.innerHTML = `<img src="${photo.data}" alt="Captured page" />`;
+        el.dataset.loaded = 'true';
+        el.onclick = () => openPhotoLightbox(photo.data);
+      }
+    } catch (err) { /* photo missing */ }
+  }
+}
+
+function openPhotoLightbox(dataUrl) {
+  const overlay = openModal(`
+    <button class="modal-close" id="modal-close">×</button>
+    <img src="${dataUrl}" style="width:100%;border-radius:var(--radius);" />
+  `);
+  overlay.querySelector('#modal-close').onclick = closeModal;
 }
 
 function bindNoteActions(notes) {
@@ -1201,6 +1237,10 @@ function openNewNoteModal(capture) {
     <button class="modal-close" id="modal-close">×</button>
     <h2>New Note</h2>
 
+    <div style="margin-bottom:12px;">
+      <img src="${capture.url}" style="width:100%;max-height:180px;object-fit:contain;border-radius:var(--radius);background:#eee;" />
+    </div>
+
     <div class="highlight-picker">
       <button class="hl-note active" data-hl="note">Note</button>
       <button class="hl-important" data-hl="important">Key</button>
@@ -1439,12 +1479,36 @@ function blobToDataURL(blob) {
   });
 }
 
+function dataURLToBlob(dataUrl) {
+  const [header, b64] = dataUrl.split(',');
+  const mime = header.match(/:(.*?);/)[1];
+  const bytes = atob(b64);
+  const arr = new Uint8Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+  return new Blob([arr], { type: mime });
+}
+
 // ─── Edit Note Modal ───
-function openEditNoteModal(note) {
+async function openEditNoteModal(note) {
+  let photoData = null;
+  if (note.photoId) {
+    try {
+      const photo = await dbGet('photos', note.photoId);
+      if (photo) photoData = photo.data;
+    } catch (err) { /* photo missing */ }
+  }
+
   const tags = [...(note.tags || [])];
   const overlay = openModal(`
     <button class="modal-close" id="modal-close">×</button>
     <h2>Edit Note</h2>
+
+    ${photoData ? `
+      <div style="margin-bottom:12px;">
+        <img src="${photoData}" style="width:100%;max-height:180px;object-fit:contain;border-radius:var(--radius);background:#eee;" />
+        <button class="btn btn-sm btn-secondary" id="re-ocr-btn" style="margin-top:6px;">Re-run OCR</button>
+      </div>
+    ` : ''}
 
     <div class="highlight-picker">
       <button class="hl-note ${note.highlight === 'note' ? 'active' : ''}" data-hl="note">Note</button>
@@ -1487,6 +1551,37 @@ function openEditNoteModal(note) {
 
   setupTagsInput(overlay, tags);
   setupDictateButton(overlay);
+
+  // Re-OCR button
+  const reOcrBtn = overlay.querySelector('#re-ocr-btn');
+  if (reOcrBtn && photoData) {
+    reOcrBtn.onclick = async () => {
+      reOcrBtn.disabled = true;
+      reOcrBtn.textContent = 'Running OCR...';
+
+      // Add a pass results container inside the modal
+      let passContainer = overlay.querySelector('#ocr-passes');
+      if (!passContainer) {
+        passContainer = document.createElement('div');
+        passContainer.id = 'ocr-passes';
+        passContainer.style.display = 'none';
+        reOcrBtn.parentElement.after(passContainer);
+      }
+      clearPassResults();
+
+      try {
+        const blob = await dataURLToBlob(photoData);
+        const text = await runOCR(blob, showPassResult);
+        overlay.querySelector('#note-text').value = text;
+        showToast('OCR complete — text updated');
+      } catch (err) {
+        showToast('OCR failed');
+      }
+      clearPassResults();
+      reOcrBtn.disabled = false;
+      reOcrBtn.textContent = 'Re-run OCR';
+    };
+  }
 
   const updateBtn = overlay.querySelector('#save-note');
   updateBtn.onclick = async () => {
