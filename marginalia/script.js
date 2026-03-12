@@ -7,7 +7,7 @@ const DB_NAME = 'marginalia';
 const DB_VERSION = 1;
 
 // ─── State ───
-const DEFAULT_ADJUST = { brightness: 0, contrast: 0, threshold: 0, invert: false, chR: true, chG: true, chB: true };
+const DEFAULT_ADJUST = { brightness: 0, contrast: 0, threshold: 0, invert: false, chR: true, chG: true, chB: true, deconv: false, stain1: null, stain2: null };
 
 function loadAdjustParams() {
   try {
@@ -335,18 +335,90 @@ function openPassPicker(passes, currentText, imageBlob) {
   });
 }
 
+// ─── Color Deconvolution (Beer-Lambert) ───
+
+function rgbToOD(r, g, b) {
+  return [
+    -Math.log(Math.max(r, 1) / 255) / Math.LN10,
+    -Math.log(Math.max(g, 1) / 255) / Math.LN10,
+    -Math.log(Math.max(b, 1) / 255) / Math.LN10,
+  ];
+}
+
+function normalizeVec(v) {
+  const len = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+  return len > 1e-6 ? [v[0] / len, v[1] / len, v[2] / len] : [1, 0, 0];
+}
+
+function crossProduct(a, b) {
+  return [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0],
+  ];
+}
+
+function invert3x3(m) {
+  const [a, b, c] = m;
+  const det = a[0] * (b[1] * c[2] - b[2] * c[1])
+            - a[1] * (b[0] * c[2] - b[2] * c[0])
+            + a[2] * (b[0] * c[1] - b[1] * c[0]);
+  if (Math.abs(det) < 1e-10) return null;
+  const d = 1 / det;
+  return [
+    [(b[1]*c[2] - b[2]*c[1])*d, (a[2]*c[1] - a[1]*c[2])*d, (a[1]*b[2] - a[2]*b[1])*d],
+    [(b[2]*c[0] - b[0]*c[2])*d, (a[0]*c[2] - a[2]*c[0])*d, (a[2]*b[0] - a[0]*b[2])*d],
+    [(b[0]*c[1] - b[1]*c[0])*d, (a[1]*c[0] - a[0]*c[1])*d, (a[0]*b[1] - a[1]*b[0])*d],
+  ];
+}
+
+function buildDeconvParams(stain1, stain2) {
+  const od1 = normalizeVec(rgbToOD(stain1[0], stain1[1], stain1[2]));
+  if (stain2) {
+    const od2 = normalizeVec(rgbToOD(stain2[0], stain2[1], stain2[2]));
+    const od3 = normalizeVec(crossProduct(od1, od2));
+    const inv = invert3x3([od1, od2, od3]);
+    return inv ? { mode: 2, inv } : null;
+  }
+  return { mode: 1, vec: od1 };
+}
+
 // ─── Image Adjustment Pipeline ───
 
 function applyAdjustments(srcData, dstData, params) {
-  const { brightness, contrast, threshold, invert, chR, chG, chB } = params;
+  const { brightness, contrast, threshold, invert, chR, chG, chB, deconv, stain1, stain2 } = params;
   const cf = (259 * (contrast + 255)) / (255 * (259 - contrast));
   const src = srcData.data;
   const dst = dstData.data;
 
+  // Pre-compute deconvolution
+  let dp = null;
+  if (deconv && stain1) dp = buildDeconvParams(stain1, stain2);
+
   for (let i = 0; i < src.length; i += 4) {
-    let r = chR ? src[i] : 0;
-    let g = chG ? src[i + 1] : 0;
-    let b = chB ? src[i + 2] : 0;
+    let r, g, b;
+
+    if (dp) {
+      if (dp.mode === 2) {
+        // Two-stain deconvolution: extract text channel (orthogonal complement)
+        const od = rgbToOD(src[i], src[i + 1], src[i + 2]);
+        const c = dp.inv[2][0] * od[0] + dp.inv[2][1] * od[1] + dp.inv[2][2] * od[2];
+        r = g = b = Math.max(0, Math.min(255, 255 * Math.pow(10, -Math.max(0, c))));
+      } else {
+        // Single-stain: subtract stain projection, keep residual
+        const od = rgbToOD(src[i], src[i + 1], src[i + 2]);
+        const dot = od[0] * dp.vec[0] + od[1] * dp.vec[1] + od[2] * dp.vec[2];
+        const rx = od[0] - dot * dp.vec[0];
+        const ry = od[1] - dot * dp.vec[1];
+        const rz = od[2] - dot * dp.vec[2];
+        const mag = Math.sqrt(rx * rx + ry * ry + rz * rz);
+        r = g = b = Math.max(0, Math.min(255, 255 * Math.pow(10, -mag)));
+      }
+    } else {
+      r = chR ? src[i] : 0;
+      g = chG ? src[i + 1] : 0;
+      b = chB ? src[i + 2] : 0;
+    }
 
     r += brightness; g += brightness; b += brightness;
     r = cf * (r - 128) + 128;
@@ -369,7 +441,8 @@ function applyAdjustments(srcData, dstData, params) {
 
 function isAdjustDefault(params) {
   return params.brightness === 0 && params.contrast === 0 && params.threshold === 0
-    && !params.invert && params.chR && params.chG && params.chB;
+    && !params.invert && params.chR && params.chG && params.chB
+    && !params.deconv && !params.stain1 && !params.stain2;
 }
 
 const MAX_ADJUST_DIM = 2000;
@@ -699,6 +772,26 @@ function openAdjustModal(blob) {
             </span>
           </div>
         </div>
+        <div class="deconv-section">
+          <div class="deconv-header" id="deconv-toggle">▸ Color Separation</div>
+          <div class="deconv-panel" id="deconv-panel" style="${p.stain1 ? '' : 'display:none'}">
+            <p style="font-size:0.8rem;color:var(--ink-muted);margin-bottom:8px;">
+              Tap the preview image to sample colors to remove (e.g. ruled lines, highlighter).
+            </p>
+            <div class="deconv-swatches">
+              <div class="deconv-swatch">
+                <div class="swatch-preview" id="swatch-1" ${p.stain1 ? `style="background:rgb(${p.stain1.join(',')})"` : ''}></div>
+                <span id="swatch-label-1">${p.stain1 ? 'Color 1' : 'Tap image'}</span>
+                <button class="swatch-clear" id="clear-1" ${p.stain1 ? '' : 'style="display:none"'}>×</button>
+              </div>
+              <div class="deconv-swatch">
+                <div class="swatch-preview" id="swatch-2" ${p.stain2 ? `style="background:rgb(${p.stain2.join(',')})"` : ''}></div>
+                <span id="swatch-label-2">${p.stain2 ? 'Color 2' : 'Tap image'}</span>
+                <button class="swatch-clear" id="clear-2" ${p.stain2 ? '' : 'style="display:none"'}>×</button>
+              </div>
+            </div>
+          </div>
+        </div>
         <div style="display:flex;gap:8px;margin-top:12px;">
           <button class="btn btn-secondary" id="adj-reset" style="flex:1">Reset</button>
           <button class="btn btn-secondary" id="adj-skip" style="flex:1">Skip</button>
@@ -726,6 +819,12 @@ function openAdjustModal(blob) {
         origCtx.drawImage(img, 0, 0, dispW, dispH);
         const origData = origCtx.getImageData(0, 0, dispW, dispH);
 
+        // Color deconvolution state
+        let localStain1 = p.stain1 ? [...p.stain1] : null;
+        let localStain2 = p.stain2 ? [...p.stain2] : null;
+        let deconvActive = !!(p.deconv && localStain1);
+        let samplingActive = false;
+
         const els = {
           brightness: overlay.querySelector('#adj-brightness'),
           contrast: overlay.querySelector('#adj-contrast'),
@@ -743,6 +842,7 @@ function openAdjustModal(blob) {
             threshold: parseInt(els.threshold.value),
             invert: els.invert.checked,
             chR: els.chR.checked, chG: els.chG.checked, chB: els.chB.checked,
+            deconv: deconvActive, stain1: localStain1, stain2: localStain2,
           };
         }
 
@@ -757,9 +857,15 @@ function openAdjustModal(blob) {
             overlay.querySelector('#val-contrast').textContent = params.contrast;
             overlay.querySelector('#val-threshold').textContent = params.threshold === 0 ? 'off' : params.threshold;
 
-            // Disable apply when all channels off
+            // Disable apply when all channels off (unless deconv active)
             const applyBtn = overlay.querySelector('#adj-apply');
-            applyBtn.disabled = !params.chR && !params.chG && !params.chB;
+            if (params.deconv && params.stain1) {
+              applyBtn.disabled = false;
+            } else {
+              applyBtn.disabled = !params.chR && !params.chG && !params.chB;
+            }
+            // Dim channels when deconv active (channels are bypassed)
+            overlay.querySelector('.adjust-channels').style.opacity = params.deconv && params.stain1 ? '0.3' : '1';
 
             const dstData = ctx.createImageData(dispW, dispH);
             applyAdjustments(origData, dstData, params);
@@ -776,13 +882,102 @@ function openAdjustModal(blob) {
           c.addEventListener('change', render)
         );
 
+        // ─── Color Separation (deconvolution) ───
+        const deconvToggle = overlay.querySelector('#deconv-toggle');
+        const deconvPanel = overlay.querySelector('#deconv-panel');
+
+        if (localStain1) {
+          deconvToggle.textContent = '▾ Color Separation';
+          samplingActive = true;
+          canvas.style.cursor = 'crosshair';
+        }
+
+        deconvToggle.onclick = () => {
+          const isOpen = deconvPanel.style.display !== 'none';
+          deconvPanel.style.display = isOpen ? 'none' : 'block';
+          deconvToggle.textContent = isOpen ? '▸ Color Separation' : '▾ Color Separation';
+          samplingActive = !isOpen;
+          canvas.style.cursor = samplingActive ? 'crosshair' : 'default';
+        };
+
+        function updateSwatches() {
+          const s1 = overlay.querySelector('#swatch-1');
+          const l1 = overlay.querySelector('#swatch-label-1');
+          const c1 = overlay.querySelector('#clear-1');
+          if (localStain1) {
+            s1.style.background = `rgb(${localStain1.join(',')})`;
+            l1.textContent = 'Color 1';
+            c1.style.display = '';
+          } else {
+            s1.style.background = '';
+            l1.textContent = 'Tap image';
+            c1.style.display = 'none';
+          }
+          const s2 = overlay.querySelector('#swatch-2');
+          const l2 = overlay.querySelector('#swatch-label-2');
+          const c2 = overlay.querySelector('#clear-2');
+          if (localStain2) {
+            s2.style.background = `rgb(${localStain2.join(',')})`;
+            l2.textContent = 'Color 2';
+            c2.style.display = '';
+          } else {
+            s2.style.background = '';
+            l2.textContent = 'Tap image';
+            c2.style.display = 'none';
+          }
+          deconvActive = !!localStain1;
+          render();
+        }
+
+        canvas.addEventListener('click', (e) => {
+          if (!samplingActive) return;
+          const rect = canvas.getBoundingClientRect();
+          const x = Math.round((e.clientX - rect.left) * (dispW / rect.width));
+          const y = Math.round((e.clientY - rect.top) * (dispH / rect.height));
+          let rSum = 0, gSum = 0, bSum = 0, count = 0;
+          for (let dy = -2; dy <= 2; dy++) {
+            for (let dx = -2; dx <= 2; dx++) {
+              const px = x + dx, py = y + dy;
+              if (px >= 0 && px < dispW && py >= 0 && py < dispH) {
+                const idx = (py * dispW + px) * 4;
+                rSum += origData.data[idx];
+                gSum += origData.data[idx + 1];
+                bSum += origData.data[idx + 2];
+                count++;
+              }
+            }
+          }
+          const sampled = [Math.round(rSum / count), Math.round(gSum / count), Math.round(bSum / count)];
+          if (!localStain1) {
+            localStain1 = sampled;
+          } else if (!localStain2) {
+            localStain2 = sampled;
+          } else {
+            localStain1 = localStain2;
+            localStain2 = sampled;
+          }
+          updateSwatches();
+        });
+
+        overlay.querySelector('#clear-1').onclick = () => {
+          localStain1 = localStain2;
+          localStain2 = null;
+          updateSwatches();
+        };
+
+        overlay.querySelector('#clear-2').onclick = () => {
+          localStain2 = null;
+          updateSwatches();
+        };
+
         overlay.querySelector('#adj-reset').onclick = () => {
           els.brightness.value = 0;
           els.contrast.value = 0;
           els.threshold.value = 0;
           els.invert.checked = false;
           els.chR.checked = true; els.chG.checked = true; els.chB.checked = true;
-          render();
+          localStain1 = null; localStain2 = null; deconvActive = false;
+          updateSwatches();
         };
 
         overlay.querySelector('#adj-close').onclick = () => {
@@ -2241,6 +2436,7 @@ function renderHelp() {
         <li>Use the crop tool to select just the text area.</li>
         <li>The app runs 5 OCR passes (raw, contrast, binarize, block, sharp) and shows progress as each completes. Afterwards, you can compare all results and pick the best one.</li>
         <li>In <strong>single mode</strong>, an image adjustment step appears before OCR. Tweak brightness, contrast, threshold, invert, or isolate color channels. Settings are saved and auto-applied to batch captures.</li>
+        <li>Use <strong>Color Separation</strong> in the adjust screen to remove background colors like ruled lines or highlighter marks — tap the preview to sample the color to remove.</li>
         <li>You can also <strong>Adjust &amp; Re-OCR</strong> from the pass picker or the edit screen if results are poor.</li>
         <li>You can always edit the extracted text before saving.</li>
       </ul>
