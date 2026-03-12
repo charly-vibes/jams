@@ -2668,7 +2668,10 @@ function renderHelp() {
       <ul>
         <li><strong>OCR Language</strong> — change the recognition language (${OCR_LANGUAGES.length} supported). The dictation language follows this setting.</li>
         <li><strong>Pre-load OCR</strong> — load the OCR engine ahead of time so capture is faster.</li>
-        <li><strong>Import/Export</strong> — back up all your data as JSON, or restore from a backup.</li>
+        <li><strong>Preferred OCR Pass</strong> — set automatically when you pick a result. If the preferred pass scores ≥ 85%, only that pass runs — much faster. Clear it to go back to running all passes.</li>
+        <li><strong>Enabled Passes</strong> — toggle individual OCR passes on/off. Disable passes you don't need to speed things up.</li>
+        <li><strong>Import/Export</strong> — back up all your data as JSON (optionally including photos and settings), or restore from a backup.</li>
+        <li><strong>Auto-Backup</strong> — enable periodic backup downloads (30min–12h). Choose whether to include photos and settings. The app downloads a backup file at the set interval while it's open.</li>
       </ul>
     </div>
 
