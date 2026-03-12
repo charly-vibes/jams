@@ -144,51 +144,157 @@ function setOCRLang(lang) {
   }
 }
 
-function updateOCRProgress(progress) {
+function updateOCRProgress(progress, label) {
   const bar = document.querySelector('.ocr-progress-fill');
   if (bar) bar.style.width = `${Math.round(progress * 100)}%`;
+  if (label) {
+    const span = document.querySelector('#ocr-status span');
+    if (span) span.textContent = label;
+  }
+}
+
+// ─── Multi-pass OCR ───
+
+const OCR_PASSES = [
+  { name: 'raw',      psm: '3',  prep: 'upscale' },
+  { name: 'contrast', psm: '3',  prep: 'contrast' },
+  { name: 'block',    psm: '6',  prep: 'upscale' },
+  { name: 'sharp',    psm: '6',  prep: 'sharpen' },
+];
+
+const CONFIDENCE_THRESHOLD = 65;
+
+function scoreResult(result) {
+  const words = result.data.words || [];
+  if (words.length === 0) return 0;
+  const totalConf = words.reduce((sum, w) => sum + w.confidence, 0);
+  return totalConf / words.length;
 }
 
 async function runOCR(imageBlob) {
   if (!state.ocrReady) await initOCR();
-  const preprocessed = await preprocessImage(imageBlob);
-  const result = await state.ocrWorker.recognize(preprocessed);
-  return result.data.text.trim();
+
+  let bestText = '';
+  let bestScore = -1;
+
+  for (let i = 0; i < OCR_PASSES.length; i++) {
+    const pass = OCR_PASSES[i];
+    const passLabel = `OCR pass ${i + 1}/${OCR_PASSES.length}...`;
+    updateOCRProgress(0, passLabel);
+
+    const preprocessed = await preprocessImage(imageBlob, pass.prep);
+    const result = await state.ocrWorker.recognize(preprocessed, {
+      tessedit_pageseg_mode: pass.psm,
+    });
+
+    const score = scoreResult(result);
+    const text = result.data.text.trim();
+
+    if (score > bestScore && text.length > 0) {
+      bestScore = score;
+      bestText = text;
+    }
+
+    if (bestScore >= CONFIDENCE_THRESHOLD) break;
+  }
+
+  updateOCRProgress(1, 'Running OCR...');
+  return bestText;
 }
 
-// ─── Image Preprocessing for OCR ───
+// ─── Image Preprocessing Variants ───
 
-function preprocessImage(blob) {
+function loadImage(blob) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(blob);
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      // Only upscale small images — Tesseract needs ~300 DPI to work well
-      const shorter = Math.min(img.naturalWidth, img.naturalHeight);
-      if (shorter >= 1500) {
-        resolve(blob); // Already large enough, pass through untouched
-        return;
-      }
-      try {
-        const scale = shorter < 750 ? 3 : 2;
-        const w = img.naturalWidth * scale;
-        const h = img.naturalHeight * scale;
-        const canvas = document.createElement('canvas');
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(img, 0, 0, w, h);
-        canvas.toBlob((result) => resolve(result), 'image/png');
-      } catch (err) {
-        reject(err);
-      }
-    };
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Failed to load image')); };
     img.src = url;
   });
+}
+
+function canvasToBlob(canvas) {
+  return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+}
+
+async function preprocessImage(blob, mode) {
+  const img = await loadImage(blob);
+  const shorter = Math.min(img.naturalWidth, img.naturalHeight);
+  const scale = shorter < 750 ? 3 : shorter < 1500 ? 2 : 1;
+  const w = img.naturalWidth * scale;
+  const h = img.naturalHeight * scale;
+
+  if (mode === 'upscale' && scale === 1) return blob;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(img, 0, 0, w, h);
+
+  if (mode === 'upscale') return canvasToBlob(canvas);
+
+  const imageData = ctx.getImageData(0, 0, w, h);
+  const d = imageData.data;
+  const len = w * h;
+
+  // Grayscale
+  const gray = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    const j = i * 4;
+    gray[i] = Math.round(0.299 * d[j] + 0.587 * d[j + 1] + 0.114 * d[j + 2]);
+  }
+
+  if (mode === 'contrast') {
+    // Auto-levels: remap 2nd/98th percentile to 0-255
+    const hist = new Uint32Array(256);
+    for (let i = 0; i < len; i++) hist[gray[i]]++;
+    const loTarget = len * 0.02, hiTarget = len * 0.98;
+    let lo = 0, hi = 255, cumul = 0;
+    for (let v = 0; v < 256; v++) {
+      cumul += hist[v];
+      if (cumul >= loTarget) { lo = v; break; }
+    }
+    cumul = 0;
+    for (let v = 0; v < 256; v++) {
+      cumul += hist[v];
+      if (cumul >= hiTarget) { hi = v; break; }
+    }
+    const range = hi - lo || 1;
+    for (let i = 0; i < len; i++) {
+      const v = Math.max(0, Math.min(255, Math.round((gray[i] - lo) * 255 / range)));
+      const j = i * 4;
+      d[j] = d[j + 1] = d[j + 2] = v;
+    }
+  } else if (mode === 'sharpen') {
+    // Unsharp mask: 3x3 box blur, strength 1.0
+    const blurred = new Uint8Array(len);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        let sum = 0, cnt = 0;
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const ny = y + dy, nx = x + dx;
+            if (ny >= 0 && ny < h && nx >= 0 && nx < w) {
+              sum += gray[ny * w + nx]; cnt++;
+            }
+          }
+        }
+        blurred[y * w + x] = Math.round(sum / cnt);
+      }
+    }
+    for (let i = 0; i < len; i++) {
+      const v = Math.max(0, Math.min(255, gray[i] + (gray[i] - blurred[i])));
+      const j = i * 4;
+      d[j] = d[j + 1] = d[j + 2] = v;
+    }
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+  return canvasToBlob(canvas);
 }
 
 // ─── Crop UI ───

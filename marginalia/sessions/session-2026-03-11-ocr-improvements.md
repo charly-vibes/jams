@@ -20,7 +20,22 @@ After several iterations, the preprocessing was stripped down to **upscale only*
 - **Unsharp mask** (3×3 box blur, 0.5 strength): Added noise without meaningful benefit on phone photos.
 - **PSM 6**: "Single uniform block" assumption failed on full book pages.
 
-**Lesson**: Tesseract.js handles its own binarization, contrast, and grayscale conversion well. The only thing it genuinely needs help with is resolution — phone crops can be too small for reliable character recognition.
+**Lesson**: No single preprocessing setting works for all photos. The solution is to try multiple variants and let confidence scores decide.
+
+### Iteration 3: Multi-pass OCR
+
+Rather than finding one perfect preprocessing, run up to 4 passes with different combinations and pick the best:
+
+| Pass | Preprocessing | PSM | Rationale |
+|------|--------------|-----|-----------|
+| 1 | Upscale only | 3 (auto) | Clean photos, automatic layout |
+| 2 | Grayscale + auto-levels | 3 (auto) | Low contrast / uneven lighting |
+| 3 | Upscale only | 6 (single block) | Post-it notes, short text |
+| 4 | Grayscale + unsharp mask | 6 (single block) | Blurry photos of small text |
+
+Each result is scored by average word confidence from `result.data.words[].confidence`. Stops early if confidence exceeds 65%. Progress label updates to show which pass is running.
+
+This reuses the single Tesseract worker — no extra memory overhead, just sequential `recognize()` calls with different inputs and PSM params.
 
 ### 2. Tesseract PSM (default / auto)
 

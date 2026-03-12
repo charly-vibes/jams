@@ -8,7 +8,7 @@ A PWA for capturing post-it notes and marginalia from physical books, running OC
 
 - **Book Library**: Add, browse, and manage books with note counts and timestamps
 - **Photo Capture**: Snap photos of book pages with post-it notes (single or batch mode)
-- **OCR Processing**: Tesseract.js v5 runs entirely in-browser to extract text from photos. Small images are upscaled (2–3x) before recognition. Supports 17 languages via a Settings dropdown.
+- **OCR Processing**: Tesseract.js v5 runs entirely in-browser with multi-pass OCR — tries up to 4 preprocessing/PSM combinations, scores each by word confidence, and keeps the best result. Stops early if confidence exceeds 65%. Supports 17 languages via a Settings dropdown.
 - **Language Selection**: Choose OCR language in Settings (English default); persisted in localStorage. Worker reinitializes automatically when language changes.
 - **Crop UI**: Interactive crop modal before OCR lets users select the text region, improving results on cluttered photos
 - **Note Categorization**: Classify notes as Note, Key/Important, Question, Idea, or Quote with color-coded highlights
@@ -42,8 +42,12 @@ A PWA for capturing post-it notes and marginalia from physical books, running OC
 
 ### OCR Pipeline
 1. **Crop** (optional): User drags a rectangle to isolate the text region; skip returns the full image
-2. **Preprocessing**: Upscale small images (3x if shorter dim < 750px, 2x if < 1500px, passthrough otherwise). No color/contrast manipulation — Tesseract handles its own binarization best.
-3. **Recognition**: Tesseract.js with default PSM (automatic page segmentation), using the language selected in Settings
+2. **Multi-pass recognition**: Up to 4 passes with different preprocessing variants and PSM modes:
+   - Pass 1: Upscale only, PSM 3 (auto segmentation)
+   - Pass 2: Grayscale + auto-levels contrast, PSM 3
+   - Pass 3: Upscale only, PSM 6 (single text block)
+   - Pass 4: Grayscale + unsharp mask, PSM 6
+3. **Scoring**: Each pass scored by average word confidence from Tesseract. Stops early if confidence > 65%. Best result returned.
 
 ### Data Storage
 All data lives in IndexedDB with three stores: books, notes, photos.
