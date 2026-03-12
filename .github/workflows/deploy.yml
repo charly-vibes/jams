@@ -27,6 +27,9 @@ jobs:
       - name: Create .nojekyll file
         run: touch .nojekyll
 
+      - name: Build apps metadata
+        run: bash build-metadata.sh > apps-metadata.json
+
       - name: Setup Pages
         uses: actions/configure-pages@v4
 

@@ -134,8 +134,13 @@ new PAGE_NAME:
     echo ""
     echo "Scaffolding complete! Edit the spec and start building."
 
+# Build generated assets (apps metadata)
+build:
+    @bash build-metadata.sh > apps-metadata.json
+    @echo "✓ Built apps-metadata.json"
+
 # Start local development server
-serve PORT="8000":
+serve PORT="8000": build
     @echo "Starting HTTP server on http://localhost:{{PORT}}"
     @echo "Press Ctrl+C to stop"
     python3 -m http.server {{PORT}}

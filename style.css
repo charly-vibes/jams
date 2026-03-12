@@ -70,8 +70,170 @@ h1 {
     font-size: 0.9rem;
 }
 
+.intro {
+    margin-bottom: 2rem;
+    padding: 1rem 0;
+    border-bottom: 1px solid #eee;
+    color: #555;
+    font-size: 0.95rem;
+    line-height: 1.7;
+}
+
+.intro p + p {
+    margin-top: 0.5rem;
+}
+
+.app-meta {
+    display: flex;
+    gap: 1rem;
+    margin-top: 0.5rem;
+    font-size: 0.8rem;
+}
+
+.app-meta a {
+    color: #888;
+    text-decoration: none;
+    border-bottom: 1px dotted #aaa;
+}
+
+.app-meta a:hover {
+    color: #333;
+    border-bottom-color: #333;
+}
+
 .no-apps {
     color: #999;
     font-style: italic;
     padding: 1rem;
+}
+
+.overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 100;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 2rem;
+    overflow-y: auto;
+}
+
+.overlay.open {
+    display: flex;
+}
+
+.overlay-content {
+    background: #fff;
+    border: 1px solid #ddd;
+    max-width: 720px;
+    width: 100%;
+    margin-top: 2rem;
+    margin-bottom: 2rem;
+}
+
+.overlay-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid #eee;
+}
+
+.overlay-header h2 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 0;
+}
+
+.overlay-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: #999;
+    line-height: 1;
+    padding: 0 0.25rem;
+}
+
+.overlay-close:hover {
+    color: #333;
+}
+
+.overlay-body {
+    padding: 1.5rem;
+    line-height: 1.7;
+    font-size: 0.95rem;
+    color: #333;
+}
+
+.overlay-body h1, .overlay-body h2, .overlay-body h3 {
+    margin-top: 1.5rem;
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+}
+
+.overlay-body h1 { font-size: 1.3rem; }
+.overlay-body h2 { font-size: 1.1rem; }
+.overlay-body h3 { font-size: 1rem; }
+
+.overlay-body p {
+    margin-bottom: 0.75rem;
+}
+
+.overlay-body ul, .overlay-body ol {
+    margin-bottom: 0.75rem;
+    padding-left: 1.5rem;
+}
+
+.overlay-body li {
+    margin-bottom: 0.25rem;
+}
+
+.overlay-body code {
+    background: #f0f0f0;
+    padding: 0.1rem 0.3rem;
+    font-size: 0.85em;
+    font-family: monospace;
+}
+
+.overlay-body pre {
+    background: #f5f5f5;
+    border: 1px solid #e0e0e0;
+    padding: 1rem;
+    overflow-x: auto;
+    margin-bottom: 0.75rem;
+}
+
+.overlay-body pre code {
+    background: none;
+    padding: 0;
+}
+
+.overlay-body blockquote {
+    border-left: 3px solid #ddd;
+    padding-left: 1rem;
+    color: #666;
+    margin-bottom: 0.75rem;
+}
+
+.overlay-body .md-file-link {
+    display: block;
+    padding: 0.5rem 0;
+    color: #333;
+    text-decoration: none;
+    border-bottom: 1px solid #eee;
+}
+
+.overlay-body .md-file-link:hover {
+    background: #f8f8f8;
+}
+
+.overlay-body .md-file-link:last-child {
+    border-bottom: none;
+}
+
+.overlay-loading {
+    color: #999;
+    font-style: italic;
 }
