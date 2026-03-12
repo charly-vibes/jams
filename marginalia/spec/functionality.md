@@ -40,7 +40,7 @@ A PWA for capturing post-it notes and marginalia from physical books, running OC
 
 ### Capture Modes
 - **Single**: Process one photo at a time — crop modal → OCR → review immediately
-- **Batch**: Capture multiple photos — crop modal per image → OCR all → step through review
+- **Batch**: Capture multiple photos, optionally crop individual thumbnails, then process all → step through review
 
 ### OCR Pipeline
 1. **Crop** (optional): User drags a rectangle to isolate the text region; skip returns the full image
@@ -49,7 +49,7 @@ A PWA for capturing post-it notes and marginalia from physical books, running OC
    - Pass 2: Grayscale + auto-levels contrast, PSM 3
    - Pass 3: Upscale only, PSM 6 (single text block)
    - Pass 4: Grayscale + unsharp mask, PSM 6
-3. **Scoring**: Each pass scored by average word confidence from Tesseract. Stops early if confidence > 65%. Best result returned.
+3. **Scoring**: Each pass scored by average word confidence from Tesseract. Stops early if confidence > 65%. User can tap "Use this" to accept the current best result early. Best result returned.
 
 ### Data Storage
 All data lives in IndexedDB with three stores: books, notes, photos.

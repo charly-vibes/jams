@@ -174,15 +174,19 @@ function scoreResult(result) {
 async function runOCR(imageBlob) {
   if (!state.ocrReady) await initOCR();
 
+  state._ocrCancelled = false;
+  const img = await loadImage(imageBlob);
   let bestText = '';
   let bestScore = -1;
 
   for (let i = 0; i < OCR_PASSES.length; i++) {
+    if (state._ocrCancelled) break;
+
     const pass = OCR_PASSES[i];
     const passLabel = `OCR pass ${i + 1}/${OCR_PASSES.length}...`;
     updateOCRProgress(0, passLabel);
 
-    const preprocessed = await preprocessImage(imageBlob, pass.prep);
+    const preprocessed = await preprocessImage(imageBlob, pass.prep, img);
     const result = await state.ocrWorker.recognize(preprocessed, {
       tessedit_pageseg_mode: pass.psm,
     });
@@ -195,11 +199,35 @@ async function runOCR(imageBlob) {
       bestText = text;
     }
 
+    // After first pass, show accept-early button
+    if (i === 0 && bestText && bestScore < CONFIDENCE_THRESHOLD) {
+      showAcceptEarlyButton();
+    }
+
     if (bestScore >= CONFIDENCE_THRESHOLD) break;
   }
 
+  hideAcceptEarlyButton();
   updateOCRProgress(1, 'Running OCR...');
   return bestText;
+}
+
+function showAcceptEarlyButton() {
+  const status = document.querySelector('#ocr-status');
+  if (!status || status.querySelector('#accept-early')) return;
+  const btn = document.createElement('button');
+  btn.id = 'accept-early';
+  btn.className = 'btn btn-sm btn-secondary';
+  btn.textContent = 'Use this';
+  btn.style.marginLeft = '8px';
+  btn.style.flexShrink = '0';
+  btn.onclick = () => { state._ocrCancelled = true; };
+  status.appendChild(btn);
+}
+
+function hideAcceptEarlyButton() {
+  const btn = document.querySelector('#accept-early');
+  if (btn) btn.remove();
 }
 
 // ─── Image Preprocessing Variants ───
@@ -218,8 +246,8 @@ function canvasToBlob(canvas) {
   return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
 }
 
-async function preprocessImage(blob, mode) {
-  const img = await loadImage(blob);
+async function preprocessImage(blob, mode, cachedImg) {
+  const img = cachedImg || await loadImage(blob);
   const shorter = Math.min(img.naturalWidth, img.naturalHeight);
   const scale = shorter < 750 ? 3 : shorter < 1500 ? 2 : 1;
   const w = img.naturalWidth * scale;
@@ -442,6 +470,7 @@ function openCropModal(blob) {
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 const speechSupported = !!SpeechRecognition;
+let _activeRecognition = null;
 
 function startDictation(textarea, btn) {
   if (!speechSupported) {
@@ -472,10 +501,10 @@ function startDictation(textarea, btn) {
   recognition.interimResults = true;
 
   let finalTranscript = textarea.value;
-  const originalText = textarea.value;
 
   btn.classList.add('recording');
   btn.textContent = '⏹ Stop';
+  _activeRecognition = recognition;
 
   recognition.onresult = (e) => {
     let interim = '';
@@ -493,11 +522,13 @@ function startDictation(textarea, btn) {
     if (e.error !== 'aborted') showToast('Speech error: ' + e.error);
     btn.classList.remove('recording');
     btn.textContent = '🎤 Dictate';
+    _activeRecognition = null;
   };
 
   recognition.onend = () => {
     btn.classList.remove('recording');
     btn.textContent = '🎤 Dictate';
+    _activeRecognition = null;
   };
 
   recognition.start();
@@ -850,9 +881,14 @@ function openCaptureForBook() {
 
 function renderCaptureView() {
   const view = $('.view[data-view="capture"]');
+  const currentBook = state.books.find(b => b.id === state.currentBookId);
   view.innerHTML = `
     <div class="capture-header">
-      <h2>Capture Pages</h2>
+      <button class="back-btn" id="capture-back">←</button>
+      <div style="flex:1">
+        <h2>Capture Pages</h2>
+        ${currentBook ? `<div style="font-size:0.8rem;color:var(--ink-muted);margin-top:2px;">${esc(currentBook.title)}</div>` : ''}
+      </div>
       <div class="mode-toggle">
         <button class="${state.captureMode === 'batch' ? 'active' : ''}" data-mode="batch">Batch</button>
         <button class="${state.captureMode === 'single' ? 'active' : ''}" data-mode="single">Single</button>
@@ -886,6 +922,15 @@ function renderCaptureView() {
     ` : ''}
   `;
 
+  // Back button
+  $('#capture-back').onclick = () => {
+    if (state.currentBookId) {
+      openBookDetail(state.currentBookId);
+    } else {
+      switchView('books');
+    }
+  };
+
   // Mode toggle
   view.querySelectorAll('.mode-toggle button').forEach(btn => {
     btn.onclick = () => {
@@ -899,7 +944,13 @@ function renderCaptureView() {
 
   // Dictate zone click
   const dictateZone = $('#dictate-zone');
-  if (dictateZone) dictateZone.onclick = () => openDictateNoteModal();
+  if (dictateZone) dictateZone.onclick = () => {
+    if (!state.currentBookId) {
+      showToast('Open a book first');
+      return;
+    }
+    openDictateNoteModal();
+  };
 
   // File input
   $('#photo-input').onchange = async (e) => {
@@ -951,6 +1002,18 @@ function renderThumbnails() {
     </div>
   `).join('');
 
+  // Tap thumbnail to crop (batch mode, before processing)
+  grid.querySelectorAll('.capture-thumb').forEach(thumb => {
+    thumb.addEventListener('click', async (e) => {
+      if (e.target.classList.contains('remove-capture')) return;
+      const capture = state.captures.find(c => c.id === thumb.dataset.id);
+      if (capture && capture.ocrStatus === 'pending') {
+        capture.blob = await openCropModal(capture.blob);
+        showToast('Cropped');
+      }
+    });
+  });
+
   grid.querySelectorAll('.remove-capture').forEach(btn => {
     btn.onclick = (e) => {
       e.stopPropagation();
@@ -994,7 +1057,7 @@ async function processBatchCaptures() {
   if (status) status.style.display = 'flex';
 
   for (const capture of pending) {
-    capture.blob = await openCropModal(capture.blob);
+    // In batch mode, skip crop (user can crop individual captures via thumbnails)
     capture.ocrStatus = 'processing';
     renderThumbnails();
     try {
@@ -1031,6 +1094,10 @@ function openModal(html) {
 }
 
 function closeModal() {
+  if (_activeRecognition) {
+    _activeRecognition.stop();
+    _activeRecognition = null;
+  }
   const m = document.querySelector('.modal-overlay');
   if (m) m.remove();
 }
@@ -1611,15 +1678,15 @@ function renderHelp() {
 
     <div class="help-section">
       <h3>3. Crop for Better OCR</h3>
-      <p>After taking a photo, a <strong>crop modal</strong> appears. Drag a rectangle around just the text you want to read. This dramatically improves OCR accuracy by removing background clutter.</p>
-      <p>Tap <strong>Skip Crop</strong> to use the full image.</p>
+      <p>In <strong>single mode</strong>, a crop modal appears after each photo. Drag a rectangle around just the text you want to read.</p>
+      <p>In <strong>batch mode</strong>, tap any thumbnail to crop it before processing. Cropping is optional — uncropped images are processed as-is.</p>
     </div>
 
     <div class="help-section">
       <h3>4. Capture Modes</h3>
       <ul>
-        <li><strong>Single</strong> — process one photo at a time. Good for careful, one-by-one capture.</li>
-        <li><strong>Batch</strong> — take multiple photos first, then process them all. Good for quickly snapping several pages.</li>
+        <li><strong>Single</strong> — process one photo at a time. Crop → OCR → review immediately.</li>
+        <li><strong>Batch</strong> — snap multiple photos, optionally crop each via thumbnails, then process all at once.</li>
       </ul>
     </div>
 
@@ -1661,7 +1728,7 @@ function renderHelp() {
         <li>Use good lighting — avoid shadows across the text.</li>
         <li>Hold the camera steady and fill the frame with the text.</li>
         <li>Use the crop tool to select just the text area.</li>
-        <li>The app tries multiple OCR strategies automatically and picks the best result.</li>
+        <li>The app tries multiple OCR strategies automatically and picks the best result. Tap <strong>Use this</strong> to accept early if the first pass looks good.</li>
         <li>You can always edit the extracted text before saving.</li>
       </ul>
     </div>

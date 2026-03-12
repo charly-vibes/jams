@@ -100,19 +100,21 @@ nav.tabs {
 
 nav.tabs button {
   flex: 1;
-  padding: 12px 8px;
+  padding: 12px 4px;
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
   font-family: var(--font-body);
-  font-size: 0.85rem;
+  font-size: 0.78rem;
   color: var(--ink-muted);
   cursor: pointer;
   transition: all 0.2s ease;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 4px;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 nav.tabs button.active {
@@ -379,8 +381,18 @@ main {
 .capture-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 10px;
   margin-bottom: 16px;
+}
+
+.capture-header .back-btn {
+  background: none;
+  border: none;
+  font-size: 1.3rem;
+  cursor: pointer;
+  color: var(--ink-muted);
+  padding: 4px;
+  flex-shrink: 0;
 }
 
 .capture-header h2 {
@@ -457,6 +469,7 @@ main {
   overflow: hidden;
   position: relative;
   box-shadow: var(--shadow-sm);
+  cursor: pointer;
 }
 
 .capture-thumb img {

@@ -93,10 +93,24 @@ Added Web Speech API (`SpeechRecognition`) as an alternative input method:
 - Styled with `.help-section` cards (white background, amber left border)
 - Content-aware: shows dictation sections only when `speechSupported` is true, includes dynamic language count from `OCR_LANGUAGES`
 
+### 7. Code Review Bug Fixes
+
+After a full code review, fixed the following issues:
+
+- **Speech recognition leak on modal close**: Active `SpeechRecognition` instances are now tracked globally (`_activeRecognition`) and stopped in `closeModal()`, preventing detached event handlers.
+- **Multi-pass OCR accept-early**: After pass 1 completes with below-threshold confidence, a "Use this" button appears in the OCR status bar. Tapping it sets `state._ocrCancelled` to break the loop and use the best result so far. Eliminates worst-case 40s waits.
+- **Cached image across passes**: `loadImage()` is called once in `runOCR` and the `Image` object is passed through to `preprocessImage`, avoiding 4x object URL creation/revocation per OCR run.
+- **Batch crop UX**: Removed forced sequential crop modals in batch mode. Instead, users can optionally tap any thumbnail to crop it before processing. Uncropped images are processed as-is.
+- **Capture view back button**: Added `←` back button and current book title to capture view header so users can navigate back to book detail without going through the Books tab.
+- **Dictate null book guard**: `openDictateNoteModal` now checks `state.currentBookId` before opening, preventing orphaned notes.
+- **Dead code**: Removed unused `originalText` variable in `startDictation`.
+- **Tab width**: Reduced tab font to 0.78rem with `white-space: nowrap; overflow: hidden` to prevent truncation on narrow phones with 4 tabs.
+- **Thumbnail cursor**: Added `cursor: pointer` to `.capture-thumb` to indicate tappability.
+
 ## Files Modified
 
 - `marginalia/index.html` — added help tab and view panel
-- `marginalia/script.js` — speech-to-text, dictate modal, help view, capture zone layout
-- `marginalia/style.css` — capture zones grid, recording animation, help section styles
-- `marginalia/sw.js` — cache version bump to `v4`
-- `marginalia/spec/functionality.md` — documented speech-to-text and help tab
+- `marginalia/script.js` — all OCR, speech, crop, capture, and help changes
+- `marginalia/style.css` — all layout, animation, and help styles
+- `marginalia/sw.js` — cache version bump to `v5`
+- `marginalia/spec/functionality.md` — full feature documentation
