@@ -896,6 +896,42 @@ main::-webkit-scrollbar-thumb { background: var(--parchment-dark); border-radius
   font-family: var(--font-mono);
 }
 
+/* ─── Pass Picker ─── */
+.pass-pick-item {
+  background: white;
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  margin-bottom: 8px;
+  box-shadow: var(--shadow-sm);
+  border-left: 3px solid var(--parchment-dark);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.pass-pick-item:hover:not(.disabled) {
+  box-shadow: var(--shadow-md);
+}
+
+.pass-pick-item.selected {
+  border-left-color: var(--amber);
+  background: rgba(196, 149, 106, 0.06);
+  box-shadow: 0 0 0 2px var(--amber-light), var(--shadow-sm);
+}
+
+.pass-pick-item.disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.pass-selected-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--rust);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-left: auto;
+}
+
 /* ─── Search ─── */
 .search-bar {
   display: flex;

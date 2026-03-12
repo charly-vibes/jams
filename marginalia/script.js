@@ -171,8 +171,6 @@ const OCR_PASSES = [
   { name: 'sharp',    psm: '6',  prep: 'sharpen' },
 ];
 
-const CONFIDENCE_THRESHOLD = 65;
-
 function scoreResult(result) {
   const words = result.data.words || [];
   if (words.length === 0) return 0;
@@ -183,15 +181,12 @@ function scoreResult(result) {
 async function runOCR(imageBlob, onPassResult) {
   if (!state.ocrReady) await initOCR();
 
-  state._ocrCancelled = false;
-  state._ocrAcceptedText = null;
   const img = await loadImage(imageBlob);
+  const passes = [];
   let bestText = '';
   let bestScore = -1;
 
   for (let i = 0; i < OCR_PASSES.length; i++) {
-    if (state._ocrCancelled) break;
-
     const pass = OCR_PASSES[i];
     const passLabel = `Pass ${i + 1}/${OCR_PASSES.length}: ${pass.name}`;
     updateOCRProgress(0, passLabel);
@@ -203,6 +198,8 @@ async function runOCR(imageBlob, onPassResult) {
 
     const score = scoreResult(result);
     const text = result.data.text.trim();
+    const passResult = { name: pass.name, text, score };
+    passes.push(passResult);
 
     if (score > bestScore && text.length > 0) {
       bestScore = score;
@@ -210,15 +207,12 @@ async function runOCR(imageBlob, onPassResult) {
     }
 
     if (onPassResult) {
-      onPassResult({ index: i, total: OCR_PASSES.length, name: pass.name, text, score });
+      onPassResult({ index: i, total: OCR_PASSES.length, ...passResult });
     }
-
-    if (state._ocrCancelled) break;
-    if (bestScore >= CONFIDENCE_THRESHOLD) break;
   }
 
   updateOCRProgress(1, 'Done');
-  return state._ocrAcceptedText || bestText;
+  return { bestText, passes };
 }
 
 function showPassResult({ index, total, name, text, score }) {
@@ -235,17 +229,9 @@ function showPassResult({ index, total, name, text, score }) {
     <div class="pass-header">
       <span class="pass-label">${name}</span>
       <span class="pass-score ${scoreClass}">${Math.round(score)}%</span>
-      ${text ? '<button class="btn btn-sm btn-amber pass-use">Use this</button>' : ''}
     </div>
     <div class="pass-text">${preview}</div>
   `;
-
-  if (text) {
-    passEl.querySelector('.pass-use').onclick = () => {
-      state._ocrAcceptedText = text;
-      state._ocrCancelled = true;
-    };
-  }
 
   container.appendChild(passEl);
 }
@@ -256,6 +242,62 @@ function clearPassResults() {
     container.innerHTML = '';
     container.style.display = 'none';
   }
+}
+
+// ─── Pass Picker Modal ───
+
+function openPassPicker(passes, currentText) {
+  return new Promise((resolve) => {
+    let selectedText = currentText;
+
+    const passesHtml = passes.map((p, i) => {
+      const scoreClass = p.score >= 80 ? 'good' : p.score >= 50 ? 'ok' : 'poor';
+      const isSelected = p.text === currentText;
+      const preview = p.text ? esc(p.text) : '<em>No text detected</em>';
+      return `
+        <div class="pass-pick-item ${isSelected ? 'selected' : ''} ${!p.text ? 'disabled' : ''}"
+             data-index="${i}">
+          <div class="pass-header">
+            <span class="pass-label">${p.name}</span>
+            <span class="pass-score ${scoreClass}">${Math.round(p.score)}%</span>
+            ${isSelected ? '<span class="pass-selected-badge">selected</span>' : ''}
+          </div>
+          <div class="pass-text">${preview}</div>
+        </div>`;
+    }).join('');
+
+    const overlay = openModal(`
+      <button class="modal-close" id="picker-close">×</button>
+      <h2>Choose OCR Result</h2>
+      <p style="font-size:0.85rem;color:var(--ink-muted);margin-bottom:12px;">
+        Tap a result to select it.
+      </p>
+      <div id="pass-pick-list">${passesHtml}</div>
+      <button class="btn btn-primary btn-full" id="picker-confirm" style="margin-top:12px;">
+        Use Selected
+      </button>
+    `);
+
+    overlay.querySelectorAll('.pass-pick-item:not(.disabled)').forEach(item => {
+      item.onclick = () => {
+        overlay.querySelectorAll('.pass-pick-item').forEach(el => {
+          el.classList.remove('selected');
+          const badge = el.querySelector('.pass-selected-badge');
+          if (badge) badge.remove();
+        });
+        item.classList.add('selected');
+        const badge = document.createElement('span');
+        badge.className = 'pass-selected-badge';
+        badge.textContent = 'selected';
+        item.querySelector('.pass-header').appendChild(badge);
+        selectedText = passes[parseInt(item.dataset.index)].text;
+      };
+    });
+
+    const finish = () => { closeModal(); resolve(selectedText); };
+    overlay.querySelector('#picker-close').onclick = finish;
+    overlay.querySelector('#picker-confirm').onclick = finish;
+  });
 }
 
 // ─── Image Preprocessing Variants ───
@@ -1116,12 +1158,20 @@ async function processSingleCapture(capture) {
   renderThumbnails();
 
   try {
-    const text = await runOCR(capture.blob, showPassResult);
-    capture.ocrText = text;
+    const { bestText, passes } = await runOCR(capture.blob, showPassResult);
+    capture.ocrPasses = passes;
     capture.ocrStatus = 'done';
     renderThumbnails();
     if (status) status.style.display = 'none';
     clearPassResults();
+
+    const passesWithText = passes.filter(p => p.text);
+    if (passesWithText.length > 1) {
+      capture.ocrText = await openPassPicker(passes, bestText);
+    } else {
+      capture.ocrText = bestText;
+    }
+
     openNewNoteModal(capture);
   } catch (err) {
     capture.ocrStatus = 'error';
@@ -1153,11 +1203,13 @@ async function processBatchCaptures() {
     if (statusSpan) statusSpan.textContent = batchLabel;
 
     try {
-      const text = await runOCR(capture.blob, showPassResult);
-      capture.ocrText = text;
+      const { bestText, passes } = await runOCR(capture.blob, showPassResult);
+      capture.ocrText = bestText;
+      capture.ocrPasses = passes;
       capture.ocrStatus = 'done';
     } catch (err) {
       capture.ocrStatus = 'error';
+      capture.ocrPasses = [];
     }
     renderThumbnails();
   }
@@ -1368,6 +1420,9 @@ function openBatchReviewModal() {
       <div class="form-group">
         <label>Extracted Text</label>
         <textarea id="note-text">${esc(nd.text)}</textarea>
+        ${nd.capture.ocrPasses && nd.capture.ocrPasses.filter(p => p.text).length > 1
+          ? '<button class="btn btn-sm btn-secondary" id="view-passes" style="margin-top:6px;">Compare OCR passes</button>'
+          : ''}
       </div>
       <div class="form-group">
         <label>Page Number</label>
@@ -1409,6 +1464,17 @@ function openBatchReviewModal() {
     function saveCurrentState() {
       nd.text = overlay.querySelector('#note-text').value;
       nd.pageNum = overlay.querySelector('#note-page').value;
+    }
+
+    // Compare OCR passes
+    const viewPassesBtn = overlay.querySelector('#view-passes');
+    if (viewPassesBtn) {
+      viewPassesBtn.onclick = async () => {
+        saveCurrentState();
+        const selected = await openPassPicker(nd.capture.ocrPasses, nd.text);
+        nd.text = selected;
+        renderReview();
+      };
     }
 
     const prevBtn = overlay.querySelector('#review-prev');
@@ -1571,15 +1637,34 @@ async function openEditNoteModal(note) {
 
       try {
         const blob = await dataURLToBlob(photoData);
-        const text = await runOCR(blob, showPassResult);
-        overlay.querySelector('#note-text').value = text;
-        showToast('OCR complete — text updated');
+        const { bestText, passes } = await runOCR(blob, showPassResult);
+        clearPassResults();
+        reOcrBtn.disabled = false;
+        reOcrBtn.textContent = 'Re-run OCR';
+
+        // Save current edit state on note before opening picker
+        const currentText = overlay.querySelector('#note-text').value;
+        note.text = currentText;
+        note.highlight = selectedHighlight;
+        note.pageNum = overlay.querySelector('#note-page').value
+          ? parseInt(overlay.querySelector('#note-page').value, 10) : null;
+        note.tags = tags;
+
+        const passesWithText = passes.filter(p => p.text);
+        if (passesWithText.length > 1) {
+          const selected = await openPassPicker(passes, bestText);
+          note.text = selected;
+        } else {
+          note.text = bestText;
+        }
+        showToast('OCR complete — pick applied');
+        openEditNoteModal(note);
       } catch (err) {
         showToast('OCR failed');
+        clearPassResults();
+        reOcrBtn.disabled = false;
+        reOcrBtn.textContent = 'Re-run OCR';
       }
-      clearPassResults();
-      reOcrBtn.disabled = false;
-      reOcrBtn.textContent = 'Re-run OCR';
     };
   }
 
@@ -1880,7 +1965,7 @@ function renderHelp() {
         <li>Use good lighting — avoid shadows across the text.</li>
         <li>Hold the camera steady and fill the frame with the text.</li>
         <li>Use the crop tool to select just the text area.</li>
-        <li>The app runs multiple OCR passes (raw, contrast, binarize, block, sharp) and shows each result with a confidence score. Tap <strong>Use this</strong> on any pass to accept it immediately.</li>
+        <li>The app runs 5 OCR passes (raw, contrast, binarize, block, sharp) and shows progress as each completes. Afterwards, you can compare all results and pick the best one.</li>
         <li>You can always edit the extracted text before saving.</li>
       </ul>
     </div>
