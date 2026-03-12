@@ -15,6 +15,7 @@ const state = {
   captureMode: 'batch', // 'batch' | 'single'
   ocrWorker: null,
   ocrReady: false,
+  ocrLang: localStorage.getItem('marginalia-ocr-lang') || 'eng',
   activeView: 'books',
   activeFilter: 'all',
   searchQuery: '',
@@ -90,10 +91,36 @@ function dbGetByIndex(storeName, indexName, value) {
 //  OCR
 // ═══════════════════════════════════════════════════════
 
-async function initOCR() {
-  if (state.ocrReady) return;
+const OCR_LANGUAGES = [
+  { code: 'eng', name: 'English' },
+  { code: 'fra', name: 'French' },
+  { code: 'deu', name: 'German' },
+  { code: 'spa', name: 'Spanish' },
+  { code: 'ita', name: 'Italian' },
+  { code: 'por', name: 'Portuguese' },
+  { code: 'rus', name: 'Russian' },
+  { code: 'pol', name: 'Polish' },
+  { code: 'nld', name: 'Dutch' },
+  { code: 'jpn', name: 'Japanese' },
+  { code: 'chi_sim', name: 'Chinese (Simplified)' },
+  { code: 'chi_tra', name: 'Chinese (Traditional)' },
+  { code: 'kor', name: 'Korean' },
+  { code: 'ara', name: 'Arabic' },
+  { code: 'hin', name: 'Hindi' },
+  { code: 'tur', name: 'Turkish' },
+  { code: 'ukr', name: 'Ukrainian' },
+];
+
+async function initOCR(lang) {
+  const targetLang = lang || state.ocrLang;
+  if (state.ocrReady && state._ocrLoadedLang === targetLang) return;
+  if (state.ocrWorker) {
+    await state.ocrWorker.terminate();
+    state.ocrWorker = null;
+    state.ocrReady = false;
+  }
   try {
-    state.ocrWorker = await Tesseract.createWorker('eng', 1, {
+    state.ocrWorker = await Tesseract.createWorker(targetLang, 1, {
       logger: (m) => {
         if (m.status === 'recognizing text') {
           updateOCRProgress(m.progress);
@@ -101,9 +128,19 @@ async function initOCR() {
       },
     });
     state.ocrReady = true;
+    state._ocrLoadedLang = targetLang;
   } catch (err) {
     console.error('OCR init failed:', err);
     showToast('OCR engine failed to load');
+  }
+}
+
+function setOCRLang(lang) {
+  state.ocrLang = lang;
+  localStorage.setItem('marginalia-ocr-lang', lang);
+  // Worker will reinit on next OCR run if language changed
+  if (state._ocrLoadedLang && state._ocrLoadedLang !== lang) {
+    state.ocrReady = false;
   }
 }
 
@@ -115,7 +152,7 @@ function updateOCRProgress(progress) {
 async function runOCR(imageBlob) {
   if (!state.ocrReady) await initOCR();
   const preprocessed = await preprocessImage(imageBlob);
-  const result = await state.ocrWorker.recognize(preprocessed, { tessedit_pageseg_mode: '6' });
+  const result = await state.ocrWorker.recognize(preprocessed);
   return result.data.text.trim();
 }
 
@@ -170,39 +207,34 @@ function preprocessImage(blob) {
           gray[i] = Math.max(0, Math.min(255, Math.round((gray[i] - lo) * 255 / range)));
         }
 
-        // Adaptive threshold using integral image (summed area table)
-        const integral = new Float64Array(w * h);
+        // Unsharp mask: sharpen edges to help Tesseract distinguish characters
+        // Blur with a 3x3 box kernel, then blend: sharp = original + strength*(original - blurred)
+        const blurred = new Uint8Array(w * h);
         for (let y = 0; y < h; y++) {
-          let rowSum = 0;
           for (let x = 0; x < w; x++) {
-            rowSum += gray[y * w + x];
-            integral[y * w + x] = rowSum + (y > 0 ? integral[(y - 1) * w + x] : 0);
+            let sum = 0, count = 0;
+            for (let dy = -1; dy <= 1; dy++) {
+              for (let dx = -1; dx <= 1; dx++) {
+                const ny = y + dy, nx = x + dx;
+                if (ny >= 0 && ny < h && nx >= 0 && nx < w) {
+                  sum += gray[ny * w + nx];
+                  count++;
+                }
+              }
+            }
+            blurred[y * w + x] = Math.round(sum / count);
           }
         }
+        const strength = 0.5;
+        for (let i = 0; i < gray.length; i++) {
+          gray[i] = Math.max(0, Math.min(255, Math.round(gray[i] + strength * (gray[i] - blurred[i]))));
+        }
 
-        const halfWin = 7; // 15x15 window → half = 7
-        const offset = 10;
-        for (let y = 0; y < h; y++) {
-          for (let x = 0; x < w; x++) {
-            const y1 = Math.max(0, y - halfWin - 1);
-            const y2 = Math.min(h - 1, y + halfWin);
-            const x1 = Math.max(0, x - halfWin - 1);
-            const x2 = Math.min(w - 1, x + halfWin);
-
-            const A = (y1 > 0 && x1 > 0) ? integral[y1 * w + x1] : 0;
-            const B = (y1 > 0) ? integral[y1 * w + x2] : 0;
-            const C = (x1 > 0) ? integral[y2 * w + x1] : 0;
-            const D = integral[y2 * w + x2];
-
-            // Handle edge correctly: if y1=0 or x1=0 we use the row above y1
-            const count = (y2 - (y1 > 0 ? y1 : -1)) * (x2 - (x1 > 0 ? x1 : -1));
-            const mean = (D - B - C + A) / count;
-            const val = gray[y * w + x] > (mean - offset) ? 255 : 0;
-
-            const j = (y * w + x) * 4;
-            data[j] = data[j + 1] = data[j + 2] = val;
-            data[j + 3] = 255;
-          }
+        // Write grayscale back — let Tesseract handle its own binarization
+        for (let i = 0; i < gray.length; i++) {
+          const j = i * 4;
+          data[j] = data[j + 1] = data[j + 2] = gray[i];
+          data[j + 3] = 255;
         }
 
         ctx.putImageData(imageData, 0, 0);
@@ -1240,7 +1272,13 @@ function renderSettings() {
         Tesseract.js v5 — runs entirely offline in your browser.
         ${state.ocrReady ? '<span style="color:var(--sage);">● Ready</span>' : '<span style="color:var(--amber);">○ Will load on first use</span>'}
       </p>
-      <button class="btn btn-sm btn-secondary" style="margin-top:10px;" id="preload-ocr">
+      <div class="form-group" style="margin-top:10px;margin-bottom:8px;">
+        <label>OCR Language</label>
+        <select id="ocr-lang">
+          ${OCR_LANGUAGES.map(l => `<option value="${l.code}" ${l.code === state.ocrLang ? 'selected' : ''}>${l.name}</option>`).join('')}
+        </select>
+      </div>
+      <button class="btn btn-sm btn-secondary" id="preload-ocr">
         ${state.ocrReady ? 'OCR Loaded ✓' : 'Pre-load OCR Engine'}
       </button>
     </div>
@@ -1267,6 +1305,13 @@ function renderSettings() {
       </p>
     </div>
   `;
+
+  view.querySelector('#ocr-lang').onchange = (e) => {
+    setOCRLang(e.target.value);
+    const preload = view.querySelector('#preload-ocr');
+    preload.textContent = 'Pre-load OCR Engine';
+    preload.disabled = false;
+  };
 
   const preloadBtn = view.querySelector('#preload-ocr');
   preloadBtn.onclick = async () => {

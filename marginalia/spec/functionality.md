@@ -8,7 +8,8 @@ A PWA for capturing post-it notes and marginalia from physical books, running OC
 
 - **Book Library**: Add, browse, and manage books with note counts and timestamps
 - **Photo Capture**: Snap photos of book pages with post-it notes (single or batch mode)
-- **OCR Processing**: Tesseract.js v5 runs entirely in-browser to extract text from photos, with canvas preprocessing (grayscale, auto-levels, adaptive threshold) and PSM 6 for improved accuracy
+- **OCR Processing**: Tesseract.js v5 runs entirely in-browser to extract text from photos, with canvas preprocessing (upscale, grayscale, auto-levels, unsharp mask) for improved accuracy. Supports 17 languages via a Settings dropdown.
+- **Language Selection**: Choose OCR language in Settings (English default); persisted in localStorage. Worker reinitializes automatically when language changes.
 - **Crop UI**: Interactive crop modal before OCR lets users select the text region, improving results on cluttered photos
 - **Note Categorization**: Classify notes as Note, Key/Important, Question, Idea, or Quote with color-coded highlights
 - **Tagging**: Add custom tags to notes for organization
@@ -41,8 +42,8 @@ A PWA for capturing post-it notes and marginalia from physical books, running OC
 
 ### OCR Pipeline
 1. **Crop** (optional): User drags a rectangle to isolate the text region; skip returns the full image
-2. **Preprocessing**: Upscale small images (2x if shorter dimension < 1000px), grayscale conversion, auto-levels (1st/99th percentile histogram stretch), adaptive threshold (15×15 integral-image window)
-3. **Recognition**: Tesseract.js with PSM 6 (single uniform block of text)
+2. **Preprocessing**: Upscale small images (2x if shorter dimension < 1000px), grayscale conversion, auto-levels (1st/99th percentile histogram stretch), unsharp mask (3×3, 0.5 strength)
+3. **Recognition**: Tesseract.js with default PSM (automatic page segmentation), using the language selected in Settings
 
 ### Data Storage
 All data lives in IndexedDB with three stores: books, notes, photos.
