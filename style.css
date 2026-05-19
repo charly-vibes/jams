@@ -237,3 +237,21 @@ h1 {
     color: #999;
     font-style: italic;
 }
+
+footer {
+    max-width: 800px;
+    margin: 1.5rem auto 0;
+    padding: 1rem 2rem;
+    border-top: 1px solid #ddd;
+    font-size: 0.8rem;
+    color: #999;
+}
+
+footer a {
+    color: #999;
+    text-decoration: none;
+}
+
+footer a:hover {
+    color: #333;
+}
