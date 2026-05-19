@@ -1,0 +1,9 @@
+pre-commit:
+  commands:
+    build:
+      run: just build
+
+pre-push:
+  commands:
+    build:
+      run: just build
