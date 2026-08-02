@@ -161,14 +161,15 @@ serve PORT="8000": build
 serve-ssl PORT="8443": build
     @if ! which mkcert >/dev/null 2>&1; then \
       echo "Install mkcert first: https://github.com/FiloSottile/mkcert"; \
-      echo "Then: mkcert -install && mkcert localhost 127.0.0.1 ::1"; \
+      echo "Then run this command again."; \
       exit 1; \
     fi
-    @if [ ! -f localhost.pem ] || [ ! -f localhost-key.pem ]; then \
-      echo "Generating certs..."; \
-      mkcert -cert-file localhost.pem -key-file localhost-key.pem localhost 127.0.0.1 ::1; \
-    fi
-    @echo "Starting HTTPS on https://localhost:{{PORT}} — accessible from devices on your network"
+    @LAN_IP="$(python3 -c 'import socket; s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM); s.connect(("8.8.8.8",80)); print(s.getsockname()[0]); s.close()')"; \
+      echo "Generating a trusted certificate for localhost and $LAN_IP..."; \
+      mkcert -install; \
+      mkcert -cert-file localhost.pem -key-file localhost-key.pem localhost 127.0.0.1 ::1 "$LAN_IP"
+    @echo "Starting HTTPS and collecting device diagnostics"
+    @echo "The device must trust the mkcert CA: $(mkcert -CAROOT)/rootCA.pem"
     @echo "Press Ctrl+C to stop"
     python3 serve-https.py {{PORT}}
 

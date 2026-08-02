@@ -700,7 +700,7 @@ updateDismiss?.addEventListener('click', () => {
 });
 
 /* ─── Shared file ingestion (from SW share target) ─── */
-const SHARED_CACHE = 'transcribir-shared-v2';
+const SHARED_CACHE = 'transcribir-shared-v3';
 
 async function checkSharedFiles() {
   const params = new URLSearchParams(window.location.search);

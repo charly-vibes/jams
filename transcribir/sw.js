@@ -1,20 +1,31 @@
 // transcribir — Service Worker
 // Handles: app shell caching, offline support, Web Share Target POST interception
 
-const VERSION = '2';  // bump when publishing a new version
+const VERSION = '3';  // bump when publishing a new version
 const SHELL_CACHE = `transcribir-shell-v${VERSION}`;
 const SHARED_CACHE = `transcribir-shared-v${VERSION}`;
 const STATIC_ASSETS = [
   './',
   './index.html',
   './script.js',
+  './debug.js',
   './style.css',
   './manifest.json',
   './icon.svg',
 ];
 
+function debugLog(level, ...args) {
+  console[level](...args);
+  self.clients.matchAll({ includeUncontrolled: true }).then((clients) => {
+    for (const client of clients) {
+      client.postMessage({ type: 'transcribir-debug', level, args });
+    }
+  });
+}
+
 /* ─── Install: precache app shell ─── */
 self.addEventListener('install', (event) => {
+  debugLog('info', 'install', VERSION);
   event.waitUntil(
     caches.open(SHELL_CACHE).then((cache) =>
       // Add each asset individually so one failure doesn't block the rest.
@@ -36,6 +47,7 @@ self.addEventListener('message', (event) => {
 
 /* ─── Activate: prune stale caches ─── */
 self.addEventListener('activate', (event) => {
+  debugLog('info', 'activate', VERSION);
   // Enable navigation preload for faster cold starts
   if (self.registration.navigationPreload) {
     event.waitUntil(self.registration.navigationPreload.enable().catch(() => {}));
@@ -54,9 +66,11 @@ self.addEventListener('activate', (event) => {
 /* ─── Fetch: serve shell + intercept share target POSTs ─── */
 self.addEventListener('fetch', (event) => {
   const { request } = event;
+  const requestUrl = new URL(request.url);
+  const shareTargetUrl = new URL('./', self.registration.scope);
 
   // Web Share Target POST — extract audio files, store in cache, redirect
-  if (request.method === 'POST') {
+  if (request.method === 'POST' && requestUrl.pathname === shareTargetUrl.pathname) {
     event.respondWith(handleShareTarget(request));
     return;
   }
@@ -81,15 +95,15 @@ self.addEventListener('fetch', (event) => {
 
 /* ─── Share target handler ─── */
 async function handleShareTarget(request) {
-  console.log('[SW] Share target POST received');
+  debugLog('info', 'Share target POST received');
   try {
     const formData = await request.formData();
     const files = formData.getAll('audio_files');
 
-    console.log('[SW] Files from form:', files ? files.length : 0);
+    debugLog('info', 'Files from form:', files ? files.length : 0);
 
     if (!files || files.length === 0) {
-      console.log('[SW] No files in form data');
+      debugLog('warn', 'No files in form data');
       return Response.redirect('./?share_error=no_files');
     }
 
@@ -97,10 +111,10 @@ async function handleShareTarget(request) {
     const cache = await caches.open(SHARED_CACHE);
     const audioFiles = files.filter(f => f.type && f.type.startsWith('audio/'));
 
-    console.log('[SW] Audio files after MIME filter:', audioFiles.length);
+    debugLog('info', 'Audio files after MIME filter:', audioFiles.length);
 
     if (audioFiles.length === 0) {
-      console.log('[SW] No audio/* files found');
+      debugLog('warn', 'No audio/* files found');
       return Response.redirect('./?share_error=no_files');
     }
 
@@ -113,13 +127,13 @@ async function handleShareTarget(request) {
         'X-File-Name': encodeURIComponent(file.name || `audio-${i}`),
       });
       await cache.put(`file-${i}`, new Response(file, { headers }));
-      console.log('[SW] Stored file:', file.name, file.type, file.size);
+      debugLog('info', 'Stored file:', file.name, file.type, file.size);
     }
 
-    console.log('[SW] Redirecting to ?shared=true');
+    debugLog('info', 'Redirecting to ?shared=true');
     return Response.redirect('./?shared=true');
   } catch (err) {
-    console.error('[SW] Share target error:', err);
+    debugLog('error', 'Share target error:', err.message || String(err));
     return Response.redirect('./?share_error=processing_failed');
   }
 }

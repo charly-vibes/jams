@@ -13,3 +13,6 @@ apps-metadata.json
 # Python cache
 __pycache__/
 *.pyc
+
+# Local device diagnostics
+.logs/

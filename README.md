@@ -8,6 +8,19 @@ Each jam is a self-contained HTML/JS application deployed as a subdirectory. The
 
 - [index](index.html): Landing page listing all jams
 
+## Debug Transcribir from another device
+
+Run `just serve-ssl` from the repository root. The command prints the LAN URL to
+open on a device connected to the same network. The device must trust the mkcert
+root certificate printed by the command; otherwise browser APIs such as the
+microphone and service worker will not be available.
+
+Browser console output, uncaught errors, UI actions, page/network lifecycle
+events, fetch requests, and service-worker diagnostics appear in the server
+terminal. Complete structured records are also appended to
+`.logs/transcribir-debug.jsonl`. Remote diagnostics activate only on local/private
+hosts, so the deployed GitHub Pages app does not send them.
+
 ---
 
 ## A note on authorship
