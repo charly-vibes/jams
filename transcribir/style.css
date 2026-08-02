@@ -445,7 +445,24 @@ footer a:hover { color: #aaa; border-bottom-color: #666; }
   color: #888;
   background: #111122;
   border-bottom: 1px solid #222;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
+
+.log-copy-btn {
+  background: none;
+  border: 1px solid #333;
+  border-radius: 4px;
+  color: #888;
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 0.15rem 0.4rem;
+  line-height: 1;
+  transition: color 0.2s;
+}
+
+.log-copy-btn:hover { color: #f0f0f0; background: #2a2a4a; }
 
 .log-header small {
   color: #555;

@@ -142,8 +142,36 @@ build:
 # Start local development server
 serve PORT="8000": build
     @echo "Starting HTTP server on http://localhost:{{PORT}}"
+    @echo ""
+    @echo "  ── Testing on this machine ──"
+    @echo "  http://localhost:{{PORT}}/transcribir/"
+    @echo ""
+    @echo "  ── Testing on another device (same network) ──"
+    @echo "  Get your IP:  ip addr | grep 'inet ' | awk '{print \$2}'"
+    @echo "  Then visit:   http://<YOUR_IP>:{{PORT}}/transcribir/"
+    @echo ""
+    @echo "  ⚠️  Service Workers require HTTPS (or localhost)."
+    @echo "     For device testing, use chrome://inspect via USB"
+    @echo "     or serve with SSL (see just serve-public)."
+    @echo ""
     @echo "Press Ctrl+C to stop"
     python3 -m http.server {{PORT}}
+
+# Serve with HTTPS via mkcert + Python (requires mkcert)
+serve-ssl PORT="8443": build
+    @if ! which mkcert >/dev/null 2>&1; then \
+      echo "Install mkcert first: https://github.com/FiloSottile/mkcert"; \
+      echo "Then: mkcert -install && mkcert localhost 127.0.0.1 ::1"; \
+      exit 1; \
+    fi
+    @if [ ! -f localhost.pem ] || [ ! -f localhost-key.pem ]; then \
+      echo "Generating certs..."; \
+      mkcert localhost 127.0.0.1 ::1; \
+    fi
+    @echo "Starting HTTPS on https://localhost:{{PORT}} — accessible from devices on your network"
+    @echo "Get your IP: ip addr | grep 'inet ' | awk '{print \$$2}'"
+    @echo "Press Ctrl+C to stop"
+    python3 serve-https.py {{PORT}}
 
 # Update branch by fetching and merging origin/main
 update:

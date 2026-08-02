@@ -147,7 +147,10 @@
   <!-- Debug log toggle button (visible only when useful) -->
   <button id="log-toggle" class="log-toggle" title="Ver registro de eventos">🐛</button>
   <div id="log-panel" class="log-panel hidden">
-    <div class="log-header">Registro de eventos <small>(se muestra en consola)</small></div>
+    <div class="log-header">
+      <span>Registro de eventos</span>
+      <button id="log-copy" class="log-copy-btn" title="Copiar al portapapeles">📋</button>
+    </div>
     <pre id="log-content" class="log-content"></pre>
   </div>
 

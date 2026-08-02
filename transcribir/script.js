@@ -809,6 +809,26 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
   });
+
+  // Copy logs button
+  const logCopy = document.getElementById('log-copy');
+  logCopy.addEventListener('click', () => {
+    const text = transcribirLog.join('\n') + '\n\n=== Transcribir Log ===\n' + new Date().toISOString();
+    navigator.clipboard.writeText(text).then(() => {
+      logCopy.textContent = '✅';
+      setTimeout(() => { logCopy.textContent = '📋'; }, 2000);
+    }).catch(() => {
+      // Fallback
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+      logCopy.textContent = '✅';
+      setTimeout(() => { logCopy.textContent = '📋'; }, 2000);
+    });
+  });
 });
 
 /* ─── UI helpers ─── */
