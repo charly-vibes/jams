@@ -166,7 +166,7 @@ serve-ssl PORT="8443": build
     fi
     @if [ ! -f localhost.pem ] || [ ! -f localhost-key.pem ]; then \
       echo "Generating certs..."; \
-      mkcert localhost 127.0.0.1 ::1; \
+      mkcert -cert-file localhost.pem -key-file localhost-key.pem localhost 127.0.0.1 ::1; \
     fi
     @echo "Starting HTTPS on https://localhost:{{PORT}} — accessible from devices on your network"
     @echo "Press Ctrl+C to stop"
