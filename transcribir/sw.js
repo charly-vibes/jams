@@ -15,13 +15,23 @@ const STATIC_ASSETS = [
 /* ─── Install: precache app shell ─── */
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(SHELL_CACHE).then((cache) => cache.addAll(STATIC_ASSETS))
+    caches.open(SHELL_CACHE).then((cache) =>
+      // Add each asset individually so one failure doesn't block the rest.
+      // './' may fail on some hosts (redirect loops) — it's non-critical.
+      Promise.allSettled(STATIC_ASSETS.map((url) =>
+        cache.add(url).catch(() => {} /* skip uncooperative URLs */)
+      ))
+    )
   );
   self.skipWaiting();
 });
 
 /* ─── Activate: prune stale caches ─── */
 self.addEventListener('activate', (event) => {
+  // Enable navigation preload for faster cold starts
+  if (self.registration.navigationPreload) {
+    event.waitUntil(self.registration.navigationPreload.enable().catch(() => {}));
+  }
   event.waitUntil(
     caches.keys().then((keys) =>
       Promise.all(
@@ -44,11 +54,20 @@ self.addEventListener('fetch', (event) => {
   }
 
   // Cache-first for same-origin GET assets
-  if (request.method === 'GET' && request.url.startsWith(self.location.origin)) {
-    // Skip chrome-extension and non-GET
-    event.respondWith(
-      caches.match(request).then((cached) => cached || fetch(request))
-    );
+  if (request.method === 'GET') {
+    if (request.url.startsWith(self.location.origin)) {
+      event.respondWith(
+        caches.match(request).then((cached) =>
+          cached || fetch(request).catch(() =>
+            // Offline fallback: serve index.html for navigations
+            request.mode === 'navigate'
+              ? caches.match('./index.html')
+              : Response.error()
+          )
+        )
+      );
+    }
+    // Cross-origin GETs (CDN) pass through untouched
   }
 });
 

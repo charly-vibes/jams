@@ -616,7 +616,7 @@ function switchToFileTab() {
 async function registerSW() {
   if (!('serviceWorker' in navigator)) return;
   try {
-    const reg = await navigator.serviceWorker.register('sw.js');
+    const reg = await navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' });
     console.log('SW registered:', reg.scope);
   } catch (err) {
     console.warn('SW registration failed:', err);

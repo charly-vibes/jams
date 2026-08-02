@@ -11,6 +11,14 @@
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎙️</text></svg>">
   <link rel="manifest" href="manifest.json">
   <link rel="stylesheet" href="style.css">
+  <script>
+    // Register SW EARLY — before page content renders.
+    // This ensures the SW can intercept Web Share Target POSTs
+    // (GitHub Pages returns 405 on POST — only the SW can handle it).
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' });
+    }
+  </script>
 </head>
 <body>
   <a href="../" class="home-link">&larr;</a>
