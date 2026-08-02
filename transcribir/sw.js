@@ -1,8 +1,9 @@
 // transcribir — Service Worker
 // Handles: app shell caching, offline support, Web Share Target POST interception
 
-const SHELL_CACHE = 'transcribir-shell-v2';
-const SHARED_CACHE = 'transcribir-shared-v2';
+const VERSION = '2';  // bump when publishing a new version
+const SHELL_CACHE = `transcribir-shell-v${VERSION}`;
+const SHARED_CACHE = `transcribir-shared-v${VERSION}`;
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -24,6 +25,13 @@ self.addEventListener('install', (event) => {
     )
   );
   self.skipWaiting();
+});
+
+/* ─── Message: respond to skipWaiting requests from the page ─── */
+self.addEventListener('message', (event) => {
+  if (event.data === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 /* ─── Activate: prune stale caches ─── */

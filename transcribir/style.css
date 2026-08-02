@@ -392,6 +392,13 @@ footer a {
 
 footer a:hover { color: #aaa; border-bottom-color: #666; }
 
+.app-version {
+  display: block;
+  margin-top: 0.4rem;
+  font-size: 0.65rem;
+  color: #444;
+}
+
 /* ─── Install prompt ─── */
 .install-prompt {
   max-width: 640px;

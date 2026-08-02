@@ -613,15 +613,65 @@ function switchToFileTab() {
 }
 
 /* ─── Service worker registration ─── */
+let swRegistration = null;
+
 async function registerSW() {
   if (!('serviceWorker' in navigator)) return;
   try {
     const reg = await navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' });
+    swRegistration = reg;
     console.log('SW registered:', reg.scope);
+
+    // Show version in footer
+    const verEl = document.getElementById('app-version');
+    if (verEl && reg.active) {
+      // Try to read version from SW's broadcast, or just show a cached indicator
+      verEl.textContent = 'v' + (reg.active.scriptURL.match(/v=(\d+)/)?.[1] || '?');
+    }
+
+    // Detect SW updates
+    reg.addEventListener('updatefound', () => {
+      const newSW = reg.installing;
+      if (!newSW) return;
+
+      newSW.addEventListener('statechange', () => {
+        // 'installed' means the new SW is ready but waiting to activate
+        // (skipWaiting will activate it immediately, but we still show the banner)
+        if (newSW.state === 'installed' && navigator.serviceWorker.controller) {
+          showUpdatePrompt();
+        }
+      });
+    });
   } catch (err) {
     console.warn('SW registration failed:', err);
   }
 }
+
+/* ─── Update prompt ─── */
+const updatePrompt = document.getElementById('update-prompt');
+const updateBtn = document.getElementById('update-btn');
+const updateDismiss = document.getElementById('update-dismiss');
+
+function showUpdatePrompt() {
+  if (!updatePrompt) return;
+  updatePrompt.classList.remove('hidden');
+}
+
+updateBtn?.addEventListener('click', async () => {
+  updatePrompt.classList.add('hidden');
+  if (swRegistration && swRegistration.waiting) {
+    // Tell the waiting SW to activate
+    swRegistration.waiting.postMessage('SKIP_WAITING');
+    // Wait for the new SW to take control, then reload
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      window.location.reload();
+    });
+  }
+});
+
+updateDismiss?.addEventListener('click', () => {
+  updatePrompt.classList.add('hidden');
+});
 
 /* ─── Shared file ingestion (from SW share target) ─── */
 const SHARED_CACHE = 'transcribir-shared-v2';
@@ -704,6 +754,11 @@ function clearPersistentStatus() {
 function showLoading(msg) {
   loadingMsg.textContent = msg;
   loadingOverlay.classList.remove('hidden');
+}
+
+// Yield to event loop so the browser paints pending DOM changes
+function tick() {
+  return new Promise(r => setTimeout(r, 50));
 }
 
 function hideLoading() {
