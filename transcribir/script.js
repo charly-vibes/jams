@@ -822,45 +822,77 @@ function appLog(msg) {
 }
 
 /* ─── Log viewer toggle ─── */
+/* ─── Help panel toggle ─── */
 document.addEventListener('DOMContentLoaded', () => {
-  const logBtn = document.getElementById('log-toggle');
+  const helpBtn = document.getElementById('help-btn');
+  const helpPanel = document.getElementById('help-panel');
+  const helpClose = document.getElementById('help-close');
+  const helpShowLog = document.getElementById('help-show-log');
   const logPanel = document.getElementById('log-panel');
-  if (!logBtn || !logPanel) return;
+  if (!helpBtn || !helpPanel || !helpClose) return;
 
-  logBtn.addEventListener('click', () => {
-    const isOpen = !logPanel.classList.contains('hidden');
-    logPanel.classList.toggle('hidden');
-    logBtn.textContent = isOpen ? '🐛' : '✕';
-    if (!isOpen) {
+  helpBtn.addEventListener('click', () => {
+    helpPanel.classList.toggle('hidden');
+  });
+
+  helpClose.addEventListener('click', () => {
+    helpPanel.classList.add('hidden');
+  });
+
+  // Close on click outside the panel
+  helpPanel.addEventListener('click', (e) => {
+    if (e.target === helpPanel) {
+      helpPanel.classList.add('hidden');
+    }
+  });
+
+  // Show debug log from within help panel
+  if (helpShowLog && logPanel) {
+    helpShowLog.addEventListener('click', (e) => {
+      e.preventDefault();
+      helpPanel.classList.add('hidden');
       const logEl = document.getElementById('log-content');
       if (logEl) {
         logEl.textContent = transcribirLog.join('\n');
         logEl.scrollTop = logEl.scrollHeight;
       }
+      logPanel.classList.remove('hidden');
+    });
+  }
+});
+
+// Log panel close on outside click + copy button
+document.addEventListener('DOMContentLoaded', () => {
+  const logPanel = document.getElementById('log-panel');
+  if (!logPanel) return;
+  logPanel.addEventListener('click', (e) => {
+    if (e.target === logPanel) {
+      logPanel.classList.add('hidden');
     }
   });
 
-  // Copy logs button
   const logCopy = document.getElementById('log-copy');
-  logCopy.addEventListener('click', () => {
-    const text = transcribirLog.join('\n') + '\n\n=== Transcribir Log ===\n' + new Date().toISOString();
-    navigator.clipboard.writeText(text).then(() => {
-      logCopy.textContent = '✅';
-      setTimeout(() => { logCopy.textContent = '📋'; }, 2000);
-    }).catch(() => {
-      // Fallback
-      const ta = document.createElement('textarea');
-      ta.value = text;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      ta.remove();
-      logCopy.textContent = '✅';
-      setTimeout(() => { logCopy.textContent = '📋'; }, 2000);
+  if (logCopy) {
+    logCopy.addEventListener('click', () => {
+      const text = transcribirLog.join('\n') + '\n\n=== Transcribir Log ===\n' + new Date().toISOString();
+      navigator.clipboard.writeText(text).then(() => {
+        logCopy.textContent = '\u2705';
+        setTimeout(() => { logCopy.textContent = '\U0001f4cb'; }, 2000);
+      }).catch(() => {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        ta.remove();
+        logCopy.textContent = '\u2705';
+        setTimeout(() => { logCopy.textContent = '\U0001f4cb'; }, 2000);
+      });
     });
-  });
+  }
 });
 
+/* ─── UI helpers ─── */
 /* ─── UI helpers ─── */
 let persistentStatusTimeout = null;
 
@@ -1023,26 +1055,3 @@ if (window.matchMedia('(display-mode: standalone)').matches) {
 }
 
 console.log('transcribir loaded — 🎙️ Audio a texto en el navegador');
-
-/* ─── Help panel toggle ─── */
-document.addEventListener('DOMContentLoaded', () => {
-  const helpBtn = document.getElementById('help-btn');
-  const helpPanel = document.getElementById('help-panel');
-  const helpClose = document.getElementById('help-close');
-  if (!helpBtn || !helpPanel || !helpClose) return;
-
-  helpBtn.addEventListener('click', () => {
-    helpPanel.classList.toggle('hidden');
-  });
-
-  helpClose.addEventListener('click', () => {
-    helpPanel.classList.add('hidden');
-  });
-
-  // Close on click outside the panel
-  helpPanel.addEventListener('click', (e) => {
-    if (e.target === helpPanel) {
-      helpPanel.classList.add('hidden');
-    }
-  });
-});

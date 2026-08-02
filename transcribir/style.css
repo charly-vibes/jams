@@ -400,7 +400,8 @@ footer a:hover { color: #aaa; border-bottom-color: #666; }
 }
 
 /* ─── Debug log ─── */
-.log-toggle {
+.log-toggle,
+#help-btn {
   position: fixed;
   bottom: 0.75rem;
   right: 0.75rem;
@@ -416,11 +417,12 @@ footer a:hover { color: #aaa; border-bottom-color: #666; }
   display: flex;
   align-items: center;
   justify-content: center;
-  opacity: 0.5;
+  opacity: 0.6;
   transition: opacity 0.2s;
 }
 
-.log-toggle:hover { opacity: 1; }
+.log-toggle:hover,
+#help-btn:hover { opacity: 1; }
 
 .log-panel {
   position: fixed;
@@ -537,28 +539,6 @@ footer a:hover { color: #aaa; border-bottom-color: #666; }
   .setting-row { min-width: 120px; }
 }
 
-/* ─── Help button ─── */
-.help-btn {
-  position: fixed;
-  top: 0.75rem;
-  right: 0.75rem;
-  width: 2.2rem;
-  height: 2.2rem;
-  border: 1px solid #444;
-  border-radius: 50%;
-  background: #1a1a2e;
-  color: #888;
-  font-size: 1rem;
-  cursor: pointer;
-  z-index: 200;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0.5;
-  transition: opacity 0.2s;
-}
-
-.help-btn:hover { opacity: 1; }
 
 /* ─── Help panel ─── */
 .help-panel {
@@ -656,6 +636,13 @@ footer a:hover { color: #aaa; border-bottom-color: #666; }
   margin-top: 0.3rem !important;
 }
 
-@media (max-width: 360px) {
-  .help-btn { width: 1.8rem; height: 1.8rem; font-size: 0.85rem; }
+.help-log-link {
+  color: #6a6aff;
+  text-decoration: none;
+  border-bottom: 1px solid #4a4acc;
+}
+
+.help-log-link:hover {
+  color: #8888ff;
+  border-bottom-color: #8888ff;
 }

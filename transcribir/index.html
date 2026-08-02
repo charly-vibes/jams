@@ -23,7 +23,6 @@
 </head>
 <body>
   <a href="../" class="home-link">&larr;</a>
-  <button id="help-btn" class="help-btn" title="Ayuda">❓</button>
 
   <div id="app">
     <header>
@@ -146,8 +145,8 @@
     <span id="app-version" class="app-version"></span>
   </footer>
 
-  <!-- Debug log toggle button (visible only when useful) -->
-  <button id="log-toggle" class="log-toggle" title="Ver registro de eventos">🐛</button>
+  <!-- Help button (bottom-right, replaces bug toggle) -->
+  <button id="help-btn" class="log-toggle" title="Ayuda">❓</button>
   <div id="log-panel" class="log-panel hidden">
     <div class="log-header">
       <span>Registro de eventos</span>
@@ -196,6 +195,10 @@
           <li>Si hay música de fondo, activa <strong>Filtro pasa altos</strong> en "Separar voz"</li>
           <li>Los modelos se descargan una sola vez y quedan en caché</li>
         </ul>
+      </div>
+      <div class="help-section">
+        <h3>🐛 Depuración</h3>
+        <p><a href="#" id="help-show-log" class="help-log-link">Ver registro de eventos</a> — para compartir si algo no funciona</p>
       </div>
     </div>
   </div>
