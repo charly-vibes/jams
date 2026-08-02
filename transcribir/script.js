@@ -417,7 +417,13 @@ transcribeBtn.addEventListener('click', async () => {
 
   appLog('transcribe: running transcription');
 
-  // Send to worker — transfers audio data to avoid copying
+  // Restore audio from original backup (buffer stays intact with structured clone,
+  // but this handles edge cases where buffer was transferred by a previous version).
+  if (originalAudio) {
+    currentAudio.data = new Float32Array(originalAudio.data);
+  }
+
+  // Send to worker via structured clone
   showLoading('Preparando transcripción...');
   showCancelButton(true);
 
@@ -548,19 +554,16 @@ function transcribeInWorker(audioData, modelKey, options) {
     pendingResolve._startTime = performance.now();
     pendingReject = reject;
 
-    // Transfer the audio buffer to the worker (zero-copy)
-    // We transfer the buffer directly; the main thread still has
-    // originalAudio for re-transcription if needed.
-    whisperWorker.postMessage(
-      {
-        type: 'transcribe',
-        audio: audioData,
-        modelKey,
-        options,
-        chunkSize: CHUNK_SECONDS * 16000,
-      },
-      [audioData.buffer]
-    );
+    // Send the audio data to the worker via structured clone (no transfer).
+    // The buffer is also restored from originalAudio before each call, so
+    // re-transcription with a different model/language always works.
+    whisperWorker.postMessage({
+      type: 'transcribe',
+      audio: audioData,
+      modelKey,
+      options,
+      chunkSize: CHUNK_SECONDS * 16000,
+    });
   });
 }
 
