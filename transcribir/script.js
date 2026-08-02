@@ -682,6 +682,7 @@ downloadBtn.addEventListener('click', () => {
 
 /* ─── Service worker registration ─── */
 let swRegistration = null;
+let updateBannerTimer = null;
 
 async function registerSW() {
   if (!('serviceWorker' in navigator)) return;
@@ -689,10 +690,49 @@ async function registerSW() {
     const reg = await navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' });
     swRegistration = reg;
     console.log('SW registered:', reg.scope);
+
+    // Detect new SW versions and show update banner
+    reg.addEventListener('updatefound', () => {
+      const newSW = reg.installing;
+      if (!newSW) return;
+      newSW.addEventListener('statechange', () => {
+        if (newSW.state === 'installed' && navigator.serviceWorker.controller) {
+          showUpdateBanner(reg);
+        }
+      });
+    });
   } catch (err) {
     console.warn('SW registration failed:', err);
   }
 }
+
+function showUpdateBanner(reg) {
+  const banner = document.getElementById('update-banner');
+  if (!banner) return;
+  banner.classList.remove('hidden');
+  // Store ref for the onclick handler in HTML
+  window._pendingUpdateReg = reg;
+  // Auto-apply update after 30s if user doesn't tap
+  clearTimeout(updateBannerTimer);
+  updateBannerTimer = setTimeout(() => applyUpdate(reg), 30000);
+}
+
+function applyUpdate(reg) {
+  const r = reg || window._pendingUpdateReg;
+  const banner = document.getElementById('update-banner');
+  if (banner) banner.classList.add('hidden');
+  clearTimeout(updateBannerTimer);
+  window._pendingUpdateReg = null;
+  if (r && r.waiting) {
+    r.waiting.postMessage('SKIP_WAITING');
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      window.location.reload();
+    });
+  }
+}
+
+// Expose for HTML onclick
+window.applyUpdate = applyUpdate;
 
 /* ─── Shared file ingestion (from SW share target) ─── */
 const SHARED_CACHE = 'transcribir-shared-v3';
