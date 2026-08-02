@@ -23,6 +23,7 @@
 </head>
 <body>
   <a href="../" class="home-link">&larr;</a>
+  <button id="help-btn" class="help-btn" title="Ayuda">❓</button>
 
   <div id="app">
     <header>
@@ -153,6 +154,50 @@
       <button id="log-copy" class="log-copy-btn" title="Copiar al portapapeles">📋</button>
     </div>
     <pre id="log-content" class="log-content"></pre>
+  </div>
+
+  <!-- Help panel -->
+  <div id="help-panel" class="help-panel hidden">
+    <div class="help-header">
+      <span>Cómo usar Transcribir</span>
+      <button id="help-close" class="help-close">✕</button>
+    </div>
+    <div class="help-scroll">
+      <div class="help-section">
+        <h3>🎤 Transcribir audio</h3>
+        <p>Selecciona un archivo de audio o graba con el micrófono, elige el modelo y el idioma, luego toca <strong>Transcribir</strong>.</p>
+      </div>
+      <div class="help-section">
+        <h3>📲 Instalar la app (PWA)</h3>
+        <p>Para recibir audios desde WhatsApp y otras apps, instala Transcribir en tu pantalla de inicio:</p>
+        <ol>
+          <li>En Chrome, toca el menú <strong>⋮</strong> (tres puntos)</li>
+          <li>Selecciona <strong>"Instalar aplicación"</strong> o <strong>"Añadir a pantalla de inicio"</strong></li>
+          <li>Confirma la instalación</li>
+        </ol>
+        <p class="help-note">También puedes usar el botón <strong>📲 Instalar</strong> que aparece arriba si tu navegador lo soporta.</p>
+      </div>
+      <div class="help-section">
+        <h3>💬 Compartir desde WhatsApp</h3>
+        <p>Una vez instalada la app:</p>
+        <ol>
+          <li>Abre WhatsApp y abre el chat con el audio de voz que quieras transcribir</li>
+          <li>Mantén presionado el mensaje de audio → toca <strong>Compartir</strong></li>
+          <li>Selecciona <strong>Transcribir</strong> de la lista de aplicaciones</li>
+          <li>La app se abrirá y empezará a transcribir automáticamente</li>
+        </ol>
+        <p class="help-note">También funciona con Telegram, Signal, Google Fotos y cualquier app que comparta archivos de audio.</p>
+      </div>
+      <div class="help-section">
+        <h3>⚙️ Consejos</h3>
+        <ul>
+          <li><strong>Modelo base (~75 MB)</strong> es el recomendado — equilibra velocidad y precisión</li>
+          <li><strong>Modelo tiny (~40 MB)</strong> es más rápido en teléfonos con poca memoria</li>
+          <li>Si hay música de fondo, activa <strong>Filtro pasa altos</strong> en "Separar voz"</li>
+          <li>Los modelos se descargan una sola vez y quedan en caché</li>
+        </ul>
+      </div>
+    </div>
   </div>
 
   <script>

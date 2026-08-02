@@ -49,6 +49,34 @@ const loadingOverlay   = $('#loading-overlay');
 const loadingMsg       = $('#loading-msg');
 const longAudioWarn    = $('#long-audio-warn');
 
+/* ─── Settings persistence ─── */
+const SETTINGS_KEY = 'transcribir-settings';
+
+function saveSettings() {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+      model: modelSelect.value,
+      lang: langSelect.value,
+      separation: separationSelect.value,
+    }));
+  } catch { /* storage unavailable */ }
+}
+
+function restoreSettings() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (!raw) return;
+    const s = JSON.parse(raw);
+    if (s.model && [...modelSelect.options].some(o => o.value === s.model)) modelSelect.value = s.model;
+    if (s.lang && [...langSelect.options].some(o => o.value === s.lang)) langSelect.value = s.lang;
+    if (s.separation && [...separationSelect.options].some(o => o.value === s.separation)) separationSelect.value = s.separation;
+  } catch { /* corrupt data */ }
+}
+
+modelSelect.addEventListener('change', saveSettings);
+langSelect.addEventListener('change', saveSettings);
+separationSelect.addEventListener('change', saveSettings);
+
 /* ─── File input ─── */
 uploadZone.addEventListener('click', () => fileInput.click());
 uploadZone.addEventListener('keydown', (e) => {
@@ -909,6 +937,9 @@ if ('launchQueue' in window) {
 }
 
 /* ─── Init ─── */
+// Restore previously saved settings
+restoreSettings();
+
 // Clear the loading status shown by inline script
 if (statusEl) { statusEl.classList.add('hidden'); }
 
@@ -992,3 +1023,26 @@ if (window.matchMedia('(display-mode: standalone)').matches) {
 }
 
 console.log('transcribir loaded — 🎙️ Audio a texto en el navegador');
+
+/* ─── Help panel toggle ─── */
+document.addEventListener('DOMContentLoaded', () => {
+  const helpBtn = document.getElementById('help-btn');
+  const helpPanel = document.getElementById('help-panel');
+  const helpClose = document.getElementById('help-close');
+  if (!helpBtn || !helpPanel || !helpClose) return;
+
+  helpBtn.addEventListener('click', () => {
+    helpPanel.classList.toggle('hidden');
+  });
+
+  helpClose.addEventListener('click', () => {
+    helpPanel.classList.add('hidden');
+  });
+
+  // Close on click outside the panel
+  helpPanel.addEventListener('click', (e) => {
+    if (e.target === helpPanel) {
+      helpPanel.classList.add('hidden');
+    }
+  });
+});
