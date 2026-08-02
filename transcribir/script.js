@@ -12,6 +12,8 @@ let transcriber = null;
 let loadedModel = null;
 let currentAudio = null;      // { data: Float32Array, duration: number, name: string }
 let originalAudio = null;     // backup of pre-separation audio for reset
+let cdnFailed = false;
+let transformersLoading = false;
 let sourceFileName = null;
 let sourceDuration = null;
 let mediaRecorder = null;
@@ -353,8 +355,8 @@ async function separateVocalsONNX(audioData, sampleRate) {
 
 /* ─── Transcription (with chunking for long audio) ─── */
 transcribeBtn.addEventListener('click', async () => {
-  if (!currentAudio || isTranscribing || cdnFailed) {
-    appLog('transcribe: blocked — currentAudio='+!!currentAudio+' isTranscribing='+isTranscribing+' cdnFailed='+cdnFailed);
+  if (!currentAudio || isTranscribing || transformersLoading || cdnFailed) {
+    appLog('transcribe: blocked — currentAudio='+!!currentAudio+' isTranscribing='+isTranscribing+' transformersLoading='+transformersLoading+' cdnFailed='+cdnFailed);
     return;
   }
   appLog('transcribe: starting');
@@ -910,15 +912,49 @@ if ('launchQueue' in window) {
 // Clear the loading status shown by inline script
 if (statusEl) { statusEl.classList.add('hidden'); }
 
-// Guard: if transformers.js failed to load
-let cdnFailed = false;
+// Guard: ensure transformers.js loaded with CDN fallback
 if (typeof window.transformers === 'undefined') {
-  cdnFailed = true;
-  showStatus('❌ No se pudo cargar la biblioteca de IA. Verifica tu conexión y recarga.', true);
-  transcribeBtn.disabled = true;
+  transformersLoading = true;
+  showStatus('⏳ Cargando biblioteca de IA...', false, true);
+  loadTransformers().then(() => {
+    transformersLoading = false;
+    clearPersistentStatus();
+    registerSW();
+    checkSharedFiles();
+  }).catch(() => {
+    transformersLoading = false;
+    clearPersistentStatus();
+    cdnFailed = true;
+    showStatus('❌ No se pudo cargar la biblioteca de IA. Verifica tu conexión y recarga.', true);
+    transcribeBtn.disabled = true;
+  });
 } else {
   registerSW();
   checkSharedFiles();
+}
+
+async function loadTransformers() {
+  const urls = [
+    'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js',
+    'https://unpkg.com/@xenova/transformers@2.17.2/dist/transformers.min.js',
+  ];
+  for (const url of urls) {
+    try {
+      // Dynamic import() evaluates the file as an ES module where `export{...}`
+      // is valid. The previous `<script>` tag approach failed because bare
+      // `export{` is a SyntaxError in a classic script.
+      // Assign module exports to window.transformers for backward compat with
+      // the rest of script.js which reads window.transformers.pipeline.
+      window.transformers = await import(url);
+      // Verify the module actually exposes pipeline before declaring success
+      if (typeof window.transformers?.pipeline === 'function') return;
+      console.warn('transcribir: CDN loaded but pipeline missing:', url);
+    } catch (err) {
+      console.warn('transcribir: CDN fallback failed:', url, err);
+      continue;
+    }
+  }
+  throw new Error('All CDNs failed');
 }
 
 /* ─── Install prompt (beforeinstallprompt) ─── */

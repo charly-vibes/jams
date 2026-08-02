@@ -17,7 +17,7 @@
     // This ensures the SW can intercept Web Share Target POSTs
     // (GitHub Pages returns 405 on POST — only the SW can handle it).
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' });
+      navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {});
     }
   </script>
 </head>
@@ -155,8 +155,6 @@
     <pre id="log-content" class="log-content"></pre>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js"
-          onerror="document.getElementById('status').textContent='❌ Error al cargar la biblioteca de IA. ¿Sin conexión?';document.getElementById('status').className='status error';document.getElementById('status').classList.remove('hidden');"></script>
   <script>
     (function(){
       var s=document.getElementById('status');

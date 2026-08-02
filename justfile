@@ -139,25 +139,48 @@ build:
     @bash build-metadata.sh > apps-metadata.json
     @echo "✓ Built apps-metadata.json"
 
-# Start local development server
+# Start local development server (HTTP, for local machine testing)
 serve PORT="8000": build
-    @echo "Starting HTTP server on http://localhost:{{PORT}}"
-    @echo ""
-    @echo "  ── Testing on this machine ──"
-    @echo "  http://localhost:{{PORT}}/transcribir/"
-    @echo ""
-    @echo "  ── Testing on another device (same network) ──"
-    @echo "  Get your IP:  ip addr | grep 'inet ' | awk '{print \$2}'"
-    @echo "  Then visit:   http://<YOUR_IP>:{{PORT}}/transcribir/"
-    @echo ""
-    @echo "  ⚠️  Service Workers require HTTPS (or localhost)."
-    @echo "     For device testing, use chrome://inspect via USB"
-    @echo "     or serve with SSL (see just serve-public)."
-    @echo ""
-    @echo "Press Ctrl+C to stop"
-    python3 -m http.server {{PORT}}
+    @LAN_IP=$$(python3 -c 'import socket; s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM); s.connect(("8.8.8.8",80)); print(s.getsockname()[0]); s.close()' 2>/dev/null || echo "<YOUR_IP>"); \
+      echo "Starting HTTP server on http://localhost:{{PORT}}"; \
+      echo ""; \
+      echo "  ── Testing on this machine ──"; \
+      echo "  http://localhost:{{PORT}}/transcribir/"; \
+      echo ""; \
+      echo "  ── Testing on another device (USB forwarding, SW works) ──"; \
+      echo "  1. Connect phone via USB, enable USB debugging"; \
+      echo "  2. Open chrome://inspect on desktop Chrome"; \
+      echo "  3. Enable 'Port forwarding' → set port {{PORT}} → localhost:{{PORT}}"; \
+      echo "  4. On phone Chrome, visit http://localhost:{{PORT}}/transcribir/"; \
+      echo "     (localhost is treated as secure context — SW will work!)"; \
+      echo ""; \
+      echo "  ── Testing on another device (same network, no SW) ──"; \
+      echo "  http://$$LAN_IP:{{PORT}}/transcribir/"; \
+      echo "  ⚠️  SW requires secure context (share/offline won't work over HTTP)"; \
+      echo ""; \
+      echo "  ── HTTPS with trusted cert via tunnel (SW works) ──"; \
+      echo "  Install cloudflared, then:  just tunnel PORT={{PORT}}"; \
+      echo ""; \
+      echo "Press Ctrl+C to stop"; \
+      python3 -m http.server {{PORT}}
 
-# Serve with HTTPS via mkcert + Python (requires mkcert)
+# Tunnel with cloudflared (public HTTPS URL, SW works on any device)
+tunnel PORT="8000": build
+    @if ! which cloudflared >/dev/null 2>&1; then \
+      echo "Install cloudflared first: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/"; \
+      exit 1; \
+    fi
+    @echo "Starting cloudflared tunnel to http://localhost:{{PORT}}"
+    @echo ""
+    @echo "  cloudflared will print a public https://xxxx.trycloudflare.com URL"
+    @echo "  Open that URL on your device — SW will work with the trusted cert"
+    @echo ""
+    @echo "First start the HTTP server in another terminal:"
+    @echo "  just serve PORT={{PORT}}"
+    @echo ""
+    python3 -m cloudflared tunnel --url http://localhost:{{PORT}}
+
+# Serve with HTTPS via mkcert + Python (requires mkcert cert on each device)
 serve-ssl PORT="8443": build
     @if ! which mkcert >/dev/null 2>&1; then \
       echo "Install mkcert first: https://github.com/FiloSottile/mkcert"; \
@@ -169,8 +192,6 @@ serve-ssl PORT="8443": build
       mkcert -install; \
       mkcert -cert-file localhost.pem -key-file localhost-key.pem localhost 127.0.0.1 ::1 "$LAN_IP"
     @echo "Starting HTTPS and collecting device diagnostics"
-    @echo "The device must trust the mkcert CA: $(mkcert -CAROOT)/rootCA.pem"
-    @echo "Press Ctrl+C to stop"
     python3 serve-https.py {{PORT}}
 
 # Update branch by fetching and merging origin/main
