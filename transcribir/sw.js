@@ -81,11 +81,15 @@ self.addEventListener('fetch', (event) => {
 
 /* ─── Share target handler ─── */
 async function handleShareTarget(request) {
+  console.log('[SW] Share target POST received');
   try {
     const formData = await request.formData();
     const files = formData.getAll('audio_files');
 
+    console.log('[SW] Files from form:', files ? files.length : 0);
+
     if (!files || files.length === 0) {
+      console.log('[SW] No files in form data');
       return Response.redirect('./?share_error=no_files');
     }
 
@@ -93,7 +97,10 @@ async function handleShareTarget(request) {
     const cache = await caches.open(SHARED_CACHE);
     const audioFiles = files.filter(f => f.type && f.type.startsWith('audio/'));
 
+    console.log('[SW] Audio files after MIME filter:', audioFiles.length);
+
     if (audioFiles.length === 0) {
+      console.log('[SW] No audio/* files found');
       return Response.redirect('./?share_error=no_files');
     }
 
@@ -106,8 +113,10 @@ async function handleShareTarget(request) {
         'X-File-Name': encodeURIComponent(file.name || `audio-${i}`),
       });
       await cache.put(`file-${i}`, new Response(file, { headers }));
+      console.log('[SW] Stored file:', file.name, file.type, file.size);
     }
 
+    console.log('[SW] Redirecting to ?shared=true');
     return Response.redirect('./?shared=true');
   } catch (err) {
     console.error('[SW] Share target error:', err);

@@ -399,6 +399,70 @@ footer a:hover { color: #aaa; border-bottom-color: #666; }
   color: #444;
 }
 
+/* ─── Debug log ─── */
+.log-toggle {
+  position: fixed;
+  bottom: 0.75rem;
+  right: 0.75rem;
+  width: 2.2rem;
+  height: 2.2rem;
+  border: 1px solid #444;
+  border-radius: 50%;
+  background: #1a1a2e;
+  color: #888;
+  font-size: 1rem;
+  cursor: pointer;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.5;
+  transition: opacity 0.2s;
+}
+
+.log-toggle:hover { opacity: 1; }
+
+.log-panel {
+  position: fixed;
+  bottom: 3.5rem;
+  right: 0.75rem;
+  width: calc(100% - 1.5rem);
+  max-width: 400px;
+  max-height: 50vh;
+  background: #0a0a14;
+  border: 1px solid #333;
+  border-radius: 10px;
+  z-index: 199;
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+}
+
+.log-panel.hidden { display: none; }
+
+.log-header {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.75rem;
+  color: #888;
+  background: #111122;
+  border-bottom: 1px solid #222;
+}
+
+.log-header small {
+  color: #555;
+}
+
+.log-content {
+  padding: 0.5rem 0.75rem;
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  font-size: 0.65rem;
+  line-height: 1.5;
+  color: #7a7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: calc(50vh - 2rem);
+  overflow-y: auto;
+}
+
 /* ─── Install prompt ─── */
 .install-prompt {
   max-width: 640px;

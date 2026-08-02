@@ -144,6 +144,13 @@
     <span id="app-version" class="app-version"></span>
   </footer>
 
+  <!-- Debug log toggle button (visible only when useful) -->
+  <button id="log-toggle" class="log-toggle" title="Ver registro de eventos">🐛</button>
+  <div id="log-panel" class="log-panel hidden">
+    <div class="log-header">Registro de eventos <small>(se muestra en consola)</small></div>
+    <pre id="log-content" class="log-content"></pre>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js"
           onerror="document.getElementById('status').textContent='❌ Error al cargar la biblioteca de IA. ¿Sin conexión?';document.getElementById('status').className='status error';document.getElementById('status').classList.remove('hidden');"></script>
   <script>

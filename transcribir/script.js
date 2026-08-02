@@ -148,10 +148,16 @@ async function startRecording() {
     recordBtn.querySelector('.record-label').textContent = 'Grabar';
 
     const blob = new Blob(micChunks, { type: mimeType || 'audio/webm' });
-    if (blob.size === 0) return;
+    if (blob.size === 0) {
+      appLog('mic: empty recording (too short or no data)');
+      showStatus('⚠️ Grabación demasiado corta. Intenta grabar al menos 1 segundo.', true);
+      return;
+    }
+    appLog('mic: recording stopped, blob='+formatSize(blob.size));
 
     const name = `micrófono-${formatDuration(micSeconds)}`;
     await loadAudio(blob, name);
+    appLog('mic: audio loaded, duration='+formatDuration(micSeconds));
     micInfo.textContent = `🎤 Grabación: ${formatDuration(micSeconds)} (${formatSize(blob.size)})`;
     micInfo.classList.remove('hidden');
   };
@@ -347,7 +353,11 @@ async function separateVocalsONNX(audioData, sampleRate) {
 
 /* ─── Transcription (with chunking for long audio) ─── */
 transcribeBtn.addEventListener('click', async () => {
-  if (!currentAudio || isTranscribing || cdnFailed) return;
+  if (!currentAudio || isTranscribing || cdnFailed) {
+    appLog('transcribe: blocked — currentAudio='+!!currentAudio+' isTranscribing='+isTranscribing+' cdnFailed='+cdnFailed);
+    return;
+  }
+  appLog('transcribe: starting');
   isTranscribing = true;
   transcribeBtn.disabled = true;
   outputSection.classList.add('hidden');
@@ -355,6 +365,8 @@ transcribeBtn.addEventListener('click', async () => {
   const modelKey = modelSelect.value;
   const lang = langSelect.value;
   const sepMode = separationSelect.value;
+
+  appLog('transcribe: model='+modelKey+' lang='+lang+' sep='+sepMode);
 
   // Load Whisper model if needed
   if (transcriber === null || loadedModel !== modelKey) {
@@ -367,6 +379,8 @@ transcribeBtn.addEventListener('click', async () => {
       transcribeBtn.disabled = !currentAudio;
       return;
     }
+  } else {
+    appLog('transcribe: model already loaded');
   }
   // Vocal separation step (before transcription)
   // Always start from original audio to make separation idempotent
@@ -377,9 +391,12 @@ transcribeBtn.addEventListener('click', async () => {
   if (sepMode === 'spleeter') {
     try {
       clearPersistentStatus();
+      appLog('spleeter: loading model');
       await loadSeparationModel();
+      appLog('spleeter: running inference');
       const separated = await separateVocalsONNX(currentAudio.data, 16000);
       currentAudio.data = separated;
+      appLog('spleeter: done');
     } catch {
       // Error already shown by loadSeparationModel/separateVocalsONNX
       isTranscribing = false;
@@ -388,9 +405,13 @@ transcribeBtn.addEventListener('click', async () => {
     }
   } else if (sepMode === 'hpf') {
     clearPersistentStatus();
+    appLog('hpf: applying high-pass filter');
     showStatus('🎛️ Aplicando filtro pasa altos para realzar voz...');
     currentAudio.data = enhanceVocalsHPF(currentAudio.data, 16000);
+    appLog('hpf: done');
   }
+
+  appLog('transcribe: running transcription');
 
   await runTranscription(lang);
 
@@ -400,6 +421,9 @@ transcribeBtn.addEventListener('click', async () => {
 
 async function loadModel(modelKey) {
   showLoading(`Cargando ${modelMapLabel(modelKey)}...`);
+  appLog('model: starting download for '+modelKey);
+  // Yield to event loop so the browser paints the loading overlay
+  await tick();
 
   const modelId = MODEL_MAP[modelKey];
   const { pipeline } = window.transformers;
@@ -488,10 +512,12 @@ async function runTranscription(lang) {
     outputSection.classList.remove('hidden');
     const totalDur = Math.round(currentAudio.duration);
     const durStr = totalDur > 60 ? `${Math.round(totalDur / 60)} min` : `${totalDur}s`;
+    appLog('transcribe: completed — ' + elapsed + 's for ' + totalDur + 's audio');
     showStatus(`✅ Transcripción completada en ${elapsed}s — ${durStr} de audio`);
     outputSection.scrollIntoView({ behavior: 'smooth' });
   } catch (err) {
     hideLoading();
+    appLog('transcribe: error — ' + err.message);
     showStatus(`❌ Error en la transcripción: ${err.message}`, true);
     console.error(err);
   }
@@ -680,17 +706,30 @@ async function checkSharedFiles() {
   const params = new URLSearchParams(window.location.search);
 
   if (params.get('shared') === 'true') {
+    appLog('check-shared: ?shared=true detected');
+    let foundAny = false;
     try {
       const cache = await caches.open(SHARED_CACHE);
       const countResp = await cache.match('file-count');
-      if (!countResp) return;
+      if (!countResp) {
+        appLog('check-shared: no file-count in cache');
+        showStatus('⚠️ Audio compartido: el servicio no estaba listo. Vuelve a compartir el audio.', true);
+        window.history.replaceState({}, '', './');
+        return;
+      }
 
       const count = parseInt(await countResp.text(), 10);
-      if (isNaN(count) || count < 1) return;
+      if (isNaN(count) || count < 1) {
+        appLog('check-shared: invalid count');
+        return;
+      }
 
       for (let i = 0; i < count; i++) {
         const fileResp = await cache.match(`file-${i}`);
-        if (!fileResp) continue;
+        if (!fileResp) {
+          appLog('check-shared: file-'+i+' not found');
+          continue;
+        }
 
         const blob = await fileResp.blob();
         const rawName = fileResp.headers.get('X-File-Name');
@@ -698,6 +737,8 @@ async function checkSharedFiles() {
 
         const file = new File([blob], fileName, { type: blob.type });
         await loadAudio(file, fileName);
+        foundAny = true;
+        appLog('check-shared: loaded '+fileName);
         // Persistent notification + auto-transcribe for shared files
         showStatus(`📲 Audio compartido: ${fileName}`, false, true);
         switchToFileTab();
@@ -713,9 +754,13 @@ async function checkSharedFiles() {
       window.history.replaceState({}, '', './');
 
       // Auto-start transcription after all files loaded
-      if (currentAudio) transcribeBtn.click();
+      if (foundAny && currentAudio) {
+        appLog('check-shared: auto-transcribing');
+        transcribeBtn.click();
+      }
     } catch (err) {
       console.warn('Error reading shared files:', err);
+      appLog('check-shared: error '+err.message);
       showStatus('⚠️ Error al procesar audio compartido', true);
     }
   }
@@ -728,6 +773,43 @@ async function checkSharedFiles() {
     window.history.replaceState({}, '', './');
   }
 }
+
+/* ─── In-app logging (for debugging user issues) ─── */
+const transcribirLog = [];
+const MAX_LOG = 100;
+
+function appLog(msg) {
+  const entry = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  transcribirLog.push(entry);
+  if (transcribirLog.length > MAX_LOG) transcribirLog.shift();
+  console.log('transcribir:', msg);
+  // Update log viewer if open
+  const logEl = document.getElementById('log-content');
+  if (logEl) {
+    logEl.textContent = transcribirLog.join('\n');
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+}
+
+/* ─── Log viewer toggle ─── */
+document.addEventListener('DOMContentLoaded', () => {
+  const logBtn = document.getElementById('log-toggle');
+  const logPanel = document.getElementById('log-panel');
+  if (!logBtn || !logPanel) return;
+
+  logBtn.addEventListener('click', () => {
+    const isOpen = !logPanel.classList.contains('hidden');
+    logPanel.classList.toggle('hidden');
+    logBtn.textContent = isOpen ? '🐛' : '✕';
+    if (!isOpen) {
+      const logEl = document.getElementById('log-content');
+      if (logEl) {
+        logEl.textContent = transcribirLog.join('\n');
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+    }
+  });
+});
 
 /* ─── UI helpers ─── */
 let persistentStatusTimeout = null;
