@@ -471,7 +471,7 @@ function initWorker() {
   if (whisperWorker) return;
 
   try {
-    whisperWorker = new Worker('worker.js');
+    whisperWorker = new Worker('worker.js', { type: 'module' });
 
     whisperWorker.addEventListener('message', (e) => {
       const msg = e.data;

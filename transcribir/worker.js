@@ -2,8 +2,8 @@
 // Runs transformers.js off the main thread to keep the UI responsive.
 // Communicates with the main thread via postMessage.
 
-// We use importScripts to load the UMD build of transformers.js.
-// The CDN-hosted file exposes `self.transformers` after loading.
+// The worker is created as a module worker ({ type: 'module' }) to support
+// dynamic import() of the ESM-format CDN file.
 const CDN_URLS = [
   'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js',
   'https://unpkg.com/@xenova/transformers@2.17.2/dist/transformers.min.js',
@@ -85,7 +85,9 @@ self.addEventListener('message', async (e) => {
 async function loadTransformers() {
   for (const url of CDN_URLS) {
     try {
-      importScripts(url);
+      // Module worker: use dynamic import() instead of importScripts
+      // because the CDN file uses ESM export syntax.
+      self.transformers = await import(url);
       if (typeof self.transformers?.pipeline === 'function') {
         return;
       }
