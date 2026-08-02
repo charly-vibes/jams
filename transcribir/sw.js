@@ -1,0 +1,89 @@
+// transcribir — Service Worker
+// Handles: app shell caching, offline support, Web Share Target POST interception
+
+const SHELL_CACHE = 'transcribir-shell-v2';
+const SHARED_CACHE = 'transcribir-shared-v2';
+const STATIC_ASSETS = [
+  './',
+  './index.html',
+  './script.js',
+  './style.css',
+  './manifest.json',
+  './icon.svg',
+];
+
+/* ─── Install: precache app shell ─── */
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(SHELL_CACHE).then((cache) => cache.addAll(STATIC_ASSETS))
+  );
+  self.skipWaiting();
+});
+
+/* ─── Activate: prune stale caches ─── */
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(
+        keys
+          .filter((k) => k !== SHELL_CACHE && k !== SHARED_CACHE)
+          .map((k) => caches.delete(k))
+      )
+    ).then(() => self.clients.claim())
+  );
+});
+
+/* ─── Fetch: serve shell + intercept share target POSTs ─── */
+self.addEventListener('fetch', (event) => {
+  const { request } = event;
+
+  // Web Share Target POST — extract audio files, store in cache, redirect
+  if (request.method === 'POST') {
+    event.respondWith(handleShareTarget(request));
+    return;
+  }
+
+  // Cache-first for same-origin GET assets
+  if (request.method === 'GET' && request.url.startsWith(self.location.origin)) {
+    // Skip chrome-extension and non-GET
+    event.respondWith(
+      caches.match(request).then((cached) => cached || fetch(request))
+    );
+  }
+});
+
+/* ─── Share target handler ─── */
+async function handleShareTarget(request) {
+  try {
+    const formData = await request.formData();
+    const files = formData.getAll('audio_files');
+
+    if (!files || files.length === 0) {
+      return Response.redirect('./?share_error=no_files');
+    }
+
+    // Store shared files in dedicated cache (only audio/*)
+    const cache = await caches.open(SHARED_CACHE);
+    const audioFiles = files.filter(f => f.type && f.type.startsWith('audio/'));
+
+    if (audioFiles.length === 0) {
+      return Response.redirect('./?share_error=no_files');
+    }
+
+    await cache.put('file-count', new Response(JSON.stringify(audioFiles.length)));
+
+    for (let i = 0; i < audioFiles.length; i++) {
+      const file = audioFiles[i];
+      const headers = new Headers({
+        'Content-Type': file.type || 'audio/unknown',
+        'X-File-Name': encodeURIComponent(file.name || `audio-${i}`),
+      });
+      await cache.put(`file-${i}`, new Response(file, { headers }));
+    }
+
+    return Response.redirect('./?shared=true');
+  } catch (err) {
+    console.error('[SW] Share target error:', err);
+    return Response.redirect('./?share_error=processing_failed');
+  }
+}

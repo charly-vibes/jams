@@ -11,6 +11,7 @@ const CHUNK_SECONDS = 30;     // Whisper's native window size
 let transcriber = null;
 let loadedModel = null;
 let currentAudio = null;      // { data: Float32Array, duration: number, name: string }
+let originalAudio = null;     // backup of pre-separation audio for reset
 let sourceFileName = null;
 let sourceDuration = null;
 let mediaRecorder = null;
@@ -45,7 +46,6 @@ const downloadBtn      = $('#download-btn');
 const loadingOverlay   = $('#loading-overlay');
 const loadingMsg       = $('#loading-msg');
 const longAudioWarn    = $('#long-audio-warn');
-const longAudioWarn    = $('#long-audio-warn');
 
 /* ─── File input ─── */
 uploadZone.addEventListener('click', () => fileInput.click());
@@ -63,6 +63,7 @@ fileInput.addEventListener('change', async (e) => {
 async function loadAudio(input, name) {
   try {
     currentAudio = await decodeAudio(input);
+    originalAudio = { data: new Float32Array(currentAudio.data), duration: currentAudio.duration };
     sourceFileName = name || sourceFileName;
     sourceDuration = currentAudio.duration;
     transcribeBtn.disabled = false;
@@ -92,6 +93,7 @@ function clearFile() {
   fileInfo.classList.add('hidden');
   longAudioWarn.classList.add('hidden');
   currentAudio = null;
+  originalAudio = null;
   sourceFileName = null;
   sourceDuration = null;
   transcribeBtn.disabled = true;
@@ -226,25 +228,168 @@ async function decodeAudio(input) {
   }
 }
 
+/* ─── Vocal separation ─── */
+let separationModel = null;
+let separationLoaded = false;
+let onnxLoaded = false;
+
+const SEPARATION_MODEL_URL =
+  'https://huggingface.co/csukuangfj/sherpa-onnx-spleeter-2stems-int8/resolve/main/vocals.int8.onnx';
+
+const separationSelect = document.getElementById('separation-select');
+
+async function loadONNXRuntime() {
+  if (onnxLoaded) return;
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/ort.min.js';
+    script.onload = () => { onnxLoaded = true; resolve(); };
+    script.onerror = () => reject(new Error('No se pudo cargar ONNX Runtime'));
+    document.head.appendChild(script);
+  });
+}
+
+async function loadSeparationModel() {
+  if (separationLoaded) return;
+  if (!onnxLoaded) await loadONNXRuntime();
+
+  showLoading('Cargando modelo de separación vocal (~8 MB)...');
+  try {
+    const session = await onnx.InferenceSession.create(SEPARATION_MODEL_URL);
+    separationModel = session;
+    separationLoaded = true;
+    hideLoading();
+    showStatus('✅ Modelo de separación listo');
+  } catch (err) {
+    hideLoading();
+    showStatus('❌ Error al cargar modelo: ' + err.message, true);
+    separationSelect.value = 'none';
+    throw err;
+  }
+}
+
+/*
+ * Enhance vocals via simple high-pass filter (remove sub-bass rumble).
+ * Works on any mono audio. Does NOT do ML-based source separation.
+ */
+function enhanceVocalsHPF(audio, sampleRate) {
+  // Simple single-pole high-pass filter at ~120 Hz
+  // Removes low-frequency rumble, making vocals clearer
+  const cutoff = 120; // Hz
+  const RC = 1 / (2 * Math.PI * cutoff);
+  const dt = 1 / sampleRate;
+  const alpha = RC / (RC + dt);
+
+  const out = new Float32Array(audio.length);
+  out[0] = audio[0];
+  for (let i = 1; i < audio.length; i++) {
+    out[i] = alpha * (out[i - 1] + audio[i] - audio[i - 1]);
+  }
+  return out;
+}
+
+/*
+ * Run Spleeter vocal extraction via ONNX Runtime.
+ *
+ * NOTE: This is EXPERIMENTAL. The exact model API (input/output tensor
+ * names and shapes) depends on the ONNX export. If the model below
+ * doesn't match, adjust tensor names in the `results` handling.
+ *
+ * Input:  mono Float32Array at 16000 Hz
+ * Output: mono Float32Array at 16000 Hz (vocals estimate)
+ */
+async function separateVocalsONNX(audioData, sampleRate) {
+  if (!separationLoaded) {
+    showStatus('⚠️ Modelo de separación no cargado', true);
+    return audioData;
+  }
+
+  showLoading('Separando voz con ML...');
+
+  try {
+    // Spleeter expects 16000 Hz mono input
+    let audio = audioData;
+    if (sampleRate !== 16000) {
+      const len = Math.round(audio.length * 16000 / sampleRate);
+      const ctx = new OfflineAudioContext(1, len, 16000);
+      const buf = ctx.createBuffer(1, audio.length, sampleRate);
+      buf.getChannelData(0).set(audio);
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(ctx.destination);
+      src.start();
+      const rendered = await ctx.startRendering();
+      audio = rendered.getChannelData(0);
+    }
+
+    // Try input shape [1, 1, num_samples]
+    const inputTensor = new onnx.Tensor('float32', audio, [1, 1, audio.length]);
+    const results = await separationModel.run({ input: inputTensor });
+
+    // Try common output names: 'output', 'vocals', or first result
+    let outputData = results.output?.data
+      || results.vocals?.data
+      || Object.values(results)[0]?.data;
+
+    if (!outputData || outputData.length === 0) {
+      throw new Error('No se pudo leer la salida del modelo');
+    }
+
+    hideLoading();
+    showStatus('✅ Voz separada — transcribiendo...');
+    return outputData;
+  } catch (err) {
+    hideLoading();
+    showStatus('⚠️ Error en separación: ' + err.message + '. Usando audio original.', true);
+    return audioData;
+  }
+}
+
 /* ─── Transcription (with chunking for long audio) ─── */
 transcribeBtn.addEventListener('click', async () => {
-  if (!currentAudio || isTranscribing) return;
+  if (!currentAudio || isTranscribing || cdnFailed) return;
   isTranscribing = true;
   transcribeBtn.disabled = true;
   outputSection.classList.add('hidden');
 
   const modelKey = modelSelect.value;
   const lang = langSelect.value;
+  const sepMode = separationSelect.value;
 
-  // Load model if needed
+  // Load Whisper model if needed
   if (transcriber === null || loadedModel !== modelKey) {
     try {
       await loadModel(modelKey);
-    } catch {
+    } catch (err) {
+      hideLoading();
+      showStatus('❌ Error al cargar el modelo Whisper: ' + (err.message || err), true);
       isTranscribing = false;
       transcribeBtn.disabled = !currentAudio;
       return;
     }
+  }
+  // Vocal separation step (before transcription)
+  // Always start from original audio to make separation idempotent
+  if (sepMode !== 'none' && originalAudio) {
+    currentAudio.data = new Float32Array(originalAudio.data);
+  }
+
+  if (sepMode === 'spleeter') {
+    try {
+      clearPersistentStatus();
+      await loadSeparationModel();
+      const separated = await separateVocalsONNX(currentAudio.data, 16000);
+      currentAudio.data = separated;
+    } catch {
+      // Error already shown by loadSeparationModel/separateVocalsONNX
+      isTranscribing = false;
+      transcribeBtn.disabled = !currentAudio;
+      return;
+    }
+  } else if (sepMode === 'hpf') {
+    clearPersistentStatus();
+    showStatus('🎛️ Aplicando filtro pasa altos para realzar voz...');
+    currentAudio.data = enhanceVocalsHPF(currentAudio.data, 16000);
   }
 
   await runTranscription(lang);
@@ -300,7 +445,11 @@ async function runTranscription(lang) {
         loadingMsg.textContent = `Transcribiendo... fragmento ${chunkNum} de ${totalChunks}`;
       }
 
-      const result = await transcriber(segment, options);
+      // Graceful per-chunk: if one chunk fails, continue with others
+      const result = await transcriber(segment, options).catch(err => {
+        console.warn(`Fragmento falló:`, err);
+        return { text: '', chunks: null };
+      });
       const text = result.text ? result.text.trim() : '';
 
       if (text) {
@@ -438,7 +587,7 @@ downloadBtn.addEventListener('click', () => {
   const text = outputText.textContent;
   if (!text) return;
   const baseName = sourceFileName
-    ? sourceFileName.replace(/\.\w+$/, '').replace(/[-:]/g, '.')
+    ? sourceFileName.replace(/\.[^.]+$/, '').replace(/[-:]/g, '.')
     : 'transcripcion';
   const fmt = outputFormat.value;
   const ext = fmt === 'txt' ? 'txt' : fmt;
@@ -454,16 +603,102 @@ downloadBtn.addEventListener('click', () => {
   showStatus(`⬇️ Descargado como .${ext}`);
 });
 
+/* ─── Tab helper ─── */
+function switchToFileTab() {
+  inputTabs.forEach(t => t.classList.remove('active'));
+  document.querySelector('[data-mode="file"]').classList.add('active');
+  paneFile.classList.add('active');
+  paneMic.classList.remove('active');
+  if (isRecording) stopRecording();
+}
+
+/* ─── Service worker registration ─── */
+async function registerSW() {
+  if (!('serviceWorker' in navigator)) return;
+  try {
+    const reg = await navigator.serviceWorker.register('sw.js');
+    console.log('SW registered:', reg.scope);
+  } catch (err) {
+    console.warn('SW registration failed:', err);
+  }
+}
+
+/* ─── Shared file ingestion (from SW share target) ─── */
+const SHARED_CACHE = 'transcribir-shared-v2';
+
+async function checkSharedFiles() {
+  const params = new URLSearchParams(window.location.search);
+
+  if (params.get('shared') === 'true') {
+    try {
+      const cache = await caches.open(SHARED_CACHE);
+      const countResp = await cache.match('file-count');
+      if (!countResp) return;
+
+      const count = parseInt(await countResp.text(), 10);
+      if (isNaN(count) || count < 1) return;
+
+      for (let i = 0; i < count; i++) {
+        const fileResp = await cache.match(`file-${i}`);
+        if (!fileResp) continue;
+
+        const blob = await fileResp.blob();
+        const rawName = fileResp.headers.get('X-File-Name');
+        const fileName = rawName ? decodeURIComponent(rawName) : `compartido-${i}.${(blob.type && blob.type.split('/')[1]) || 'wav'}`;
+
+        const file = new File([blob], fileName, { type: blob.type });
+        await loadAudio(file, fileName);
+        // Persistent notification + auto-transcribe for shared files
+        showStatus(`📲 Audio compartido: ${fileName}`, false, true);
+        switchToFileTab();
+      }
+
+      // Clean up shared cache
+      await cache.delete('file-count');
+      for (let i = 0; i < count; i++) {
+        await cache.delete(`file-${i}`);
+      }
+
+      // Remove query param without reloading
+      window.history.replaceState({}, '', './');
+
+      // Auto-start transcription after all files loaded
+      if (currentAudio) transcribeBtn.click();
+    } catch (err) {
+      console.warn('Error reading shared files:', err);
+      showStatus('⚠️ Error al procesar audio compartido', true);
+    }
+  }
+
+  if (params.get('share_error')) {
+    const msg = params.get('share_error') === 'no_files'
+      ? '⚠️ No se recibió ningún archivo de audio'
+      : '⚠️ Error al procesar el archivo compartido';
+    showStatus(msg, true);
+    window.history.replaceState({}, '', './');
+  }
+}
+
 /* ─── UI helpers ─── */
-function showStatus(msg, isError = false) {
+let persistentStatusTimeout = null;
+
+function showStatus(msg, isError = false, persistent = false) {
   statusEl.textContent = msg;
   statusEl.className = 'status' + (isError ? ' error' : '');
   statusEl.classList.remove('hidden');
   clearTimeout(statusEl._hideTimer);
-  statusEl._hideTimer = setTimeout(
-    () => statusEl.classList.add('hidden'),
-    isError ? 8000 : 4000
-  );
+  clearTimeout(persistentStatusTimeout);
+  if (!persistent) {
+    statusEl._hideTimer = setTimeout(
+      () => statusEl.classList.add('hidden'),
+      isError ? 8000 : 4000
+    );
+  }
+}
+
+function clearPersistentStatus() {
+  statusEl.classList.add('hidden');
+  clearTimeout(persistentStatusTimeout);
 }
 
 function showLoading(msg) {
@@ -487,5 +722,80 @@ function formatDuration(seconds) {
   return `${m}:${s}`;
 }
 
+/* ─── LaunchQueue: receive shared files while app is open ─── */
+if ('launchQueue' in window) {
+  window.launchQueue.setConsumer(async (launchParams) => {
+    if (!launchParams.files || launchParams.files.length === 0) return;
+
+    for (const fileHandle of launchParams.files) {
+      try {
+        const file = await fileHandle.getFile();
+        if (!file.type.startsWith('audio/')) {
+          showStatus(`⚠️ "${file.name}" no es un archivo de audio`, true);
+          continue;
+        }
+        await loadAudio(file, file.name);
+        // Persistent notification + auto-transcribe for shared files
+        showStatus(`📲 Audio compartido: ${file.name}`, false, true);
+        switchToFileTab();
+      } catch (err) {
+        console.warn('LaunchQueue error:', err);
+        showStatus('⚠️ Error al recibir archivo de audio', true);
+      }
+    }
+
+    // Auto-start transcription after all files loaded
+    if (currentAudio) transcribeBtn.click();
+  });
+}
+
 /* ─── Init ─── */
+// Clear the loading status shown by inline script
+if (statusEl) { statusEl.classList.add('hidden'); }
+
+// Guard: if transformers.js failed to load
+let cdnFailed = false;
+if (typeof window.transformers === 'undefined') {
+  cdnFailed = true;
+  showStatus('❌ No se pudo cargar la biblioteca de IA. Verifica tu conexión y recarga.', true);
+  transcribeBtn.disabled = true;
+} else {
+  registerSW();
+  checkSharedFiles();
+}
+
+/* ─── Install prompt (beforeinstallprompt) ─── */
+let deferredPrompt = null;
+const installPrompt = document.getElementById('install-prompt');
+const installBtn = document.getElementById('install-btn');
+const installDismiss = document.getElementById('install-dismiss');
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  // Only show if not in standalone mode already
+  if (!window.matchMedia('(display-mode: standalone)').matches) {
+    installPrompt.classList.remove('hidden');
+  }
+});
+
+installBtn.addEventListener('click', async () => {
+  if (!deferredPrompt) return;
+  installPrompt.classList.add('hidden');
+  deferredPrompt.prompt();
+  const result = await deferredPrompt.userChoice;
+  console.log('Install result:', result.outcome);
+  deferredPrompt = null;
+});
+
+installDismiss.addEventListener('click', () => {
+  installPrompt.classList.add('hidden');
+  deferredPrompt = null;
+});
+
+// Hide install prompt if already installed
+if (window.matchMedia('(display-mode: standalone)').matches) {
+  installPrompt.classList.add('hidden');
+}
+
 console.log('transcribir loaded — 🎙️ Audio a texto en el navegador');

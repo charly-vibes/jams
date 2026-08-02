@@ -127,6 +127,13 @@ header h1 {
   color: #aaa;
 }
 
+/* ─── Upload hint (compartir desde otras apps) ─── */
+.upload-share-hint {
+  font-size: 0.7rem;
+  color: #6a6aff;
+  margin-top: 0.2rem;
+}
+
 /* ─── Record button ─── */
 .record-btn {
   display: flex;
@@ -384,6 +391,54 @@ footer a {
 }
 
 footer a:hover { color: #aaa; border-bottom-color: #666; }
+
+/* ─── Install prompt ─── */
+.install-prompt {
+  max-width: 640px;
+  margin: 1rem auto;
+  padding: 0.75rem 1rem;
+  background: linear-gradient(135deg, #1a1a40, #2a1a3e);
+  border: 1px solid #4a3a6a;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  color: #ddd;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  position: relative;
+}
+
+.install-prompt.hidden { display: none; }
+
+.install-btn {
+  flex-shrink: 0;
+  padding: 0.4rem 0.9rem;
+  border: none;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #6a6aff, #8844ff);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity 0.2s;
+}
+
+.install-btn:hover { opacity: 0.85; }
+
+.install-dismiss {
+  flex-shrink: 0;
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: #666;
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 0.25rem;
+  line-height: 1;
+}
+
+.install-dismiss:hover { color: #aaa; }
 
 /* ─── Responsive ─── */
 @media (max-width: 480px) {

@@ -135,7 +135,114 @@ If no timestamped chunks are available (very short audio), SRT/VTT fall back to 
 
 - `manifest.json` with standalone display, dark background
 - SVG icon (🎙️ emoji-based)
-- Service worker: optional, not implemented yet (model caching is handled by transformers.js internally in IndexedDB)
+- Service worker **required** for Web Share Target and offline support
+  - Precaches app shell (index.html, script.js, style.css, manifest.json, icon.svg)
+  - Intercepts POST requests from Web Share Target, extracts audio files, stores in cache, redirects to main page
+  - Page reads shared files from cache on load (`?shared=true`)
+
+## Share Target (WhatsApp & other apps)
+
+Users can share audio files from any app (WhatsApp, Telegram, Signal, Files) directly to Transcribir.
+
+### How it works
+
+1. **Web Share Target API** (`share_target` in manifest.json) registers Transcribir as a destination in the system share sheet
+2. **Service worker** intercepts the `POST` request, extracts the audio file(s) from `multipart/form-data`, and stores them in a dedicated cache (`transcribir-shared-v2`)
+3. **Redirect** to `./?shared=true` — the page reads files from cache, loads them, and cleans up
+4. **LaunchQueue** handles warm starts — when the app is already open and the user shares another audio, `window.launchQueue.setConsumer()` receives the file directly
+
+### Data flow
+
+```
+WhatsApp Share → System Share Sheet → Transcribir (installed PWA)
+  → POST to start_url with multipart/form-data (audio file)
+  → Service Worker intercepts → extracts file → stores in cache
+  → Redirect to ./?shared=true
+  → Page: reads file from cache → loadAudio() → transcription UI
+
+  (if app is already open)
+  → LaunchQueue fires → file handle → getFile() → loadAudio()
+```
+
+### Limitations
+
+- **iOS Safari** does not support Web Share Target API — sharing from WhatsApp on iPhone won't show Transcribir as an option. Consider iOS Shortcuts as a workaround.
+- The PWA must be **installed** (added to home screen) for share target to appear. Running in a browser tab won't work.
+- Multiple files shared at once are processed sequentially.
+
+### Service Worker
+
+Located at `sw.js`. Responsibilities:
+
+| Event | Behavior |
+|-------|----------|
+| `install` | Precaches all shell assets |
+| `activate` | Prunes stale caches, claims clients |
+| `fetch` | Cache-first for GET; intercepts POST for share target |
+
+Caches:
+- `transcribir-shell-v2` — static app shell (cache-first)
+- `transcribir-shared-v2` — temporarily holds incoming shared files (cleared after ingestion)
+
+### Manifest additions
+
+```json
+"share_target": {
+  "action": "./",
+  "method": "POST",
+  "enctype": "multipart/form-data",
+  "params": {
+    "files": [
+      { "name": "audio_files", "accept": ["audio/*"] }
+    ]
+  }
+},
+"file_handlers": [
+  {
+    "action": "./",
+    "accept": {
+      "audio/*": [".mp3", ".wav", ".ogg", ".m4a", ".aac", ".flac", ".wma", ".opus", ".webm"]
+    }
+  }
+]
+```
+
+## Install Prompt
+
+When the user visits the page on a supported browser, a `beforeinstallprompt` event fires. The app shows a subtle banner suggesting installation with the message:
+
+> 📲 Instala Transcribir en tu pantalla de inicio para recibir audios desde WhatsApp y otras apps
+
+If already installed (`display-mode: standalone`), the prompt is hidden automatically.
+
+## Vocal Separation
+
+Audio can be processed to isolate or enhance vocals before transcription. Located at `script.js` in the vocal separation section.
+
+### Modes
+
+| Mode | Description | Dependencies
+|------|-------------|-------------|
+| `none` | No separation — transcribe audio as-is | None |
+| `hpf` | **High-pass filter** (~120 Hz cutoff). Removes sub-bass rumble, making voices clearer. Simple DSP, works on any audio. | None (built-in) |
+| `spleeter` | **Spleeter ML model** — full source separation using an ONNX model. Separates vocals from music/accompaniment. For songs, podcasts with background music, etc. | onnxruntime-web ~2 MB CDN load + 8 MB model download |
+
+### ML Mode (Spleeter)
+
+When `spleeter` is selected:
+
+1. `onnxruntime-web` is dynamically loaded from CDN (if not already cached)
+2. The ONNX Spleeter vocals model (~8 MB, int8 quantized) is downloaded from Hugging Face Hub
+3. Audio is resampled to 16000 Hz if needed
+4. The model separates vocals from accompaniment
+5. The isolated vocals are passed to Whisper for transcription
+
+**Limitations:**
+- First use requires downloading the model (~8 MB) and ONNX Runtime (~2 MB)
+- Not available on all browsers (requires WebAssembly support for onnxruntime-web)
+- Currently experimental — model API may vary across Spleeter ONNX exports
+- Processing takes roughly 0.5-1× audio duration on desktop, longer on mobile
+- iOS Safari may not support onnxruntime-web
 
 ## Future Considerations
 
@@ -155,6 +262,7 @@ User input (File | MediaRecorder Blob)
   → Float32Array (all channels averaged to mono, original sample rate)
   → OfflineAudioContext resample to 16000
   → Float32Array (16000 Hz mono, full duration in RAM)
+  → [Optional] Vocal separation (HPF or Spleeter ML)
   → Chunk into 30s windows
   → For each chunk: transformers.js pipeline('automatic-speech-recognition')
     → { text: string, chunks: [{ text, timestamp }] }

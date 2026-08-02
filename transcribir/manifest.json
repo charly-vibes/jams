@@ -9,5 +9,26 @@
   "orientation": "portrait",
   "icons": [
     { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ],
+  "share_target": {
+    "action": "./",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "files": [
+        {
+          "name": "audio_files",
+          "accept": ["audio/*"]
+        }
+      ]
+    }
+  },
+  "file_handlers": [
+    {
+      "action": "./",
+      "accept": {
+        "audio/*": [".mp3", ".wav", ".ogg", ".m4a", ".aac", ".flac", ".wma", ".opus", ".webm"]
+      }
+    }
   ]
 }
