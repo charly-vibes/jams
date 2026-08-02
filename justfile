@@ -169,7 +169,6 @@ serve-ssl PORT="8443": build
       mkcert localhost 127.0.0.1 ::1; \
     fi
     @echo "Starting HTTPS on https://localhost:{{PORT}} — accessible from devices on your network"
-    @echo "Get your IP: ip addr | grep 'inet ' | awk '{print \$$2}'"
     @echo "Press Ctrl+C to stop"
     python3 serve-https.py {{PORT}}
 
