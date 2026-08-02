@@ -1,0 +1,13 @@
+{
+  "name": "Transcribir — Audio a texto",
+  "short_name": "Transcribir",
+  "description": "Transcribe audio a texto en el navegador con Whisper — sin servidor, sin subir archivos",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0f0f1a",
+  "theme_color": "#1a1a2e",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}
