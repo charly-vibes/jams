@@ -1,19 +1,13 @@
 // transcribir — browser-based Whisper transcription using transformers.js
+// Transcription runs in a Web Worker to keep the UI responsive.
 
 /* ─── State ─── */
-const MODEL_MAP = {
-  tiny:  'Xenova/whisper-tiny',
-  base:  'Xenova/whisper-base',
-  small: 'Xenova/whisper-small',
-};
 const CHUNK_SECONDS = 30;     // Whisper's native window size
 
-let transcriber = null;
-let loadedModel = null;
+let whisperWorker = null;
 let currentAudio = null;      // { data: Float32Array, duration: number, name: string }
 let originalAudio = null;     // backup of pre-separation audio for reset
 let cdnFailed = false;
-let transformersLoading = false;
 let sourceFileName = null;
 let sourceDuration = null;
 let mediaRecorder = null;
@@ -22,8 +16,12 @@ let micTimer = null;
 let micSeconds = 0;
 let isRecording = false;
 let isTranscribing = false;
+let pendingResolve = null;    // resolves the transcribe promise
+let pendingReject = null;     // rejects the transcribe promise
 
 /* ─── DOM refs ─── */
+// All DOM element refs go here (top of file) to avoid Temporal Dead Zone issues
+// with event listeners and settings handlers defined below.
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => document.querySelectorAll(s);
 
@@ -33,9 +31,6 @@ const fileInfo         = $('#file-info');
 const recordBtn        = $('#record-btn');
 const micTimerEl       = $('#mic-timer');
 const micInfo          = $('#mic-info');
-const inputTabs        = $$('.input-tab');
-const paneFile         = $('#pane-file');
-const paneMic          = $('#pane-mic');
 const modelSelect      = $('#model-select');
 const langSelect       = $('#lang-select');
 const transcribeBtn    = $('#transcribe-btn');
@@ -48,6 +43,8 @@ const downloadBtn      = $('#download-btn');
 const loadingOverlay   = $('#loading-overlay');
 const loadingMsg       = $('#loading-msg');
 const longAudioWarn    = $('#long-audio-warn');
+const separationSelect = document.getElementById('separation-select');
+const advancedToggle   = document.querySelector('.advanced-toggle');
 
 /* ─── Settings persistence ─── */
 const SETTINGS_KEY = 'transcribir-settings';
@@ -58,6 +55,7 @@ function saveSettings() {
       model: modelSelect.value,
       lang: langSelect.value,
       separation: separationSelect.value,
+      advancedOpen: advancedToggle ? advancedToggle.open : false,
     }));
   } catch { /* storage unavailable */ }
 }
@@ -70,12 +68,14 @@ function restoreSettings() {
     if (s.model && [...modelSelect.options].some(o => o.value === s.model)) modelSelect.value = s.model;
     if (s.lang && [...langSelect.options].some(o => o.value === s.lang)) langSelect.value = s.lang;
     if (s.separation && [...separationSelect.options].some(o => o.value === s.separation)) separationSelect.value = s.separation;
+    if (s.advancedOpen && advancedToggle) advancedToggle.open = true;
   } catch { /* corrupt data */ }
 }
 
 modelSelect.addEventListener('change', saveSettings);
 langSelect.addEventListener('change', saveSettings);
 separationSelect.addEventListener('change', saveSettings);
+if (advancedToggle) advancedToggle.addEventListener('toggle', saveSettings);
 
 /* ─── File input ─── */
 uploadZone.addEventListener('click', () => fileInput.click());
@@ -212,18 +212,7 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden && isRecording) stopRecording();
 });
 
-/* ─── Input mode tabs ─── */
-inputTabs.forEach(tab => {
-  tab.addEventListener('click', () => {
-    if (isTranscribing) return; // don't switch during transcription
-    const mode = tab.dataset.mode;
-    inputTabs.forEach(t => t.classList.remove('active'));
-    tab.classList.add('active');
-    paneFile.classList.toggle('active', mode === 'file');
-    paneMic.classList.toggle('active', mode === 'mic');
-    if (mode !== 'mic' && isRecording) stopRecording();
-  });
-});
+
 
 /* ─── Audio decoding & resampling ─── */
 async function decodeAudio(input) {
@@ -272,7 +261,7 @@ let onnxLoaded = false;
 const SEPARATION_MODEL_URL =
   'https://huggingface.co/csukuangfj/sherpa-onnx-spleeter-2stems-int8/resolve/main/vocals.int8.onnx';
 
-const separationSelect = document.getElementById('separation-select');
+
 
 async function loadONNXRuntime() {
   if (onnxLoaded) return;
@@ -381,10 +370,10 @@ async function separateVocalsONNX(audioData, sampleRate) {
   }
 }
 
-/* ─── Transcription (with chunking for long audio) ─── */
+/* ─── Transcription (Web Worker-based) ─── */
 transcribeBtn.addEventListener('click', async () => {
-  if (!currentAudio || isTranscribing || transformersLoading || cdnFailed) {
-    appLog('transcribe: blocked — currentAudio='+!!currentAudio+' isTranscribing='+isTranscribing+' transformersLoading='+transformersLoading+' cdnFailed='+cdnFailed);
+  if (!currentAudio || isTranscribing || cdnFailed) {
+    appLog('transcribe: blocked — currentAudio='+!!currentAudio+' isTranscribing='+isTranscribing+' cdnFailed='+cdnFailed);
     return;
   }
   appLog('transcribe: starting');
@@ -398,20 +387,6 @@ transcribeBtn.addEventListener('click', async () => {
 
   appLog('transcribe: model='+modelKey+' lang='+lang+' sep='+sepMode);
 
-  // Load Whisper model if needed
-  if (transcriber === null || loadedModel !== modelKey) {
-    try {
-      await loadModel(modelKey);
-    } catch (err) {
-      hideLoading();
-      showStatus('❌ Error al cargar el modelo Whisper: ' + (err.message || err), true);
-      isTranscribing = false;
-      transcribeBtn.disabled = !currentAudio;
-      return;
-    }
-  } else {
-    appLog('transcribe: model already loaded');
-  }
   // Vocal separation step (before transcription)
   // Always start from original audio to make separation idempotent
   if (sepMode !== 'none' && originalAudio) {
@@ -428,7 +403,6 @@ transcribeBtn.addEventListener('click', async () => {
       currentAudio.data = separated;
       appLog('spleeter: done');
     } catch {
-      // Error already shown by loadSeparationModel/separateVocalsONNX
       isTranscribing = false;
       transcribeBtn.disabled = !currentAudio;
       return;
@@ -443,114 +417,165 @@ transcribeBtn.addEventListener('click', async () => {
 
   appLog('transcribe: running transcription');
 
-  await runTranscription(lang);
+  // Send to worker — transfers audio data to avoid copying
+  showLoading('Preparando transcripción...');
+  showCancelButton(true);
+
+  const options = { task: 'transcribe' };
+  if (lang !== 'auto') options.language = lang;
+
+  try {
+    const result = await transcribeInWorker(currentAudio.data, modelKey, options);
+    hideLoading();
+    showCancelButton(false);
+
+    const text = result.text || (result.chunks ? result.chunks.map(c => c.text).join(' ').trim() : '');
+    if (!text) {
+      showStatus('⚠️ No se detectó contenido de audio. ¿Esperabas transcripción?', true);
+      isTranscribing = false;
+      transcribeBtn.disabled = !currentAudio;
+      return;
+    }
+
+    // Store chunks for format switching
+    outputText._chunks = result.chunks && result.chunks.length > 0 ? result.chunks : null;
+
+    // Render in selected format
+    renderOutput(text, result.chunks || []);
+    outputSection.classList.remove('hidden');
+    const totalDur = Math.round(currentAudio.duration);
+    const durStr = totalDur > 60 ? `${Math.round(totalDur / 60)} min` : `${totalDur}s`;
+    appLog('transcribe: completed — ' + (result.elapsed || '?') + 's for ' + totalDur + 's audio');
+    showStatus(`✅ Transcripción completada — ${durStr} de audio`);
+    outputSection.scrollIntoView({ behavior: 'smooth' });
+  } catch (err) {
+    hideLoading();
+    showCancelButton(false);
+    if (err.name === 'AbortError' || err.message === 'Cancelled') {
+      showStatus('⏹️ Transcripción cancelada');
+      appLog('transcribe: cancelled');
+    } else {
+      appLog('transcribe: error — ' + err.message);
+      showStatus(`❌ Error en la transcripción: ${err.message}`, true);
+      console.error(err);
+    }
+  }
 
   isTranscribing = false;
   transcribeBtn.disabled = !currentAudio;
 });
 
-async function loadModel(modelKey) {
-  showLoading(`Cargando ${modelMapLabel(modelKey)}...`);
-  appLog('model: starting download for '+modelKey);
-  // Yield to event loop so the browser paints the loading overlay
-  await tick();
+/* ─── Web Worker orchestration ─── */
 
-  const modelId = MODEL_MAP[modelKey];
-  const { pipeline } = window.transformers;
-  transcriber = await pipeline('automatic-speech-recognition', modelId, {
-    progress_callback: (p) => {
-      if (p.status === 'progress' && p.total) {
-        const pct = Math.round(p.loaded / p.total * 100);
-        loadingMsg.textContent = `Cargando ${modelMapLabel(modelKey)}... ${pct}%`;
-      }
-    },
-  });
-  loadedModel = modelKey;
-  hideLoading();
-  showStatus(`✅ Modelo cargado: ${modelMapLabel(modelKey)}`);
-}
-
-async function runTranscription(lang) {
-  const audio = currentAudio.data;
-  const totalSamples = audio.length;
-  const chunkSize = CHUNK_SECONDS * 16000; // samples per chunk
-  const totalChunks = Math.ceil(totalSamples / chunkSize);
-  const options = { task: 'transcribe' };
-  if (lang !== 'auto') options.language = lang;
-
-  // Estimate time
-  if (totalChunks > 1) {
-    showLoading(`Transcribiendo... fragmento 1 de ${totalChunks}`);
-  } else {
-    showLoading('Transcribiendo...');
-  }
+function initWorker() {
+  if (whisperWorker) return;
 
   try {
-    let fullText = '';
-    let allChunks = [];  // accumulate timestamped chunks from all segments
-    const startTime = performance.now();
+    whisperWorker = new Worker('worker.js');
 
-    for (let i = 0; i < totalSamples; i += chunkSize) {
-      const end = Math.min(i + chunkSize, totalSamples);
-      const segment = audio.slice(i, end);
+    whisperWorker.addEventListener('message', (e) => {
+      const msg = e.data;
 
-      if (totalChunks > 1) {
-        const chunkNum = Math.floor(i / chunkSize) + 1;
-        loadingMsg.textContent = `Transcribiendo... fragmento ${chunkNum} de ${totalChunks}`;
-      }
+      switch (msg.type) {
+        case 'model-loaded':
+          hideLoading();
+          showCancelButton(false);
+          showStatus(`✅ Modelo cargado: ${modelMapLabel(msg.modelKey)}`);
+          appLog('worker: model loaded — ' + msg.modelKey);
+          break;
 
-      // Graceful per-chunk: if one chunk fails, continue with others
-      const result = await transcriber(segment, options).catch(err => {
-        console.warn(`Fragmento falló:`, err);
-        return { text: '', chunks: null };
-      });
-      const text = result.text ? result.text.trim() : '';
+        case 'progress':
+          if (msg.step === 'download' || msg.step === 'transcribe' || msg.step === 'cdn' || msg.step === 'load-model') {
+            showLoading(msg.message);
+          }
+          break;
 
-      if (text) {
-        fullText += (fullText ? ' ' : '') + text;
-      }
-
-      // Accumulate timestamped chunks with offset
-      if (result.chunks) {
-        const offset = i / 16000; // seconds
-        for (const c of result.chunks) {
-          allChunks.push({
-            text: c.text,
-            timestamp: [
-              Math.round((c.timestamp[0] + offset) * 100) / 100,
-              c.timestamp[1] !== null ? Math.round((c.timestamp[1] + offset) * 100) / 100 : null,
-            ],
-          });
+        case 'result': {
+          const elapsed = ((performance.now() - (pendingResolve._startTime || performance.now())) / 1000).toFixed(1);
+          if (pendingResolve) {
+            pendingResolve({ text: msg.text, chunks: msg.chunks, elapsed });
+          }
+          pendingResolve = null;
+          pendingReject = null;
+          break;
         }
+
+        case 'error':
+          if (pendingReject) {
+            pendingReject(new Error(msg.message));
+          }
+          pendingResolve = null;
+          pendingReject = null;
+          break;
+
+        case 'cancelled':
+          if (pendingReject) {
+            pendingReject(new Error('Cancelled'));
+          }
+          pendingResolve = null;
+          pendingReject = null;
+          break;
       }
-    }
+    });
 
-    const elapsed = ((performance.now() - startTime) / 1000).toFixed(1);
-    hideLoading();
+    whisperWorker.addEventListener('error', (err) => {
+      appLog('worker: error — ' + (err.message || 'unknown'));
+      cdnFailed = true;
+      if (pendingReject) {
+        pendingReject(new Error('Error en el worker: ' + err.message));
+      }
+      pendingResolve = null;
+      pendingReject = null;
+      showStatus('❌ El worker de transcripción falló. Recarga la página para reintentar.', true);
+    });
 
-    const text = fullText || (allChunks.length ? allChunks.map(c => c.text).join(' ').trim() : '');
-    if (!text) {
-      showStatus('⚠️ No se detectó contenido de audio. ¿Esperabas transcripción?', true);
+    appLog('worker: created');
+  } catch (err) {
+    appLog('worker: creation failed — ' + err.message);
+    cdnFailed = true;
+    showStatus('❌ No se pudo iniciar el worker de transcripción', true);
+  }
+}
+
+function transcribeInWorker(audioData, modelKey, options) {
+  return new Promise((resolve, reject) => {
+    if (!whisperWorker) {
+      reject(new Error('Worker no disponible'));
       return;
     }
 
-    // Store chunks for format switching
-    outputText._chunks = allChunks.length > 0 ? allChunks : null;
+    pendingResolve = resolve;
+    pendingResolve._startTime = performance.now();
+    pendingReject = reject;
 
-    // Render in selected format
-    renderOutput(text, allChunks);
-    outputSection.classList.remove('hidden');
-    const totalDur = Math.round(currentAudio.duration);
-    const durStr = totalDur > 60 ? `${Math.round(totalDur / 60)} min` : `${totalDur}s`;
-    appLog('transcribe: completed — ' + elapsed + 's for ' + totalDur + 's audio');
-    showStatus(`✅ Transcripción completada en ${elapsed}s — ${durStr} de audio`);
-    outputSection.scrollIntoView({ behavior: 'smooth' });
-  } catch (err) {
-    hideLoading();
-    appLog('transcribe: error — ' + err.message);
-    showStatus(`❌ Error en la transcripción: ${err.message}`, true);
-    console.error(err);
+    // Transfer the audio buffer to the worker (zero-copy)
+    // We transfer the buffer directly; the main thread still has
+    // originalAudio for re-transcription if needed.
+    whisperWorker.postMessage(
+      {
+        type: 'transcribe',
+        audio: audioData,
+        modelKey,
+        options,
+        chunkSize: CHUNK_SECONDS * 16000,
+      },
+      [audioData.buffer]
+    );
+  });
+}
+
+function cancelTranscription() {
+  if (whisperWorker && isTranscribing) {
+    whisperWorker.postMessage({ type: 'cancel' });
+    appLog('transcribe: cancel requested');
   }
+  // Reset state synchronously so user can restart immediately
+  isTranscribing = false;
+  transcribeBtn.disabled = !currentAudio;
+}
+
+function modelMapLabel(key) {
+  return ({ tiny: 'whisper-tiny', base: 'whisper-base', small: 'whisper-small' })[key] || key;
 }
 
 /* ─── Output format switching ─── */
@@ -617,10 +642,6 @@ function vttTime(sec) {
 function pad(n) { return String(n).padStart(2, '0'); }
 function pad2(n) { return n.toFixed(3).padStart(6, '0'); }
 
-function modelMapLabel(key) {
-  return ({ tiny: 'whisper-tiny', base: 'whisper-base', small: 'whisper-small' })[key] || key;
-}
-
 /* ─── Output actions ─── */
 copyBtn.addEventListener('click', async () => {
   const text = outputText.textContent;
@@ -659,15 +680,6 @@ downloadBtn.addEventListener('click', () => {
   showStatus(`⬇️ Descargado como .${ext}`);
 });
 
-/* ─── Tab helper ─── */
-function switchToFileTab() {
-  inputTabs.forEach(t => t.classList.remove('active'));
-  document.querySelector('[data-mode="file"]').classList.add('active');
-  paneFile.classList.add('active');
-  paneMic.classList.remove('active');
-  if (isRecording) stopRecording();
-}
-
 /* ─── Service worker registration ─── */
 let swRegistration = null;
 
@@ -677,57 +689,10 @@ async function registerSW() {
     const reg = await navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' });
     swRegistration = reg;
     console.log('SW registered:', reg.scope);
-
-    // Show version in footer
-    const verEl = document.getElementById('app-version');
-    if (verEl && reg.active) {
-      // Try to read version from SW's broadcast, or just show a cached indicator
-      verEl.textContent = 'v' + (reg.active.scriptURL.match(/v=(\d+)/)?.[1] || '?');
-    }
-
-    // Detect SW updates
-    reg.addEventListener('updatefound', () => {
-      const newSW = reg.installing;
-      if (!newSW) return;
-
-      newSW.addEventListener('statechange', () => {
-        // 'installed' means the new SW is ready but waiting to activate
-        // (skipWaiting will activate it immediately, but we still show the banner)
-        if (newSW.state === 'installed' && navigator.serviceWorker.controller) {
-          showUpdatePrompt();
-        }
-      });
-    });
   } catch (err) {
     console.warn('SW registration failed:', err);
   }
 }
-
-/* ─── Update prompt ─── */
-const updatePrompt = document.getElementById('update-prompt');
-const updateBtn = document.getElementById('update-btn');
-const updateDismiss = document.getElementById('update-dismiss');
-
-function showUpdatePrompt() {
-  if (!updatePrompt) return;
-  updatePrompt.classList.remove('hidden');
-}
-
-updateBtn?.addEventListener('click', async () => {
-  updatePrompt.classList.add('hidden');
-  if (swRegistration && swRegistration.waiting) {
-    // Tell the waiting SW to activate
-    swRegistration.waiting.postMessage('SKIP_WAITING');
-    // Wait for the new SW to take control, then reload
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      window.location.reload();
-    });
-  }
-});
-
-updateDismiss?.addEventListener('click', () => {
-  updatePrompt.classList.add('hidden');
-});
 
 /* ─── Shared file ingestion (from SW share target) ─── */
 const SHARED_CACHE = 'transcribir-shared-v3';
@@ -771,7 +736,7 @@ async function checkSharedFiles() {
         appLog('check-shared: loaded '+fileName);
         // Persistent notification + auto-transcribe for shared files
         showStatus(`📲 Audio compartido: ${fileName}`, false, true);
-        switchToFileTab();
+        if (isRecording) stopRecording();
       }
 
       // Clean up shared cache
@@ -804,7 +769,7 @@ async function checkSharedFiles() {
   }
 }
 
-/* ─── In-app logging (for debugging user issues) ─── */
+/* ─── In-app logging ─── */
 const transcribirLog = [];
 const MAX_LOG = 100;
 
@@ -813,84 +778,7 @@ function appLog(msg) {
   transcribirLog.push(entry);
   if (transcribirLog.length > MAX_LOG) transcribirLog.shift();
   console.log('transcribir:', msg);
-  // Update log viewer if open
-  const logEl = document.getElementById('log-content');
-  if (logEl) {
-    logEl.textContent = transcribirLog.join('\n');
-    logEl.scrollTop = logEl.scrollHeight;
-  }
 }
-
-/* ─── Log viewer toggle ─── */
-/* ─── Help panel toggle ─── */
-document.addEventListener('DOMContentLoaded', () => {
-  const helpBtn = document.getElementById('help-btn');
-  const helpPanel = document.getElementById('help-panel');
-  const helpClose = document.getElementById('help-close');
-  const helpShowLog = document.getElementById('help-show-log');
-  const logPanel = document.getElementById('log-panel');
-  if (!helpBtn || !helpPanel || !helpClose) return;
-
-  helpBtn.addEventListener('click', () => {
-    helpPanel.classList.toggle('hidden');
-  });
-
-  helpClose.addEventListener('click', () => {
-    helpPanel.classList.add('hidden');
-  });
-
-  // Close on click outside the panel
-  helpPanel.addEventListener('click', (e) => {
-    if (e.target === helpPanel) {
-      helpPanel.classList.add('hidden');
-    }
-  });
-
-  // Show debug log from within help panel
-  if (helpShowLog && logPanel) {
-    helpShowLog.addEventListener('click', (e) => {
-      e.preventDefault();
-      helpPanel.classList.add('hidden');
-      const logEl = document.getElementById('log-content');
-      if (logEl) {
-        logEl.textContent = transcribirLog.join('\n');
-        logEl.scrollTop = logEl.scrollHeight;
-      }
-      logPanel.classList.remove('hidden');
-    });
-  }
-});
-
-// Log panel close on outside click + copy button
-document.addEventListener('DOMContentLoaded', () => {
-  const logPanel = document.getElementById('log-panel');
-  if (!logPanel) return;
-  logPanel.addEventListener('click', (e) => {
-    if (e.target === logPanel) {
-      logPanel.classList.add('hidden');
-    }
-  });
-
-  const logCopy = document.getElementById('log-copy');
-  if (logCopy) {
-    logCopy.addEventListener('click', () => {
-      const text = transcribirLog.join('\n') + '\n\n=== Transcribir Log ===\n' + new Date().toISOString();
-      navigator.clipboard.writeText(text).then(() => {
-        logCopy.textContent = '\u2705';
-        setTimeout(() => { logCopy.textContent = '\U0001f4cb'; }, 2000);
-      }).catch(() => {
-        const ta = document.createElement('textarea');
-        ta.value = text;
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        ta.remove();
-        logCopy.textContent = '\u2705';
-        setTimeout(() => { logCopy.textContent = '\U0001f4cb'; }, 2000);
-      });
-    });
-  }
-});
 
 /* ─── UI helpers ─── */
 /* ─── UI helpers ─── */
@@ -956,7 +844,7 @@ if ('launchQueue' in window) {
         await loadAudio(file, file.name);
         // Persistent notification + auto-transcribe for shared files
         showStatus(`📲 Audio compartido: ${file.name}`, false, true);
-        switchToFileTab();
+        if (isRecording) stopRecording();
       } catch (err) {
         console.warn('LaunchQueue error:', err);
         showStatus('⚠️ Error al recibir archivo de audio', true);
@@ -968,6 +856,53 @@ if ('launchQueue' in window) {
   });
 }
 
+/* ─── Help modal toggle ─── */
+document.addEventListener('DOMContentLoaded', () => {
+  const helpLink = document.getElementById('help-link');
+  const helpModal = document.getElementById('help-modal');
+  if (!helpLink || !helpModal) return;
+  helpLink.addEventListener('click', (e) => {
+    e.preventDefault();
+    helpModal.classList.remove('hidden');
+  });
+  helpModal.addEventListener('click', (e) => {
+    if (e.target === helpModal) {
+      helpModal.classList.add('hidden');
+    }
+  });
+  const closeBtn = document.getElementById('help-modal-close');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', () => helpModal.classList.add('hidden'));
+  }
+});
+
+/* ─── Cancel button in loading overlay ─── */
+function showCancelButton(show) {
+  let cancelBtn = document.getElementById('cancel-btn');
+  if (show) {
+    if (!cancelBtn) {
+      cancelBtn = document.createElement('button');
+      cancelBtn.id = 'cancel-btn';
+      cancelBtn.className = 'cancel-btn';
+      cancelBtn.textContent = '⏹ Cancelar';
+      cancelBtn.addEventListener('click', () => {
+        cancelTranscription();
+        hideLoading();
+        showCancelButton(false);
+        // Reject the pending promise so the catch handler doesn't re-disable
+        if (pendingReject) {
+          pendingReject(new Error('Cancelled'));
+        }
+        pendingResolve = null;
+        pendingReject = null;
+      });
+      document.querySelector('.loading-box').appendChild(cancelBtn);
+    }
+  } else {
+    if (cancelBtn) cancelBtn.remove();
+  }
+}
+
 /* ─── Init ─── */
 // Restore previously saved settings
 restoreSettings();
@@ -975,50 +910,10 @@ restoreSettings();
 // Clear the loading status shown by inline script
 if (statusEl) { statusEl.classList.add('hidden'); }
 
-// Guard: ensure transformers.js loaded with CDN fallback
-if (typeof window.transformers === 'undefined') {
-  transformersLoading = true;
-  showStatus('⏳ Cargando biblioteca de IA...', false, true);
-  loadTransformers().then(() => {
-    transformersLoading = false;
-    clearPersistentStatus();
-    registerSW();
-    checkSharedFiles();
-  }).catch(() => {
-    transformersLoading = false;
-    clearPersistentStatus();
-    cdnFailed = true;
-    showStatus('❌ No se pudo cargar la biblioteca de IA. Verifica tu conexión y recarga.', true);
-    transcribeBtn.disabled = true;
-  });
-} else {
-  registerSW();
-  checkSharedFiles();
-}
-
-async function loadTransformers() {
-  const urls = [
-    'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js',
-    'https://unpkg.com/@xenova/transformers@2.17.2/dist/transformers.min.js',
-  ];
-  for (const url of urls) {
-    try {
-      // Dynamic import() evaluates the file as an ES module where `export{...}`
-      // is valid. The previous `<script>` tag approach failed because bare
-      // `export{` is a SyntaxError in a classic script.
-      // Assign module exports to window.transformers for backward compat with
-      // the rest of script.js which reads window.transformers.pipeline.
-      window.transformers = await import(url);
-      // Verify the module actually exposes pipeline before declaring success
-      if (typeof window.transformers?.pipeline === 'function') return;
-      console.warn('transcribir: CDN loaded but pipeline missing:', url);
-    } catch (err) {
-      console.warn('transcribir: CDN fallback failed:', url, err);
-      continue;
-    }
-  }
-  throw new Error('All CDNs failed');
-}
+// Start the worker (handles CDN loading, model loading, and transcription)
+initWorker();
+registerSW();
+checkSharedFiles();
 
 /* ─── Install prompt (beforeinstallprompt) ─── */
 let deferredPrompt = null;
