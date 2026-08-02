@@ -1,3 +1,7 @@
+# ── Configuration ──
+set shell := ["bash", "-c"]
+lan_ip := `hostname -I 2>/dev/null | head -1 | tr -s " " | cut -d" " -f1 || echo "<YOUR_IP>"`
+
 # Create scaffolding for a new page
 new PAGE_NAME:
     #!/usr/bin/env bash
@@ -140,30 +144,28 @@ build:
     @echo "✓ Built apps-metadata.json"
 
 # Start local development server (HTTP, for local machine testing)
+# Start local development server (HTTP, for local machine testing)
 serve PORT="8000": build
-    @LAN_IP=$$(python3 -c 'import socket; s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM); s.connect(("8.8.8.8",80)); print(s.getsockname()[0]); s.close()' 2>/dev/null || echo "<YOUR_IP>"); \
-      echo "Starting HTTP server on http://localhost:{{PORT}}"; \
+    @echo "Starting HTTP server on http://localhost:{{PORT}}"; \
       echo ""; \
-      echo "  ── Testing on this machine ──"; \
+      echo "  -- Testing on this machine --"; \
       echo "  http://localhost:{{PORT}}/transcribir/"; \
       echo ""; \
-      echo "  ── Testing on another device (USB forwarding, SW works) ──"; \
+      echo "  -- Testing on another device (USB forwarding, SW works) --"; \
       echo "  1. Connect phone via USB, enable USB debugging"; \
       echo "  2. Open chrome://inspect on desktop Chrome"; \
-      echo "  3. Enable 'Port forwarding' → set port {{PORT}} → localhost:{{PORT}}"; \
+      echo "  3. Enable port forwarding: {{PORT}} -> localhost:{{PORT}}"; \
       echo "  4. On phone Chrome, visit http://localhost:{{PORT}}/transcribir/"; \
-      echo "     (localhost is treated as secure context — SW will work!)"; \
       echo ""; \
-      echo "  ── Testing on another device (same network, no SW) ──"; \
-      echo "  http://$$LAN_IP:{{PORT}}/transcribir/"; \
-      echo "  ⚠️  SW requires secure context (share/offline won't work over HTTP)"; \
+      echo "  -- Testing on another device (same network, no SW) --"; \
+      echo "  http://{{lan_ip}}:{{PORT}}/transcribir/"; \
+      echo "  (SW requires secure context, wont work over plain HTTP)"; \
       echo ""; \
-      echo "  ── HTTPS with trusted cert via tunnel (SW works) ──"; \
+      echo "  -- HTTPS with trusted cert via tunnel (SW works) --"; \
       echo "  Install cloudflared, then:  just tunnel PORT={{PORT}}"; \
       echo ""; \
       echo "Press Ctrl+C to stop"; \
       python3 -m http.server {{PORT}}
-
 # Tunnel with cloudflared (public HTTPS URL, SW works on any device)
 tunnel PORT="8000": build
     @if ! which cloudflared >/dev/null 2>&1; then \
@@ -187,7 +189,7 @@ serve-ssl PORT="8443": build
       echo "Then run this command again."; \
       exit 1; \
     fi
-    @LAN_IP="$(python3 -c 'import socket; s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM); s.connect(("8.8.8.8",80)); print(s.getsockname()[0]); s.close()')"; \
+    @LAN_IP=$$(hostname -I 2>/dev/null | awk '{print $$1}' || echo '<YOUR_IP>'); \
       echo "Generating a trusted certificate for localhost and $LAN_IP..."; \
       mkcert -install; \
       mkcert -cert-file localhost.pem -key-file localhost-key.pem localhost 127.0.0.1 ::1 "$LAN_IP"
