@@ -572,6 +572,26 @@ footer {
   font-style: italic;
 }
 
+.help-modal-extra {
+  margin-top: 0.75rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid #1a1a2e;
+}
+
+.help-log-link {
+  font-size: 0.75rem;
+  color: #666;
+  text-decoration: none;
+  border-bottom: 1px solid #333;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.help-log-link:hover {
+  color: #aaa;
+  border-bottom-color: #666;
+}
+
 /* ─── Responsive ─── */
 @media (max-width: 480px) {
   body { padding: 0.25rem; }

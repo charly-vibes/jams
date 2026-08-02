@@ -914,6 +914,28 @@ document.addEventListener('DOMContentLoaded', () => {
   if (closeBtn) {
     closeBtn.addEventListener('click', () => helpModal.classList.add('hidden'));
   }
+
+  // Export log link inside help modal
+  const logLink = document.getElementById('export-log-link');
+  if (logLink) {
+    logLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      const text = transcribirLog.join('\n') + '\n\n=== Transcribir Log ===\n' + new Date().toISOString();
+      navigator.clipboard.writeText(text).then(() => {
+        logLink.textContent = '✅ Copiado';
+        setTimeout(() => { logLink.textContent = '📋 Exportar registro de eventos'; }, 2000);
+      }).catch(() => {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        ta.remove();
+        logLink.textContent = '✅ Copiado';
+        setTimeout(() => { logLink.textContent = '📋 Exportar registro de eventos'; }, 2000);
+      });
+    });
+  }
 });
 
 /* ─── Cancel button in loading overlay ─── */
