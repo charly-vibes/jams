@@ -387,12 +387,14 @@ transcribeBtn.addEventListener('click', async () => {
 
   appLog('transcribe: model='+modelKey+' lang='+lang+' sep='+sepMode);
 
-  // Vocal separation step (before transcription)
-  // Always start from original audio to make separation idempotent
-  if (sepMode !== 'none' && originalAudio) {
+  // Restore audio from original backup before any processing.
+  // This ensures we always have a fresh copy even if the buffer was
+  // transferred away by a previous transcription attempt.
+  if (originalAudio) {
     currentAudio.data = new Float32Array(originalAudio.data);
   }
 
+  // Vocal separation step (before transcription)
   if (sepMode === 'spleeter') {
     try {
       clearPersistentStatus();
@@ -416,12 +418,6 @@ transcribeBtn.addEventListener('click', async () => {
   }
 
   appLog('transcribe: running transcription');
-
-  // Restore audio from original backup (buffer stays intact with structured clone,
-  // but this handles edge cases where buffer was transferred by a previous version).
-  if (originalAudio) {
-    currentAudio.data = new Float32Array(originalAudio.data);
-  }
 
   // Send to worker via structured clone
   showLoading('Preparando transcripción...');
