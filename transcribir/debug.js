@@ -20,6 +20,18 @@
   let queue = [];
   let flushTimer = null;
 
+  async function startIfSupported() {
+    try {
+      const probeUrl = new URL('index.html', window.location.href);
+      const response = await originalFetch(probeUrl, { cache: 'no-store' });
+      if (response.headers.get('X-Transcribir-Debug') !== '1') return;
+    } catch {
+      return;
+    }
+    startDiagnostics();
+  }
+
+  function startDiagnostics() {
   function safeValue(value) {
     if (value instanceof Error) {
       return { name: value.name, message: value.message, stack: value.stack };
@@ -157,4 +169,7 @@
     secureContext: window.isSecureContext,
     viewport: `${window.innerWidth}x${window.innerHeight}`,
   });
+  }
+
+  startIfSupported();
 }());

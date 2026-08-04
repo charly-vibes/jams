@@ -62,7 +62,16 @@ def make_handler(serve_directory, log_directory):
     log_dir = Path(log_directory)
 
     class DevHandler(http.server.SimpleHTTPRequestHandler):
+        def end_headers(self):
+            self.send_header('X-Transcribir-Debug', '1')
+            super().end_headers()
+
         def do_GET(self):
+            if self.path.split('?', 1)[0] == LOG_ENDPOINT:
+                self.send_response(204)
+                self.send_header('Cache-Control', 'no-store')
+                self.end_headers()
+                return
             if self.path == CA_ENDPOINT:
                 self._serve_ca()
                 return

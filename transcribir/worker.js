@@ -28,12 +28,14 @@ self.addEventListener('message', async (e) => {
 
   switch (msg.type) {
     case 'transcribe': {
+      const requestId = msg.requestId;
       // Guard: abort any previous transcription before starting a new one
       if (abortController) {
         abortController.abort();
       }
-      abortController = new AbortController();
-      const signal = abortController.signal;
+      const controller = new AbortController();
+      abortController = controller;
+      const signal = controller.signal;
       const audio = msg.audio;        // Float32Array
       const options = msg.options;    // { task, language? }
       const chunkSize = msg.chunkSize || (30 * 16000);
@@ -42,31 +44,31 @@ self.addEventListener('message', async (e) => {
 
       // Report model load progress if needed
       if (!transcriber || loadedModel !== msg.modelKey) {
-        self.postMessage({ type: 'progress', step: 'load-model', message: 'Cargando modelo Whisper...' });
+        self.postMessage({ type: 'progress', requestId, step: 'load-model', message: 'Cargando modelo Whisper...' });
         try {
-          await loadModel(msg.modelKey, signal);
-          self.postMessage({ type: 'model-loaded', modelKey: msg.modelKey });
+          await loadModel(msg.modelKey, signal, requestId);
+          self.postMessage({ type: 'model-loaded', requestId, modelKey: msg.modelKey });
         } catch (err) {
-          abortController = null;
+          if (abortController === controller) abortController = null;
           if (err.name === 'AbortError') {
-            self.postMessage({ type: 'cancelled' });
+            self.postMessage({ type: 'cancelled', requestId });
           } else {
-            self.postMessage({ type: 'error', message: 'Error al cargar el modelo: ' + err.message });
+            self.postMessage({ type: 'error', requestId, message: 'Error al cargar el modelo: ' + err.message });
           }
           return;
         }
       }
 
       try {
-        const result = await runTranscription(audio, options, chunkSize, totalChunks, signal);
-        abortController = null;
-        self.postMessage({ type: 'result', ...result });
+        const result = await runTranscription(audio, options, chunkSize, totalChunks, signal, requestId);
+        if (abortController === controller) abortController = null;
+        self.postMessage({ type: 'result', requestId, ...result });
       } catch (err) {
-        abortController = null;
+        if (abortController === controller) abortController = null;
         if (err.name === 'AbortError') {
-          self.postMessage({ type: 'cancelled' });
+          self.postMessage({ type: 'cancelled', requestId });
         } else {
-          self.postMessage({ type: 'error', message: err.message });
+          self.postMessage({ type: 'error', requestId, message: err.message });
         }
       }
       break;
@@ -102,11 +104,11 @@ async function loadTransformers() {
 /* ─── Load Whisper model (signal-aware, with retry) ─── */
 const MAX_MODEL_RETRIES = 2;
 
-async function loadModel(modelKey, signal) {
+async function loadModel(modelKey, signal, requestId) {
   if (transcriber && loadedModel === modelKey) return;
 
   if (typeof self.transformers === 'undefined') {
-    self.postMessage({ type: 'progress', step: 'cdn', message: 'Cargando biblioteca de IA...' });
+    self.postMessage({ type: 'progress', requestId, step: 'cdn', message: 'Cargando biblioteca de IA...' });
     if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
     await loadTransformers();
     if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
@@ -119,6 +121,7 @@ async function loadModel(modelKey, signal) {
 
     self.postMessage({
       type: 'progress',
+      requestId,
       step: 'download',
       modelKey,
       message: `Descargando ${modelKey}${attempt > 1 ? ` (intento ${attempt})` : ''}...`,
@@ -131,6 +134,7 @@ async function loadModel(modelKey, signal) {
             const pct = Math.round(p.loaded / p.total * 100);
             self.postMessage({
               type: 'progress',
+              requestId,
               step: 'download',
               modelKey,
               percent: pct,
@@ -157,10 +161,11 @@ async function loadModel(modelKey, signal) {
 }
 
 /* ─── Run transcription with chunking ─── */
-async function runTranscription(audio, options, chunkSize, totalChunks, signal) {
+async function runTranscription(audio, options, chunkSize, totalChunks, signal, requestId) {
   const totalSamples = audio.length;
   let fullText = '';
   let allChunks = [];
+  let failedChunks = 0;
   const throttle = totalChunks > PROGRESS_THROTTLE_THRESHOLD ? 5 : 1;
 
   for (let i = 0; i < totalSamples; i += chunkSize) {
@@ -174,6 +179,7 @@ async function runTranscription(audio, options, chunkSize, totalChunks, signal) 
     if (throttle === 1 || chunkNum % throttle === 0 || chunkNum === totalChunks) {
       self.postMessage({
         type: 'progress',
+        requestId,
         step: 'transcribe',
         chunk: chunkNum,
         totalChunks,
@@ -184,6 +190,7 @@ async function runTranscription(audio, options, chunkSize, totalChunks, signal) 
     // Graceful per-chunk: if one fails, continue with others
     const result = await transcriber(segment, options).catch(err => {
       console.warn(`Worker: chunk ${chunkNum} failed:`, err);
+      failedChunks++;
       return { text: '', chunks: null };
     });
 
@@ -208,5 +215,9 @@ async function runTranscription(audio, options, chunkSize, totalChunks, signal) 
     }
   }
 
-  return { text: fullText, chunks: allChunks };
+  if (failedChunks === totalChunks) {
+    throw new Error('No se pudo procesar ningún fragmento de audio');
+  }
+
+  return { text: fullText, chunks: allChunks, failedChunks };
 }

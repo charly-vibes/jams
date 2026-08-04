@@ -1,13 +1,15 @@
 // transcribir — Service Worker
 // Handles: app shell caching, offline support, Web Share Target POST interception
 
-const VERSION = '3';  // bump when publishing a new version
+const VERSION = '5';  // bump when publishing a new version
 const SHELL_CACHE = `transcribir-shell-v${VERSION}`;
 const SHARED_CACHE = `transcribir-shared-v${VERSION}`;
 const STATIC_ASSETS = [
   './',
   './index.html',
   './script.js',
+  './worker.js',
+  './format.js',
   './debug.js',
   './style.css',
   './manifest.json',
@@ -27,15 +29,8 @@ function debugLog(level, ...args) {
 self.addEventListener('install', (event) => {
   debugLog('info', 'install', VERSION);
   event.waitUntil(
-    caches.open(SHELL_CACHE).then((cache) =>
-      // Add each asset individually so one failure doesn't block the rest.
-      // './' may fail on some hosts (redirect loops) — it's non-critical.
-      Promise.allSettled(STATIC_ASSETS.map((url) =>
-        cache.add(url).catch(() => {} /* skip uncooperative URLs */)
-      ))
-    )
+    caches.open(SHELL_CACHE).then((cache) => cache.addAll(STATIC_ASSETS))
   );
-  self.skipWaiting();
 });
 
 /* ─── Message: respond to skipWaiting requests from the page ─── */
@@ -56,7 +51,7 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((keys) =>
       Promise.all(
         keys
-          .filter((k) => k !== SHELL_CACHE && k !== SHARED_CACHE)
+          .filter((k) => k.startsWith('transcribir-') && k !== SHELL_CACHE && k !== SHARED_CACHE)
           .map((k) => caches.delete(k))
       )
     ).then(() => self.clients.claim())

@@ -14,6 +14,25 @@ def load_server_module():
     return module
 
 
+def test_debug_collector_advertises_its_capability(tmp_path):
+    module = load_server_module()
+    handler = module.make_handler(tmp_path, tmp_path)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=server.serve_forever)
+    thread.start()
+
+    try:
+        with urllib.request.urlopen(
+            f"http://127.0.0.1:{server.server_port}/__debug/logs"
+        ) as response:
+            assert response.status == 204
+            assert response.headers["X-Transcribir-Debug"] == "1"
+    finally:
+        server.shutdown()
+        thread.join()
+        server.server_close()
+
+
 def test_debug_logs_are_written_and_acknowledged(tmp_path):
     module = load_server_module()
     handler = module.make_handler(tmp_path, tmp_path)

@@ -18,8 +18,9 @@ microphone and service worker will not be available.
 Browser console output, uncaught errors, UI actions, page/network lifecycle
 events, fetch requests, and service-worker diagnostics appear in the server
 terminal. Complete structured records are also appended to
-`.logs/transcribir-debug.jsonl`. Remote diagnostics activate only on local/private
-hosts, so the deployed GitHub Pages app does not send them.
+`.logs/transcribir-session-<sessionId>.jsonl`. Diagnostics activate only when the
+dedicated development server advertises its collector, so ordinary static hosts
+and the deployed GitHub Pages app do not receive them.
 
 ---
 

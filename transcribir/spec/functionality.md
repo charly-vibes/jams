@@ -33,7 +33,7 @@ Auto-detect or explicit selection: es, en, pt, fr, de, it, ca. Passed as the `la
 1. **Decode** — `AudioContext.decodeAudioData()` handles any format the browser supports
 2. **Mono mix** — all channels averaged (instead of just taking channel 0), works with stereo recordings
 3. **Resample** — `OfflineAudioContext` resamples to 16000 Hz (Whisper requirement)
-4. **Chunk** — audio is split into 30-second windows and processed sequentially; keeps memory constant regardless of total duration
+4. **Chunk** — audio is split into 30-second windows and processed sequentially; bounds inference working memory, while the decoded source remains in memory
 5. **Accumulate** — text and timestamped chunks from each segment are combined with offset correction
 
 ## Chunked Processing (Long Audio)
@@ -49,7 +49,7 @@ for (let i = 0; i < totalSamples; i += chunkSize) {
 ```
 
 This means:
-- **Memory usage is constant** regardless of input duration (~30s worth of PCM in flight)
+- **Inference working memory is bounded** to one ~30s segment at a time; the decoded PCM for the full source remains in memory
 - **Progress reporting** shows "fragmento 3 de 120"
 - **Graceful degradation** — if one chunk fails, previous chunks' work is preserved
 - Whisper-tiny on a phone processes roughly 30 seconds of audio in 2-5 seconds of inference
@@ -147,7 +147,7 @@ Users can share audio files from any app (WhatsApp, Telegram, Signal, Files) dir
 ### How it works
 
 1. **Web Share Target API** (`share_target` in manifest.json) registers Transcribir as a destination in the system share sheet
-2. **Service worker** intercepts the `POST` request, extracts the audio file(s) from `multipart/form-data`, and stores them in a dedicated cache (`transcribir-shared-v2`)
+2. **Service worker** intercepts the `POST` request, extracts the audio file(s) from `multipart/form-data`, and stores them in a dedicated cache (`transcribir-shared-v5`)
 3. **Redirect** to `./?shared=true` — the page reads files from cache, loads them, and cleans up
 4. **LaunchQueue** handles warm starts — when the app is already open and the user shares another audio, `window.launchQueue.setConsumer()` receives the file directly
 
@@ -181,8 +181,8 @@ Located at `sw.js`. Responsibilities:
 | `fetch` | Cache-first for GET; intercepts POST for share target |
 
 Caches:
-- `transcribir-shell-v2` — static app shell (cache-first)
-- `transcribir-shared-v2` — temporarily holds incoming shared files (cleared after ingestion)
+- `transcribir-shell-v5` — static app shell (cache-first)
+- `transcribir-shared-v5` — temporarily holds incoming shared files (cleared after ingestion)
 
 ### Manifest additions
 
@@ -223,35 +223,22 @@ Audio can be processed to isolate or enhance vocals before transcription. Locate
 
 | Mode | Description | Dependencies
 |------|-------------|-------------|
-| `none` | No separation — transcribe audio as-is | None |
+| `none` | No enhancement — transcribe audio as-is | None |
 | `hpf` | **High-pass filter** (~120 Hz cutoff). Removes sub-bass rumble, making voices clearer. Simple DSP, works on any audio. | None (built-in) |
-| `spleeter` | **Spleeter ML model** — full source separation using an ONNX model. Separates vocals from music/accompaniment. For songs, podcasts with background music, etc. | onnxruntime-web ~2 MB CDN load + 8 MB model download |
 
-### ML Mode (Spleeter)
+The former experimental Spleeter option was removed because its ONNX model requires STFT preprocessing and a tensor contract that the browser implementation did not satisfy. It must not be exposed again without end-to-end model validation and tests.
 
-When `spleeter` is selected:
+## Diagnostics
 
-1. `onnxruntime-web` is dynamically loaded from CDN (if not already cached)
-2. The ONNX Spleeter vocals model (~8 MB, int8 quantized) is downloaded from Hugging Face Hub
-3. Audio is resampled to 16000 Hz if needed
-4. The model separates vocals from accompaniment
-5. The isolated vocals are passed to Whisper for transcription
-
-**Limitations:**
-- First use requires downloading the model (~8 MB) and ONNX Runtime (~2 MB)
-- Not available on all browsers (requires WebAssembly support for onnxruntime-web)
-- Currently experimental — model API may vary across Spleeter ONNX exports
-- Processing takes roughly 0.5-1× audio duration on desktop, longer on mobile
-- iOS Safari may not support onnxruntime-web
+- `debug.js` captures console output, uncaught errors, UI actions, network lifecycle, and service-worker messages.
+- Diagnostics activate only when the local HTTPS collector advertises support; ordinary static servers and production deployments stay silent.
+- Use `just serve-ssl` and export the in-app event log from **Cómo usar** when troubleshooting a device.
 
 ## Future Considerations
 
 - **Translate mode:** Whisper can also translate to English — add as option alongside transcribe
-- **Service worker:** for full offline support and faster re-loads
-- **Multiple file queue:** batch transcribe several files
 - **Larger models with WebGPU:** `whisper-medium` (~700 MB) if device supports enough heap
 - **Streaming mic transcription:** process audio as it's being recorded (requires incremental Whisper, not supported by transformers.js yet)
-- **Abort/cancel button:** stop a long transcription in progress
 
 ## Data Flow
 
@@ -262,7 +249,7 @@ User input (File | MediaRecorder Blob)
   → Float32Array (all channels averaged to mono, original sample rate)
   → OfflineAudioContext resample to 16000
   → Float32Array (16000 Hz mono, full duration in RAM)
-  → [Optional] Vocal separation (HPF or Spleeter ML)
+  → [Optional] voice enhancement (high-pass filter)
   → Chunk into 30s windows
   → For each chunk: transformers.js pipeline('automatic-speech-recognition')
     → { text: string, chunks: [{ text, timestamp }] }
