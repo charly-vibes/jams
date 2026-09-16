@@ -1,7 +1,7 @@
 // transcribir — Service Worker
 // Handles: app shell caching, offline support, Web Share Target POST interception
 
-const VERSION = '5';  // bump when publishing a new version
+const VERSION = '6';  // bump when publishing a new version
 const SHELL_CACHE = `transcribir-shell-v${VERSION}`;
 const SHARED_CACHE = `transcribir-shared-v${VERSION}`;
 const STATIC_ASSETS = [

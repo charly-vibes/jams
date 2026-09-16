@@ -44,6 +44,7 @@ const outputSection    = $('#output-section');
 const outputText       = $('#output-text');
 const outputFormat     = $('#output-format');
 const copyBtn          = $('#copy-btn');
+const shareBtn         = $('#share-btn');
 const downloadBtn      = $('#download-btn');
 const loadingOverlay   = $('#loading-overlay');
 const loadingMsg       = $('#loading-msg');
@@ -587,6 +588,39 @@ async function copyToClipboard(text) {
   }
 }
 
+shareBtn.addEventListener('click', async () => {
+  const text = outputText.textContent;
+  if (!text) return;
+  try {
+    if (navigator.share) {
+      await navigator.share({
+        title: 'Transcripción',
+        text,
+      });
+      showStatus('📤 Transcripción compartida');
+    } else {
+      // Fallback: compartir directamente por WhatsApp Web
+      // wa.me rechaza/trunca URLs muy largas (~2000 caracteres)
+      const MAX = 2000;
+      const sharedText = text.length > MAX
+        ? text.slice(0, MAX) + '\n\n[…truncado — usa copiar y pega el resto]'
+        : text;
+      window.open(
+        'https://wa.me/?text=' + encodeURIComponent(sharedText),
+        '_blank',
+        'noopener'
+      );
+      showStatus(text.length > MAX
+        ? '📤 Abriendo WhatsApp (texto truncado)'
+        : '📤 Abriendo WhatsApp para compartir');
+    }
+  } catch (err) {
+    if (err && err.name === 'AbortError') return; // usuario canceló
+    appLog('share: failed — ' + err.message);
+    showStatus('❌ No se pudo compartir. Usa copiar y pega manualmente.', true);
+  }
+});
+
 downloadBtn.addEventListener('click', () => {
   const text = outputText.textContent;
   if (!text) return;
@@ -654,7 +688,15 @@ function applyUpdate(reg) {
 window.applyUpdate = applyUpdate;
 
 /* ─── Shared file ingestion (from SW share target) ─── */
-const SHARED_CACHE = 'transcribir-shared-v5';
+// The SW writes shared audio into 'transcribir-shared-v<N>' where N is its
+// VERSION. Resolve the name dynamically so VERSION bumps in sw.js don't
+// break ingestion here.
+async function openSharedCache() {
+  const names = (await caches.keys())
+    .filter((k) => k.startsWith('transcribir-shared-v'))
+    .sort();
+  return caches.open(names[names.length - 1]);
+}
 
 async function checkSharedFiles() {
   const params = new URLSearchParams(window.location.search);
@@ -663,7 +705,7 @@ async function checkSharedFiles() {
     appLog('check-shared: ?shared=true detected');
     const sharedFiles = [];
     try {
-      const cache = await caches.open(SHARED_CACHE);
+      const cache = await openSharedCache();
       const countResp = await cache.match('file-count');
       if (!countResp) {
         appLog('check-shared: no file-count in cache');
