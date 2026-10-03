@@ -5,14 +5,15 @@
 // The worker is created as a module worker ({ type: 'module' }) to support
 // dynamic import() of the ESM-format CDN file.
 const CDN_URLS = [
-  'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js',
-  'https://unpkg.com/@xenova/transformers@2.17.2/dist/transformers.min.js',
+  'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.0/dist/transformers.min.js',
+  'https://unpkg.com/@huggingface/transformers@4.3.0/dist/transformers.min.js',
 ];
 
 const MODEL_MAP = {
-  tiny:  'Xenova/whisper-tiny',
-  base:  'Xenova/whisper-base',
-  small: 'Xenova/whisper-small',
+  tiny:  'onnx-community/whisper-tiny',
+  base:  'onnx-community/whisper-base',
+  small: 'onnx-community/whisper-small',
+  turbo: 'onnx-community/whisper-large-v3-turbo',
 };
 
 // Throttle progress messages for audio with more chunks than this
@@ -116,6 +117,13 @@ async function loadModel(modelKey, signal, requestId) {
 
   const modelId = MODEL_MAP[modelKey];
 
+  // Turbo is WebGPU-only; without the dtype pin ONNX Runtime may select fp16
+  // and fetch ~1.6 GB instead of the ~560 MB q4f16 set.
+  const TURBO_OPTS = {
+    device: 'webgpu',
+    dtype: { encoder_model: 'q4f16', decoder_model_merged: 'q4f16' },
+  };
+
   for (let attempt = 1; attempt <= MAX_MODEL_RETRIES; attempt++) {
     if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
 
@@ -142,6 +150,7 @@ async function loadModel(modelKey, signal, requestId) {
             });
           }
         },
+        ...(modelKey === 'turbo' ? TURBO_OPTS : {}),
       });
       loadedModel = modelKey;
       return;

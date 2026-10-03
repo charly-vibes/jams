@@ -71,7 +71,7 @@ function restoreSettings() {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (!raw) return;
     const s = JSON.parse(raw);
-    if (s.model && [...modelSelect.options].some(o => o.value === s.model)) modelSelect.value = s.model;
+    if (s.model && [...modelSelect.options].some(o => o.value === s.model && !o.disabled)) modelSelect.value = s.model;
     if (s.lang && [...langSelect.options].some(o => o.value === s.lang)) langSelect.value = s.lang;
     if (s.separation && [...separationSelect.options].some(o => o.value === s.separation)) separationSelect.value = s.separation;
     if (s.advancedOpen && advancedToggle) advancedToggle.open = true;
@@ -79,6 +79,17 @@ function restoreSettings() {
 }
 
 modelSelect.addEventListener('change', saveSettings);
+
+/* ─── Turbo model gating (feature detection, not platform) ─── */
+(function gateTurboModel() {
+  const turboOption = [...modelSelect.options].find(o => o.value === 'turbo');
+  if (!turboOption) return;
+  if (typeof navigator.gpu === 'undefined') {
+    turboOption.disabled = true;
+    turboOption.textContent = 'Turbo (requiere WebGPU)';
+  }
+})();
+
 langSelect.addEventListener('change', saveSettings);
 separationSelect.addEventListener('change', saveSettings);
 if (advancedToggle) advancedToggle.addEventListener('toggle', saveSettings);
@@ -523,7 +534,12 @@ function cancelTranscription() {
 }
 
 function modelMapLabel(key) {
-  return ({ tiny: 'whisper-tiny', base: 'whisper-base', small: 'whisper-small' })[key] || key;
+  return ({
+    tiny: 'whisper-tiny',
+    base: 'whisper-base',
+    small: 'whisper-small',
+    turbo: 'whisper-large-v3-turbo',
+  })[key] || key;
 }
 
 /* ─── Output format switching ─── */

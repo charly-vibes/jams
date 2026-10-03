@@ -14,15 +14,26 @@ Two input paths:
 1. **File upload** — pick an audio file from the device (MP3, WAV, OGG, M4A, etc.)
 2. **Microphone** — record audio directly in the browser, then transcribe
 
+## Inference Library
+
+`@huggingface/transformers@4.3.0` (pinned) loaded from CDN — jsdelivr primary, unpkg fallback — as an ESM dynamic `import()` inside the module worker. The library swap from the frozen `@xenova/transformers@2.17.2` must be smoke-tested on device (load `tiny`, transcribe a short known sample) before release; the test suite pins the CDN URLs and pipeline options at source level.
+
 ## Model Options
 
-| Model | Size (ONNX) | Use case |
-|-------|-------------|----------|
-| `whisper-tiny` | ~40 MB | Fast, good on low-end phones, recommended for long audio |
-| `whisper-base` | ~75 MB | Recommended balance |
-| `whisper-small` | ~250 MB | Best accuracy, needs WebGPU |
+All models use the `onnx-community/*` repos (transformers.js v3/v4 packaging). Models are downloaded once from Hugging Face Hub, cached in IndexedDB. Note: switching repos from the old `Xenova/*` IDs invalidates the model cache — users re-download once after upgrade.
 
-Models are downloaded once from Hugging Face Hub, cached in IndexedDB.
+| Model | Repo | Size (ONNX, q8) | Use case |
+|-------|------|-----------------|----------|
+| Tiny | `onnx-community/whisper-tiny` | ~40 MB | Fast, good on low-end phones, recommended for long audio |
+| Base | `onnx-community/whisper-base` | ~75 MB | Recommended balance |
+| Small | `onnx-community/whisper-small` | ~250 MB | Best accuracy on WASM |
+| Turbo | `onnx-community/whisper-large-v3-turbo` | ~560 MB (q4f16) | Much better accuracy + speed; **WebGPU only** |
+
+### Turbo model (WebGPU)
+
+- Gated by **runtime feature detection** (`navigator.gpu` presence + option disabled state), never by platform labels — Android Chrome and Safari 26+ now support WebGPU.
+- Loaded with pinned dtypes `{ encoder_model: 'q4f16', decoder_model_merged: 'q4f16' }` and `device: 'webgpu'` — without the pin, ONNX Runtime may fall back to fp16 and fetch ~1.6 GB.
+- If WebGPU is unavailable, the option is disabled in the UI with a hint; persisted settings that point at `turbo` must not be restored onto unsupported devices.
 
 ## Language Support
 

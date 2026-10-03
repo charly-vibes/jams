@@ -27,6 +27,46 @@ test('the UI does not offer the known-incompatible Spleeter model', () => {
   assert.match(page, /<meta name="mobile-web-app-capable" content="yes">/);
 });
 
+test('worker pins the transformers.js v4 library on both CDN fallbacks', () => {
+  const worker = fs.readFileSync(path.join(root, 'transcribir/worker.js'), 'utf8');
+  const cdnUrls = worker.match(/https:\/\/[^'\s]+transformers[^'\s]*/g) || [];
+  assert.ok(cdnUrls.length >= 2, 'expected jsdelivr + unpkg fallback URLs');
+  for (const url of cdnUrls) {
+    assert.match(url, /@huggingface\/transformers@4\.3\.0\/dist\/transformers\.min\.js/);
+    assert.doesNotMatch(url, /@xenova/);
+  }
+});
+
+test('model map uses onnx-community repos and pins q4f16 webgpu for turbo', () => {
+  const worker = fs.readFileSync(path.join(root, 'transcribir/worker.js'), 'utf8');
+  assert.match(worker, /tiny:\s*'onnx-community\/whisper-tiny'/);
+  assert.match(worker, /base:\s*'onnx-community\/whisper-base'/);
+  assert.match(worker, /small:\s*'onnx-community\/whisper-small'/);
+  assert.match(worker, /turbo:\s*'onnx-community\/whisper-large-v3-turbo'/);
+
+  const start = worker.indexOf('function loadModel(');
+  const end = worker.indexOf('\n/* ─── Run transcription', start);
+  const loadModel = worker.slice(start, end);
+  // Without the dtype pin, a WebGPU load can fall back to fp16 (~1.6 GB fetch)
+  assert.match(loadModel, /encoder_model:\s*'q4f16'/);
+  assert.match(loadModel, /decoder_model_merged:\s*'q4f16'/);
+  assert.match(loadModel, /device:\s*'webgpu'/);
+  // Standard models must NOT force webgpu (they run on WASM)
+  const turboOnly = loadModel.replace(/[\s\S]*TURBO_OPTS[\s\S]*$/, '');
+  assert.doesNotMatch(turboOnly, /device:\s*'webgpu'/);
+});
+
+test('UI gates the turbo model by feature detection, not platform', () => {
+  const page = fs.readFileSync(path.join(root, 'transcribir/index.html'), 'utf8');
+  assert.match(page, /<option value="turbo"[^>]*>/);
+
+  const script = fs.readFileSync(path.join(root, 'transcribir/script.js'), 'utf8');
+  assert.match(script, /navigator\.gpu/);
+  assert.match(script, /turbo:\s*'whisper-large-v3-turbo'/);
+  // Restored settings must not land on a disabled (unsupported) option
+  assert.match(script, /\.some\(\(?o\)?\s*=>\s*o\.value === s\.model && !o\.disabled\)/);
+});
+
 test('the offline shell includes every local runtime dependency', () => {
   const serviceWorker = fs.readFileSync(path.join(root, 'transcribir/sw.js'), 'utf8');
 
