@@ -1,0 +1,9 @@
+{
+  "name": "listar",
+  "private": true,
+  "type": "module",
+  "description": "Voice-powered lists PWA — zero-build static app (see spec/functionality.md)",
+  "scripts": {
+    "test": "node --test test/"
+  }
+}
