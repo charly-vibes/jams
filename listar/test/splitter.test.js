@@ -38,10 +38,10 @@ test('inline markers on a single line split too', () => {
   assert.deepEqual(labels('1. leche 2. pan 3. té'), ['leche', 'pan', 'té']);
 });
 
-test('no markers, single line → fallback: whole transcript is one item', () => {
-  const items = split('comprar leche y pan en el super');
+test('no markers/connectors, single line → fallback: whole transcript is one item', () => {
+  const items = split('comprar leche en el super');
   assert.equal(items.length, 1);
-  assert.equal(items[0].label, 'comprar leche y pan en el super');
+  assert.equal(items[0].label, 'comprar leche en el super');
 });
 
 test('items carry raw text equal to label at this phase', () => {
@@ -61,4 +61,64 @@ test('marker-only line yields no empty item', () => {
 test('empty and whitespace-only input → no items', () => {
   assert.deepEqual(split(''), []);
   assert.deepEqual(split('   \n  \n'), []);
+});
+
+// ─── Connector phase (jams-asb) ───
+
+test('comma splits marker-free segments', () => {
+  assert.deepEqual(labels('leche, pan, té'), ['leche', 'pan', 'té']);
+});
+
+test('"y" splits when followed by a product', () => {
+  assert.deepEqual(labels('leche y pan'), ['leche', 'pan']);
+});
+
+test('"e" copulative splits', () => {
+  assert.deepEqual(labels('sal e hinojo'), ['sal', 'hinojo']);
+});
+
+test('adverb connectors: luego / además', () => {
+  assert.deepEqual(labels('comprar leche luego fruta'), ['comprar leche', 'fruta']);
+  assert.deepEqual(labels('leche además pan'), ['leche', 'pan']);
+});
+
+test('"y también" compound splits once', () => {
+  assert.deepEqual(labels('leche y también pan'), ['leche', 'pan']);
+});
+
+test('determiner after connector is a plausible start', () => {
+  assert.deepEqual(labels('leche y el pan'), ['leche', 'el pan']);
+});
+
+test('quantity token after connector is a plausible start (no qty parsing yet)', () => {
+  assert.deepEqual(labels('pan y 2 litros de leche'), ['pan', '2 litros de leche']);
+  assert.deepEqual(labels('leche y dos panes'), ['leche', 'dos panes']);
+});
+
+test('NEG: "con" is not a connector', () => {
+  assert.deepEqual(labels('café con leche'), ['café con leche']);
+});
+
+test('NEG: "de" is not a connector', () => {
+  assert.deepEqual(labels('pan de molde'), ['pan de molde']);
+});
+
+test('NEG: "después" followed by non-start does not split', () => {
+  assert.deepEqual(labels('lavar después de comer'), ['lavar después de comer']);
+});
+
+test('NEG: decimal comma does not split', () => {
+  assert.deepEqual(labels('1,5 kilos de arroz'), ['1,5 kilos de arroz']);
+});
+
+test('NEG: short stopword after "y" does not split', () => {
+  assert.deepEqual(labels('tú y yo vamos al mercado'), ['tú y yo vamos al mercado']);
+});
+
+test('connectors apply inside marker segments too', () => {
+  assert.deepEqual(labels('1. leche, pan\n2. jabón'), ['leche', 'pan', 'jabón']);
+});
+
+test('inline markers: trailing connector on a segment is cleaned up', () => {
+  assert.deepEqual(labels('1. leche 2. pan y 3. té'), ['leche', 'pan', 'té']);
 });

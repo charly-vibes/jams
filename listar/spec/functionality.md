@@ -75,11 +75,12 @@ touching the data model or the preview UX.
 
 1. **Explicit markers first** — numbered (`1.`, `1)`, `uno)`) and bulleted
    (`-`, `•`, `*`), plus line breaks — produce segments.
-2. **Connectors within marker-free segments only** — `y`, `e`, `,`, `luego`,
-   `después`, `también`, `además`. A connector splits **only when followed by a
-   plausible item start**, defined as: a determiner (`el/la/un/una/unos/unas`),
-   a quantity token (digit or number word), or a known-product-ish noun phrase
-   (≥3 letters, not a stopword). This predicate is normative — it is the test fixture.
+2. **Connectors within each segment's content** — `y`, `e`, `,`, `luego`,
+   `después`, `también`, `además`. Never across marker boundaries. A connector
+   splits **only when followed by a plausible item start**, defined as: a
+   determiner (`el/la/los/las/un/una/unos/unas`), a quantity token (digit or
+   number word), or a word of ≥2 letters not in the stopword list (function
+   words). This predicate is normative — it is mirrored by the test fixtures.
 3. **Fallback** — no markers/connectors → one item: `{ label: raw phrase }`.
 4. Negative fixtures: phrases containing connector words that must NOT split
    (e.g. product names) are part of the golden corpus.
