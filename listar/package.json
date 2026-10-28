@@ -5,5 +5,8 @@
   "description": "Voice-powered lists PWA — zero-build static app (see spec/functionality.md)",
   "scripts": {
     "test": "node --test test/"
+  },
+  "devDependencies": {
+    "fake-indexeddb": "^6.2.6"
   }
 }
