@@ -1,0 +1,9 @@
+plugins = []
+
+[project]
+name = "listar"
+version = "2026.10.19"
+description = ""
+tool_commit = "8dd13ab"
+
+[llm]
