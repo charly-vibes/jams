@@ -5,6 +5,7 @@
 import { analyzeWithFallback } from './analysis-router.mjs';
 import { applyCommands } from './command-reducer.mjs';
 import { commitCommands, readSnapshot, StaleSnapshotError } from './db.js';
+import { recordDebugEvent } from './debug.mjs';
 
 let operationCounter = 1;
 
@@ -298,9 +299,11 @@ function candidateSummary(review, index, resolution) {
 
 /** Read exactly one transactionally coherent snapshot, then analyze without mutation. */
 export async function prepareContextReview(transcript, listId, {
-  audioId, readSnapshotFn = readSnapshot, analyzeFn, parserAttempt,
+  audioId, readSnapshotFn = readSnapshot, analyzeFn, parserAttempt, debugCorrelationId,
 } = {}) {
   if (typeof listId !== 'string' || !listId.trim()) throw new TypeError('Se necesita una lista activa para analizar el dictado.');
+  const correlationId = debugCorrelationId || `analysis-${Date.now()}-${operationCounter++}`;
+  recordDebugEvent('analysis.start', { listId, transcript }, { correlationId });
   const snapshot = await readSnapshotFn(listId);
   if (snapshot?.listId !== listId) throw new Error('La instantánea no corresponde a la lista activa.');
   const analysisContext = { ...snapshot, ...(audioId == null ? {} : { sourceAudioId: audioId }) };
@@ -308,6 +311,21 @@ export async function prepareContextReview(transcript, listId, {
     ? { route: 'injected-deterministic', analysis: analyzeFn(transcript, analysisContext), failure: null }
     : await analyzeWithFallback(transcript, analysisContext, { parserAttempt });
   const analysis = routed.analysis;
+  const candidates = analysis.candidates.map((candidate, candidateIndex) => ({
+    candidateIndex,
+    intent: candidate.intent,
+    targetItemIds: Array.isArray(candidate.targetItemIds) ? candidate.targetItemIds : [],
+    requiresChoice: candidate.requiresChoice === true,
+    diagnosticCodes: (candidate.diagnostics ?? []).map(({ code }) => code).filter((code) => typeof code === 'string'),
+    label: candidate.label,
+    text: candidate.evidence?.map(({ rawText }) => rawText).join(' '),
+  }));
+  recordDebugEvent('analysis.complete', {
+    listId, version: snapshot.version, route: routed.route,
+    candidateCount: analysis.candidates.length,
+    intents: analysis.candidates.map(({ intent }) => intent),
+    candidates,
+  }, { correlationId });
   return {
     transcript: String(transcript ?? ''),
     snapshot: clone(snapshot),
@@ -315,6 +333,7 @@ export async function prepareContextReview(transcript, listId, {
     route: routed.route,
     failure: routed.failure,
     audioId: audioId ?? null,
+    debugCorrelationId: correlationId,
     operationId: newOperationId(),
     createdAt: Date.now(),
   };
@@ -364,6 +383,13 @@ function makeSelect(document, ariaLabel, options) {
   return select;
 }
 
+function markDiagnosticControl(control, targetId, candidateIndex) {
+  control.dataset ??= {};
+  control.dataset.debugTarget = targetId;
+  control.dataset.debugCandidate = String(candidateIndex);
+  return control;
+}
+
 /** Render the contextual preview with explicit item/assertion IDs and readable source/state evidence. */
 export function renderContextPreview({ document, container, review, onChange = () => {} }) {
   if (!document?.createElement || !container?.replaceChildren) throw new TypeError('Se necesita un contenedor DOM para mostrar la revisión.');
@@ -374,6 +400,7 @@ export function renderContextPreview({ document, container, review, onChange = (
     card.className = 'preview-row context-preview-row';
     const resolution = { selected: candidate.intent !== 'review' };
     const selected = document.createElement('input');
+    markDiagnosticControl(selected, 'context-select', index);
     selected.type = 'checkbox';
     selected.checked = resolution.selected;
     selected.setAttribute('aria-label', `Incluir propuesta ${index + 1}: ${candidate.label}`);
@@ -412,6 +439,7 @@ export function renderContextPreview({ document, container, review, onChange = (
         text: `${item.label} · ID ${item.itemId}${item.brand ? ` · ${item.brand}` : ''}${item.package ? ` · ${item.package}` : ''}${item.quantity === undefined ? '' : ` · ${item.quantity} ${item.unit ?? ''}`}${item.details?.length ? ` · ${item.details.map(({ key, role, value }) => `${key} (${role}): ${typeof value === 'object' ? JSON.stringify(value) : value}`).join('; ')}` : ''}`,
         selected: choices.length === 1,
       })));
+      markDiagnosticControl(targetSelect, 'context-target', index);
       if (choices.length === 1) resolution.targetItemId = choices[0].itemId;
       targetSelect.value = resolution.targetItemId ?? '';
       targetSelect.addEventListener('change', () => {
@@ -437,6 +465,7 @@ export function renderContextPreview({ document, container, review, onChange = (
           : [];
     if (actionOptions.length) {
       actionSelect = makeSelect(document, `Acción para ${candidate.label}`, actionOptions);
+      markDiagnosticControl(actionSelect, 'context-action', index);
       actionSelect.addEventListener('change', () => {
         resolution.action = actionSelect.value || undefined;
         if (candidate.intent === 'update-attribute') {
@@ -459,6 +488,7 @@ export function renderContextPreview({ document, container, review, onChange = (
       const amountLabel = document.createElement('label');
       amountLabel.textContent = 'Precio';
       const amount = document.createElement('input');
+      markDiagnosticControl(amount, 'context-amount', index);
       const initialCurrency = candidate.assertion.value.currency ?? 'ARS';
       const fractionDigits = currencyMinorDigits(initialCurrency);
       amount.type = 'number';
@@ -479,6 +509,7 @@ export function renderContextPreview({ document, container, review, onChange = (
         ['ARS', 'AUD', 'BRL', 'CAD', 'CHF', 'CLP', 'CNY', 'EUR', 'GBP', 'JPY', 'KWD', 'MXN', 'NZD', 'PEN', 'USD', 'UYU'].map((code) => ({
           value: code, text: code, selected: candidate.assertion.value.currency === code,
         })));
+      markDiagnosticControl(currency, 'context-currency', index);
       currency.value = candidate.assertion.value.currency ?? '';
       currency.addEventListener('change', () => {
         resolution.priceCurrency = currency.value || undefined;
@@ -492,6 +523,7 @@ export function renderContextPreview({ document, container, review, onChange = (
         const observedLabel = document.createElement('label');
         observedLabel.textContent = 'Cuándo lo observaste';
         const observedAt = document.createElement('input');
+        markDiagnosticControl(observedAt, 'context-observed-at', index);
         observedAt.type = 'datetime-local';
         observedAt.setAttribute('aria-label', `Fecha y hora de observación para ${candidate.label}`);
         observedAt.addEventListener('input', () => {
@@ -506,6 +538,7 @@ export function renderContextPreview({ document, container, review, onChange = (
         const sourceLabel = document.createElement('label');
         sourceLabel.textContent = 'Dónde lo observaste';
         const source = document.createElement('input');
+        markDiagnosticControl(source, 'context-source', index);
         source.type = 'text';
         source.placeholder = 'Tienda, ticket…';
         source.setAttribute('aria-label', `Fuente del precio para ${candidate.label}`);
@@ -526,6 +559,7 @@ export function renderContextPreview({ document, container, review, onChange = (
         text: `${role} · ${assertionId} · ${formatMinorAmount(value.amountMinor, value.currency)}`,
         selected: summary.assertionChoices.length === 1,
       })));
+      markDiagnosticControl(assertionSelect, 'context-assertion', index);
       if (summary.assertionChoices.length === 1) {
         resolution.assertionId = summary.assertionChoices[0].assertionId;
         resolution.assertionItemId = summary.assertionChoices[0].itemId;
@@ -599,6 +633,8 @@ export function createContextConfirmation(initialReview, {
     async confirm(resolutions = {}) {
       if (!active || busy || completed) return { status: 'cancelled' };
       busy = true;
+      const correlationId = `preview-${review.snapshot.listId}-${review.snapshot.version}-${review.operationId}`;
+      recordDebugEvent('preview.confirm.start', { listId: review.snapshot.listId, version: review.snapshot.version }, { correlationId, operationId: review.operationId });
       try {
         const commands = [];
         let selectedIdentity = false;
@@ -615,18 +651,26 @@ export function createContextConfirmation(initialReview, {
         if (!commands.length) {
           completed = true;
           active = false;
+          recordDebugEvent('preview.confirm.identity', { selectedIdentity, commandCount: 0 }, { correlationId, operationId: review.operationId });
           return { status: selectedIdentity ? 'identity' : 'empty', snapshot: review.snapshot };
         }
         applyCommands(review.snapshot, commands);
         try {
+          recordDebugEvent('preview.confirm.commands', { commandCount: commands.length, intents: commands.map(({ intent }) => intent) }, { correlationId, operationId: review.operationId });
           const result = await commitFn({ snapshot: review.snapshot, commands, operationId: review.operationId });
           completed = true;
           active = false;
+          recordDebugEvent('preview.confirm.complete', { listId: result.listId, version: result.version, commandCount: commands.length }, { correlationId, operationId: review.operationId });
           return { status: 'committed', result, commands };
         } catch (error) {
-          if (!(error instanceof StaleSnapshotError) && error?.code !== 'stale-snapshot') throw error;
+          if (!(error instanceof StaleSnapshotError) && error?.code !== 'stale-snapshot') {
+            recordDebugEvent('preview.confirm.error', { errorName: error?.name || 'Error' }, { correlationId, operationId: review.operationId });
+            throw error;
+          }
+          recordDebugEvent('preview.confirm.stale', { errorName: error?.name || 'StaleSnapshotError' }, { correlationId, operationId: review.operationId });
           review = await prepareContextReview(review.transcript, review.snapshot.listId, {
             audioId: review.audioId, readSnapshotFn, analyzeFn, parserAttempt,
+            debugCorrelationId: review.debugCorrelationId,
           });
           active = false;
           return { status: 'stale', review };

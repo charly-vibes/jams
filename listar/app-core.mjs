@@ -3,6 +3,7 @@
 // Rationale: these state-changing paths need direct tests and must not depend on UI rendering.
 
 import { Audio, Item, List, commitCommands, readSnapshot, setUpgradeBlockedHandler } from './db.js';
+import { recordDebugEvent } from './debug.mjs';
 import { split } from './splitter.js';
 
 let nextRequestId = 1;
@@ -65,7 +66,9 @@ export function saveSettings(storage, settings) {
 export async function createList({ name = '', emoji = '📝' } = {}) {
   const cleanName = name.trim();
   if (!cleanName) throw new Error('Escribe un nombre para la lista.');
-  return List.add({ name: cleanName, emoji });
+  const list = await List.add({ name: cleanName, emoji });
+  recordDebugEvent('list.create', { listId: list.id });
+  return list;
 }
 
 export async function renameList(id, { name, emoji }) {
@@ -73,7 +76,9 @@ export async function renameList(id, { name, emoji }) {
   if (!current) throw new Error('No se encontró la lista.');
   const cleanName = String(name ?? current.name).trim();
   if (!cleanName) throw new Error('Escribe un nombre para la lista.');
-  return List.put({ ...current, name: cleanName, emoji: emoji ?? current.emoji });
+  const updated = await List.put({ ...current, name: cleanName, emoji: emoji ?? current.emoji });
+  recordDebugEvent('list.rename', { listId: id });
+  return updated;
 }
 
 export async function deleteList(id) {
@@ -81,25 +86,33 @@ export async function deleteList(id) {
   await Promise.all(items.map(({ id: itemId }) => Item.del(itemId)));
   await Promise.all(audios.map(({ id: audioId }) => Audio.del(audioId)));
   await List.del(id);
+  recordDebugEvent('list.delete', { listId: id });
 }
 
 export async function toggleItem(id, done) {
   const lists = await List.all();
   for (const list of lists) {
     const item = (await Item.list(list.id)).find((row) => row.id === id);
-    if (item) return Item.put({ ...item, done: Boolean(done) });
+    if (item) {
+      const updated = await Item.put({ ...item, done: Boolean(done) });
+      recordDebugEvent('item.toggle', { listId: list.id, itemId: id, done: Boolean(done) });
+      return updated;
+    }
   }
   throw new Error('No se encontró el artículo.');
 }
 
 export async function deleteItem(id) {
-  return Item.del(id);
+  const result = await Item.del(id);
+  recordDebugEvent('item.delete', { itemId: id });
+  return result;
 }
 
 export async function clearDoneItems(listId) {
   const items = await Item.list(listId);
   const done = items.filter(({ done: isDone }) => isDone);
   await Promise.all(done.map(({ id }) => Item.del(id)));
+  recordDebugEvent('item.clear-done', { listId, count: done.length });
   return done.length;
 }
 
@@ -155,6 +168,7 @@ export function createPreviewSubmission({
   let completed = false;
   let active = true;
   let submission = null;
+  const correlationId = `append-preview-${Date.now()}-${nextOperationId++}`;
   const submit = async (event) => {
     event.preventDefault();
     if (!active || busy || completed || !getTargetId()) return;
@@ -167,12 +181,19 @@ export function createPreviewSubmission({
       if (!submission || submission.signature !== signature) {
         submission = { signature, operationId: createOperationId(), commandTime: Date.now() };
       }
+      recordDebugEvent('preview.append.confirm', {
+        listId: getTargetId(), operationId: submission.operationId,
+        selectedCount: draft.filter(({ selected, label }) => selected && label).length,
+        editedLabels: draft.map(({ label }) => label),
+      }, { correlationId, operationId: submission.operationId });
       const items = await appendSelectedItems(getTargetId(), draft, getSourceAudioId(), submission);
       completed = true;
       active = false;
       form.removeEventListener('submit', submit);
+      recordDebugEvent('preview.append.complete', { listId: getTargetId(), itemCount: items.length }, { correlationId, operationId: submission.operationId });
       await onSuccess(items);
     } catch (error) {
+      recordDebugEvent('preview.append.error', { errorName: error?.name || 'Error' }, { correlationId, operationId: submission?.operationId });
       await onError(error);
     } finally {
       busy = false;
@@ -278,8 +299,10 @@ export async function decodeAudioToMono16k(blob, AudioContextClass = globalThis.
   }
 }
 
-export function transcribeWithWorker(worker, audio, modelKey, options = {}, onProgress = () => {}) {
+export function transcribeWithWorker(worker, audio, modelKey, options = {}, onProgress = () => {}, flowCorrelationId) {
   const requestId = nextRequestId++;
+  const correlationId = flowCorrelationId || `worker-${requestId}`;
+  recordDebugEvent('worker.request', { modelKey, sampleCount: audio?.length ?? null, optionKeys: Object.keys(options ?? {}) }, { requestId, correlationId });
   let resolvePromise;
   let rejectPromise;
   const promise = new Promise((resolve, reject) => {
@@ -289,27 +312,33 @@ export function transcribeWithWorker(worker, audio, modelKey, options = {}, onPr
   const onMessage = ({ data }) => {
     if (data.requestId !== requestId) return;
     if (data.type === 'progress') {
+      recordDebugEvent('worker.progress', { progress: Number.isFinite(data.progress) ? data.progress : null, phase: data.step ?? 'transcribing' }, { requestId, correlationId });
       onProgress(data);
       return;
     }
     if (data.type === 'model-loaded') return;
     if (data.type === 'result') {
       cleanup();
+      recordDebugEvent('worker.result', { empty: data.empty === true, segmentCount: Array.isArray(data.chunks) ? data.chunks.length : null }, { requestId, correlationId });
       resolvePromise(data);
     } else if (data.type === 'error') {
       cleanup();
+      recordDebugEvent('worker.error', { errorName: 'TranscriptionError', message: data.message }, { requestId, correlationId });
       rejectPromise(new Error(data.message || 'No se pudo transcribir el audio.'));
     } else if (data.type === 'cancelled') {
       cleanup();
+      recordDebugEvent('worker.cancelled', {}, { requestId, correlationId });
       rejectPromise(new DOMException('Transcripción cancelada.', 'AbortError'));
     }
   };
   const onWorkerFailure = (event) => {
     cleanup();
+    recordDebugEvent('worker.error', { errorName: event.error?.name || 'WorkerError', message: event.message }, { requestId, correlationId });
     rejectPromise(event.error || new Error(event.message || 'El trabajador de audio falló.'));
   };
   const onMessageFailure = () => {
     cleanup();
+    recordDebugEvent('worker.error', { errorName: 'MessageError' }, { requestId, correlationId });
     rejectPromise(new Error('No se pudo leer la respuesta del trabajador de audio.'));
   };
   const cleanup = () => {
@@ -324,6 +353,7 @@ export function transcribeWithWorker(worker, audio, modelKey, options = {}, onPr
     worker.postMessage({ type: 'transcribe', requestId, audio, modelKey, options });
   } catch (error) {
     cleanup();
+    recordDebugEvent('worker.error', { errorName: error?.name || 'PostMessageError' }, { requestId, correlationId });
     rejectPromise(error);
   }
   promise.cancel = () => worker.postMessage({ type: 'cancel', requestId });

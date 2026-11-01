@@ -1,0 +1,15 @@
+ticket: jams-0rt.2
+status: complete-local-implementation
+brief: bd show jams-0rt.2 (opt-in local debug event log and export)
+history:
+  - red: debug privacy/storage/worker/IndexedDB tests failed before debug.mjs existed
+  - green: default-off bounded logger, metadata allowlist, opt-in text capture, storage fallback, JSON export/clear/dispose, UI settings controls
+  - hooks: app navigation/settings, mic/decode/transcription, worker request/progress/result/error/cancel, analyzer/preview resolution/confirmation, DB open/transaction/atomic commit/replay/stale/error, uncaught window errors
+  - privacy-fixes: Blob/File/ArrayBuffer/DataView/typed arrays omitted by type; unknown strings redacted unless text capture enabled; export re-redacts historical text when capture disabled; no worker/browser/service-worker internal event relay
+  - integration-ui: document capture click/input/change/submit uses vetted id/data-debug-target + tag/control/event/action only; no aria-label/textContent; input/checkbox/error values included only with explicit captureText; dynamic item and contextual preview controls have stable targets + candidate index
+  - analyzer: analysis-complete trace carries compact candidate index/intent/target IDs/choice/diagnostic-code metadata; candidate label/source strings go through privacy sanitizer; no snapshot/audio included
+  - worker-db: worker uses actual step/chunks protocol; DB records open/block/recovery, transaction outcomes, operation-ID commit/replay/stale/error metadata; no command payload
+  - offline: debug.mjs added to SW shell, cache version bumped to v2, old Listar shell cache cleanup expectation updated; browser/service-worker internal events explicitly not relayed
+  - verify: node --test listar/test/debug.test.js listar/test/app-shell.test.js 16/16; node --test listar/test/context-review.test.js 22/22; npm test from listar 177/177; node --check debug.mjs db.js app-core.mjs context-review.mjs script.js sw.js; git diff --check
+  - limitations: no real browser interaction test or service-worker internal event collection; in-app language states exact capture boundary; window-level uncaught handlers only
+  - git: no commit or push; lead review pending

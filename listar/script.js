@@ -12,8 +12,13 @@ import {
   bindContextConfirmation, createContextConfirmation, isAppendOnlyExtraction,
   prepareContextReview, renderContextPreview,
 } from './context-review.mjs';
+import {
+  attachDebugInteractionListeners, clearDebugLog, configureDebug, exportDebugLog, getDebugOptions, recordDebugEvent,
+} from './debug.mjs';
 
 const $ = (selector) => document.querySelector(selector);
+const disposeDebugInteractions = attachDebugInteractionListeners(document);
+window.addEventListener('pagehide', disposeDebugInteractions, { once: true });
 const homeView = $('#home-view');
 const listView = $('#list-view');
 const listsGrid = $('#lists-grid');
@@ -23,6 +28,12 @@ const itemsEmpty = $('#items-empty');
 const listHeading = $('#list-heading');
 const appStatus = $('#app-status');
 bindDatabaseStatus(appStatus);
+window.addEventListener('error', (event) => recordDebugEvent('runtime.error', {
+  kind: 'window', errorName: event.error?.name || 'ErrorEvent', message: event.message,
+}));
+window.addEventListener('unhandledrejection', (event) => recordDebugEvent('runtime.error', {
+  kind: 'unhandled-rejection', errorName: event.reason?.name || 'UnhandledRejection', message: event.reason?.message,
+}));
 const captureStatus = $('#capture-status');
 const progressRegion = $('#progress-region');
 const progressMessage = $('#progress-message');
@@ -62,8 +73,10 @@ let appSettings = loadSettings();
 try {
   worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
 } catch (error) {
+  recordDebugEvent('worker.initialize.error', { errorName: error?.name || 'WorkerError' });
   console.error('No se pudo iniciar el trabajador de audio', error);
 }
+recordDebugEvent('app.start', { language: navigator.language ?? 'unknown' });
 
 function setStatus(message, isError = false) {
   appStatus.textContent = message;
@@ -105,7 +118,26 @@ function showContextPreview(review) {
   $('#preview-heading').textContent = 'Propuestas para tu lista';
   $('#preview-description').textContent = 'Confirma solo propuestas con destino y evidencia claros. Las dudas quedan sin guardar.';
   $('#confirm-append').textContent = 'Confirmar cambios';
-  contextPreviewControl = renderContextPreview({ document, container: previewRows, review });
+  contextPreviewControl = renderContextPreview({
+    document, container: previewRows, review,
+    onChange(index, resolution) {
+      recordDebugEvent('preview.resolution.changed', {
+        candidateIndex: index,
+        intent: review.analysis.candidates[index]?.intent ?? 'unknown',
+        selected: resolution.selected !== false,
+        hasTarget: Boolean(resolution.targetItemId),
+        hasAssertion: Boolean(resolution.assertionId),
+        hasPriceAmount: Boolean(resolution.priceAmount),
+        hasObservedAt: Boolean(resolution.observedAt),
+        inputValues: {
+          targetItemId: resolution.targetItemId, assertionId: resolution.assertionId,
+          action: resolution.action, priceAmount: resolution.priceAmount,
+          priceCurrency: resolution.priceCurrency, observedAt: resolution.observedAt,
+          evidenceSource: resolution.evidenceSource,
+        },
+      }, { operationId: review.operationId });
+    },
+  });
   previewDialog.showModal();
   contextSubmission = bindContextConfirmation({
     form: previewForm,
@@ -116,7 +148,23 @@ function showContextPreview(review) {
     onStale: async (freshReview) => {
       contextReview = freshReview;
       contextConfirmation = createContextConfirmation(freshReview);
-      contextPreviewControl = renderContextPreview({ document, container: previewRows, review: freshReview });
+      contextPreviewControl = renderContextPreview({
+        document, container: previewRows, review: freshReview,
+        onChange(index, resolution) {
+          recordDebugEvent('preview.resolution.changed', {
+            candidateIndex: index, intent: freshReview.analysis.candidates[index]?.intent ?? 'unknown',
+            selected: resolution.selected !== false, hasTarget: Boolean(resolution.targetItemId),
+            hasAssertion: Boolean(resolution.assertionId), hasPriceAmount: Boolean(resolution.priceAmount),
+            hasObservedAt: Boolean(resolution.observedAt),
+            inputValues: {
+              targetItemId: resolution.targetItemId, assertionId: resolution.assertionId,
+              action: resolution.action, priceAmount: resolution.priceAmount,
+              priceCurrency: resolution.priceCurrency, observedAt: resolution.observedAt,
+              evidenceSource: resolution.evidenceSource,
+            },
+          }, { operationId: freshReview.operationId });
+        },
+      });
       $('#preview-description').textContent = 'La lista cambió mientras revisabas. Comprueba de nuevo los destinos y confirma otra vez.';
       setStatus('La lista cambió. Se actualizó el análisis; confirma de nuevo para guardar.', true);
     },
@@ -180,6 +228,7 @@ async function renderItems() {
     row.className = `item-row${item.done ? ' is-done' : ''}`;
     const check = document.createElement('input');
     check.type = 'checkbox';
+    check.dataset.debugTarget = 'item-toggle';
     check.checked = Boolean(item.done);
     check.setAttribute('aria-label', `Marcar ${item.label} como ${item.done ? 'pendiente' : 'completado'}`);
     check.addEventListener('change', async () => {
@@ -196,12 +245,14 @@ async function renderItems() {
       await deleteItem(item.id);
       await renderItems();
     }, `Eliminar ${item.label}`);
+    remove.dataset.debugTarget = 'item-delete';
     row.append(check, label, quantity, remove);
     itemsList.append(row);
   }
 }
 
 async function openList(id) {
+  recordDebugEvent('navigation.open-list', { listId: id });
   activeList = await List.get(id);
   if (!activeList) return renderHome();
   listHeading.textContent = `${activeList.emoji || '📝'} ${activeList.name}`;
@@ -225,6 +276,7 @@ async function openList(id) {
 }
 
 function goHome() {
+  recordDebugEvent('navigation.home');
   activeList = null;
   listView.classList.add('hidden');
   homeView.classList.remove('hidden');
@@ -298,16 +350,53 @@ settingsForm.addEventListener('submit', (event) => {
     saveAudio: $('#save-audio-setting').checked,
   };
   const saved = saveSettings(undefined, appSettings);
+  const debugSettings = configureDebug({
+    enabled: $('#debug-log-setting').checked,
+    captureText: $('#debug-text-setting').checked,
+  });
+  recordDebugEvent('settings.saved', {
+    language: appSettings.language, model: appSettings.model, saveAudio: appSettings.saveAudio,
+    debugEnabled: debugSettings.enabled, captureText: debugSettings.captureText,
+  });
   settingsDialog.close();
   setStatus(saved ? 'Preferencias guardadas.' : 'Preferencias activas, pero el navegador no pudo guardarlas.', !saved);
 });
 
 function openSettings() {
+  recordDebugEvent('navigation.settings');
   $('#language-setting').value = appSettings.language;
   $('#model-setting').value = appSettings.model;
   $('#save-audio-setting').checked = appSettings.saveAudio;
+  const debug = getDebugOptions();
+  $('#debug-log-setting').checked = debug.enabled;
+  $('#debug-text-setting').checked = debug.captureText;
   settingsDialog.showModal();
 }
+
+$('#debug-log-setting').addEventListener('change', () => {
+  if (!$('#debug-log-setting').checked) configureDebug({ enabled: false });
+});
+$('#debug-text-setting').addEventListener('change', () => {
+  configureDebug({ captureText: $('#debug-text-setting').checked });
+});
+$('#debug-export').addEventListener('click', () => {
+  try {
+    recordDebugEvent('debug.export');
+    const contents = JSON.stringify(exportDebugLog(), null, 2);
+    const url = URL.createObjectURL(new Blob([contents], { type: 'application/json' }));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `listar-debug-${new Date().toISOString().slice(0, 10)}.json`;
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+    setStatus('Se descargó el registro local de diagnóstico.');
+  } catch { setStatus('No se pudo exportar el registro de diagnóstico.', true); }
+});
+$('#debug-clear').addEventListener('click', () => {
+  if (!confirm('¿Borrar el registro local de diagnóstico?')) return;
+  clearDebugLog();
+  setStatus('Se borró el registro local de diagnóstico.');
+});
 
 $('#clear-audio').addEventListener('click', async () => {
   if (!activeList) return;
@@ -354,6 +443,7 @@ async function startRecording() {
   if (captureLocked) return;
   if (!activeList) { setStatus('Abre una lista antes de grabar.', true); return; }
   const captureTargetId = activeList.id;
+  recordDebugEvent('mic.start', { listId: captureTargetId });
   setCaptureLock(true);
   if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
     setCaptureLock(false);
@@ -372,6 +462,7 @@ async function startRecording() {
     mediaRecorder.addEventListener('stop', async () => {
       const blob = new Blob(recordingParts, { type: mediaRecorder?.mimeType || mimeType || 'audio/webm' });
       releaseMicrophone();
+      recordDebugEvent('mic.stop', { listId: captureTargetId, byteLength: blob.size });
       recordButton.disabled = true;
       recordButton.classList.remove('recording');
       recordButton.setAttribute('aria-label', 'Grabar una lista');
@@ -382,6 +473,7 @@ async function startRecording() {
       else { setCaptureLock(false); setStatus('La grabación quedó vacía. Intenta hablar un poco más.', true); }
     }, { once: true });
     mediaRecorder.addEventListener('error', (event) => {
+      recordDebugEvent('mic.error', { errorName: event.error?.name || 'MediaRecorderError', message: event.error?.message });
       setStatus(`Error durante la grabación: ${event.error?.message || 'falló el micrófono'}.`, true);
       if (mediaRecorder?.state === 'recording') mediaRecorder.stop();
     }, { once: true });
@@ -396,7 +488,9 @@ async function startRecording() {
       $('#record-timer').textContent = formatTime(Math.floor((Date.now() - recordingStartedAt) / 1000));
     }, 250);
     setStatus('Grabando. Toca el botón para terminar.');
+    recordDebugEvent('mic.ready', { listId: captureTargetId, mimeType: mediaRecorder.mimeType || mimeType || 'unknown' });
   } catch (error) {
+    recordDebugEvent('mic.error', { errorName: error?.name || 'MicrophoneError', message: error?.message });
     releaseMicrophone();
     setCaptureLock(false);
     setStatus(`No se pudo iniciar el micrófono: ${error.message}. Puedes subir un audio.`, true);
@@ -430,18 +524,22 @@ async function processAudio(blob, { targetListId = activeList?.id, lockAlready =
   if (!worker) { setCaptureLock(false); setStatus('No se pudo iniciar el transcriptor. Recarga la página e inténtalo de nuevo.', true); return; }
   if (!lockAlready) setCaptureLock(true);
   let keepLockedForPreview = false;
+  const correlationId = `audio-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   try {
+    recordDebugEvent('audio.decode.start', { listId: targetListId, mediaSource: typeof File !== 'undefined' && blob instanceof File ? 'file' : 'recording', byteLength: blob?.size ?? null }, { correlationId });
     setStatus('Preparando audio…');
     showProgress('Decodificando y convirtiendo audio a 16 kHz…');
     const audio = await decodeAudioToMono16k(blob, globalThis.AudioContext || globalThis.webkitAudioContext);
+    recordDebugEvent('audio.decode.complete', { sampleCount: audio.data.length, sampleRate: audio.sampleRate, duration: audio.duration }, { correlationId });
     if (!audio.data.length) throw new Error('El audio no contiene muestras.');
     showProgress('Preparando modelo Whisper…');
     const options = { task: 'transcribe' };
     if (appSettings.language !== 'auto') options.language = appSettings.language;
     pendingAudioId = null;
-    pendingTranscription = transcribeWithWorker(worker, audio.data, appSettings.model, options, ({ message }) => showProgress(message));
+    pendingTranscription = transcribeWithWorker(worker, audio.data, appSettings.model, options, ({ message }) => showProgress(message), correlationId);
     const result = await pendingTranscription;
     pendingTranscription = null;
+    recordDebugEvent('transcription.complete', { empty: result.empty === true, text: result.text }, { correlationId });
     hideProgress();
     const audioRecord = await saveAudioCapture(targetListId, blob, result.text, appSettings.model, appSettings.saveAudio);
     pendingAudioId = audioRecord?.id ?? null;
@@ -449,8 +547,9 @@ async function processAudio(blob, { targetListId = activeList?.id, lockAlready =
       setStatus('No se escuchó nada claro. No se agregó ningún artículo.');
       return;
     }
-    const contextualReview = await prepareContextReview(result.text, targetListId, { audioId: pendingAudioId });
+    const contextualReview = await prepareContextReview(result.text, targetListId, { audioId: pendingAudioId, debugCorrelationId: correlationId });
     if (!isAppendOnlyExtraction(contextualReview.analysis)) {
+      recordDebugEvent('preview.context.open', { listId: targetListId, version: contextualReview.snapshot.version, candidateCount: contextualReview.analysis.candidates.length }, { correlationId });
       showContextPreview(contextualReview);
       keepLockedForPreview = true;
       return;
@@ -464,6 +563,7 @@ async function processAudio(blob, { targetListId = activeList?.id, lockAlready =
     resetPreviewCopy();
     renderPreview();
     previewDialog.showModal();
+    recordDebugEvent('preview.append.open', { listId: targetListId, itemCount: previewDraft.length }, { correlationId });
     previewSubmission = createPreviewSubmission({
       form: previewForm,
       getTargetId: () => previewTargetListId,
@@ -479,6 +579,7 @@ async function processAudio(blob, { targetListId = activeList?.id, lockAlready =
     });
     keepLockedForPreview = true;
   } catch (error) {
+    recordDebugEvent('audio.pipeline.error', { errorName: error?.name || 'AudioPipelineError', message: error?.message }, { correlationId });
     pendingTranscription = null;
     hideProgress();
     if (error.name === 'AbortError') setStatus('Transcripción cancelada.');
@@ -495,6 +596,7 @@ function renderPreview() {
     row.className = 'preview-row';
     const selected = document.createElement('input');
     selected.type = 'checkbox';
+    selected.dataset.debugTarget = 'preview-select';
     selected.checked = item.selected;
     selected.setAttribute('aria-label', `Incluir ${item.label}`);
     selected.addEventListener('change', () => { item.selected = selected.checked; label.required = item.selected; });
@@ -502,6 +604,7 @@ function renderPreview() {
     editor.className = 'preview-editor';
     const label = document.createElement('input');
     label.type = 'text';
+    label.dataset.debugTarget = 'preview-label';
     label.required = item.selected;
     label.value = item.label;
     label.setAttribute('aria-label', `Nombre del artículo ${index + 1}`);
@@ -510,6 +613,7 @@ function renderPreview() {
     quantityRow.className = 'quantity-editor';
     const quantity = document.createElement('input');
     quantity.type = 'number';
+    quantity.dataset.debugTarget = 'preview-quantity';
     quantity.step = 'any';
     quantity.min = '0';
     quantity.value = item.quantity ?? '';
@@ -518,6 +622,7 @@ function renderPreview() {
     quantity.addEventListener('input', () => { item.quantity = quantity.value === '' ? undefined : Number(quantity.value); });
     const unit = document.createElement('input');
     unit.type = 'text';
+    unit.dataset.debugTarget = 'preview-unit';
     unit.value = item.unit ?? '';
     unit.placeholder = 'Unidad';
     unit.setAttribute('aria-label', `Unidad de ${item.label}`);
@@ -536,10 +641,19 @@ function discardPreview() {
   setCaptureLock(false);
   return true;
 }
-$('#preview-cancel').addEventListener('click', () => { if (discardPreview()) previewDialog.close(); });
-previewDialog.addEventListener('cancel', (event) => { if (!discardPreview()) event.preventDefault(); });
+$('#preview-cancel').addEventListener('click', () => {
+  recordDebugEvent('preview.cancel');
+  if (discardPreview()) previewDialog.close();
+});
+previewDialog.addEventListener('cancel', (event) => {
+  recordDebugEvent('preview.cancel', { source: 'escape' });
+  if (!discardPreview()) event.preventDefault();
+});
 
-$('#cancel-transcription').addEventListener('click', () => pendingTranscription?.cancel());
+$('#cancel-transcription').addEventListener('click', () => {
+  recordDebugEvent('transcription.cancel');
+  pendingTranscription?.cancel();
+});
 
 async function storeSharedAudio(file) {
   if (!globalThis.caches || typeof Response === 'undefined') throw new Error('El almacenamiento local de archivos no está disponible.');

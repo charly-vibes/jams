@@ -13,7 +13,7 @@ test('app shell exposes home, list actions, capture, and editable confirmation c
     'home-view', 'lists-grid', 'create-list', 'list-view', 'rename-list', 'delete-list',
     'items-list', 'clear-done', 'record-button', 'audio-file', 'progress-region',
     'settings-button', 'settings-dialog', 'language-setting', 'model-setting', 'save-audio-setting',
-    'clear-audio', 'export-copy', 'export-share',
+    'clear-audio', 'export-copy', 'export-share', 'debug-log-setting', 'debug-text-setting', 'debug-export', 'debug-clear',
     'cancel-transcription', 'preview-dialog', 'preview-rows', 'preview-eyebrow', 'preview-heading', 'preview-description', 'confirm-append',
   ]) assert.match(html, new RegExp(`id="${id}"`));
   assert.match(html, /type="module" src="\.\/script\.js"/);
@@ -63,7 +63,7 @@ test('manifest declares a Spanish standalone app with audio file handling and te
 
 test('offline shell precaches worker dependencies and removes only listar-owned caches', () => {
   const worker = read('sw.js');
-  for (const asset of ['./index.html', './style.css', './manifest.json', './script.js', './app-core.mjs', './context-review.mjs', './analysis-router.mjs', './db.js', './splitter.js', './transcript-filter.mjs', './analyze.mjs', './command-reducer.mjs', './worker.js']) {
+  for (const asset of ['./index.html', './style.css', './manifest.json', './script.js', './app-core.mjs', './context-review.mjs', './analysis-router.mjs', './debug.mjs', './db.js', './splitter.js', './transcript-filter.mjs', './analyze.mjs', './command-reducer.mjs', './worker.js']) {
     assert.ok(worker.includes(asset), `missing precached ${asset}`);
   }
   const cacheAssets = new Set([...worker.matchAll(/'\.\/([^']+)'/gu)].map(([, asset]) => asset));
@@ -77,8 +77,9 @@ test('offline shell precaches worker dependencies and removes only listar-owned 
       visitImports(imported);
     }
   };
-  for (const entry of ['script.js', 'worker.js', 'analyze.mjs', 'command-reducer.mjs', 'context-review.mjs']) visitImports(entry);
+  for (const entry of ['script.js', 'worker.js', 'analyze.mjs', 'command-reducer.mjs', 'context-review.mjs', 'db.js', 'app-core.mjs']) visitImports(entry);
   assert.match(worker, /key\.startsWith\('listar-'\)/);
+  assert.match(worker, /const CACHE_NAME = 'listar-shell-v2'/);
   assert.doesNotMatch(worker, /caches\.delete\(key\)[\s\S]*startsWith\('transcribir-'/);
 });
 
@@ -89,4 +90,23 @@ test('settings form offers validated language/model choices and retention defaul
   assert.match(html, /<option value="auto"/);
   assert.match(html, /id="save-audio-setting" type="checkbox"/);
   assert.doesNotMatch(html, /id="save-audio-setting"[^>]*checked/);
+});
+
+test('diagnostic controls document local privacy and wire export, clear, and runtime hooks', () => {
+  const html = read('index.html');
+  const script = read('script.js');
+  const spec = read('spec/debug.md');
+  assert.match(html, /id="debug-log-setting" type="checkbox"/);
+  assert.match(html, /id="debug-text-setting" type="checkbox"(?![^>]*disabled)/);
+  assert.match(html, /no se envía por internet ni incluye audio/i);
+  assert.match(html, /tampoco recopila eventos internos del navegador o del service worker/i);
+  assert.match(html, /500 eventos o 256 KiB/u);
+  assert.match(script, /configureDebug\(/);
+  assert.match(script, /attachDebugInteractionListeners\(document\)/);
+  assert.match(script, /exportDebugLog\(\)/);
+  assert.match(script, /clearDebugLog\(\)/);
+  assert.match(script, /addEventListener\('unhandledrejection'/);
+  assert.match(spec, /session-only in-memory buffer/u);
+  assert.match(spec, /service worker and browser internals are not captured/u);
+  assert.doesNotMatch(read('debug.mjs'), /\bfetch\s*\(|XMLHttpRequest|sendBeacon/u);
 });

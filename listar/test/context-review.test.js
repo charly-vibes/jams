@@ -7,14 +7,20 @@ import {
   createContextConfirmation, isAppendOnlyExtraction, renderContextPreview, bindContextConfirmation,
   currencyMinorDigits, amountToMinor, formatMinorAmount,
 } from '../context-review.mjs';
+import { attachDebugInteractionListeners, createDebugLogger, setDebugLoggerForTests } from '../debug.mjs';
 
 class FakeElement {
-  constructor(tag) { this.tagName = tag; this.children = []; this.listeners = new Map(); this.attributes = {}; this.value = ''; this.checked = false; }
+  constructor(tag, ownerDocument = null) { this.tagName = tag; this.ownerDocument = ownerDocument; this.children = []; this.listeners = new Map(); this.attributes = {}; this.dataset = {}; this.value = ''; this.checked = false; }
   append(...nodes) { this.children.push(...nodes); }
   replaceChildren(...nodes) { this.children = [...nodes]; }
   setAttribute(name, value) { this.attributes[name] = value; }
   addEventListener(type, listener) { this.listeners.set(type, listener); }
-  dispatch(type) { this.listeners.get(type)?.({ target: this }); }
+  dispatch(type) {
+    const event = { type, target: this };
+    this.listeners.get(type)?.(event);
+    this.ownerDocument?.listeners.get(type)?.(event);
+  }
+  closest() { return this; }
   get textContent() { return this._textContent ?? this.children.map((child) => child.textContent).join(''); }
   set textContent(value) { this._textContent = String(value); }
   find(predicate) { if (predicate(this)) return this; for (const child of this.children) { const found = child.find?.(predicate); if (found) return found; } return null; }
@@ -272,6 +278,66 @@ test('DOM price preview exposes editable amount, ISO currency, observation time,
   assert.equal(saved.value.currency, 'ARS');
   assert.equal(saved.value.observedAt, resolution.observedAt);
   assert.equal(saved.evidence.source, 'supermercado');
+});
+
+test('exported debug trace distinguishes contextual target and currency edits with text gated by opt-in', async () => {
+  const list = await List.add({ name: 'Diagnostic preview trace' });
+  const milk = await Item.add({ listId: list.id, label: 'leche' });
+  const storageValues = new Map();
+  const storage = {
+    getItem(key) { return storageValues.get(key) ?? null; },
+    setItem(key, value) { storageValues.set(key, String(value)); },
+    removeItem(key) { storageValues.delete(key); },
+  };
+  const logger = createDebugLogger({ storage, sessionId: 'context-controls' });
+  logger.configure({ enabled: true });
+  const restoreLogger = setDebugLoggerForTests(logger);
+  const document = {
+    listeners: new Map(),
+    createElement(tag) { return new FakeElement(tag, this); },
+    addEventListener(type, listener) { this.listeners.set(type, listener); },
+    removeEventListener(type) { this.listeners.delete(type); },
+  };
+  const dispose = attachDebugInteractionListeners(document);
+  try {
+    const review = await prepareContextReview('la leche sale 2000 pesos por litro', list.id);
+    const container = new FakeElement('div', document);
+    renderContextPreview({ document, container, review });
+    const findControl = (target) => container.find((node) => node.dataset.debugTarget === target);
+    const target = findControl('context-target');
+    const currency = findControl('context-currency');
+    assert.ok(target && currency, 'context preview controls carry stable diagnostic targets');
+    target.value = milk.id;
+    target.dispatch('change');
+    currency.value = 'JPY';
+    currency.dispatch('change');
+    let interactions = logger.export().events.filter(({ name }) => name === 'ui.interaction');
+    assert.deepEqual(interactions.map(({ fields }) => [fields.targetId, fields.candidateIndex]), [
+      ['context-target', 0], ['context-currency', 0],
+    ]);
+    assert.ok(interactions.every(({ fields }) => !Object.hasOwn(fields, 'value')));
+    assert.doesNotMatch(JSON.stringify(logger.export()), /la leche sale 2000 pesos/u);
+    const candidateSummary = logger.export().events.find(({ name }) => name === 'analysis.complete').fields.candidates[0];
+    assert.equal(candidateSummary.candidateIndex, 0);
+    assert.equal(candidateSummary.targetItemIds[0], milk.id);
+    assert.equal(candidateSummary.label, '[redacted]');
+    assert.equal(candidateSummary.text, '[redacted]');
+
+    logger.configure({ enabled: true, captureText: true });
+    await prepareContextReview('la leche sale 2000 pesos por litro', list.id);
+    const capturedSummary = logger.export().events.filter(({ name }) => name === 'analysis.complete').at(-1).fields.candidates[0];
+    assert.equal(capturedSummary.label, 'leche');
+    assert.equal(capturedSummary.text, 'la leche sale 2000 pesos por litro');
+    currency.value = 'KWD';
+    currency.dispatch('change');
+    interactions = logger.export().events.filter(({ name }) => name === 'ui.interaction');
+    assert.equal(interactions.at(-1).fields.targetId, 'context-currency');
+    assert.equal(interactions.at(-1).fields.candidateIndex, 0);
+    assert.equal(interactions.at(-1).fields.value, 'KWD');
+  } finally {
+    dispose();
+    restoreLogger();
+  }
 });
 
 test('price preview formats minor units and round-trips currency-specific fraction digits', async () => {

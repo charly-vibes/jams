@@ -133,6 +133,8 @@ Home                        List view
   "clear done" action. (Drag reorder = v2; v1 = new items at bottom.)
 - Export: copy as plain text, Web Share.
 - Settings: language, Whisper model, guardar audios on/off (default on), clear audio.
+- [Local diagnostics](debug.md): optional event log, separate text capture, JSON download
+  and clear controls in Configuración. Disabled by default; never includes audio.
 - Spanish UI; same dark aesthetic and PWA chrome (manifest, service worker,
   offline-first) as transcribir.
 

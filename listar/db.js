@@ -1,6 +1,8 @@
 // db.js — IndexedDB wrapper for Listar. Versioned list state, atomic commands, and connection lifecycle.
 // Responsibilities: own database handles, preserve legacy records, and serialize all governed list writes.
 // Rationale: coherent snapshots and durable operation receipts prevent stale or duplicate command application.
+
+import { recordDebugEvent } from './debug.mjs';
 export const DB_NAME = 'listar';
 export const DB_VERSION = 2;
 
@@ -74,14 +76,19 @@ function initializeSchema(event) {
 
 function openDB() {
   if (pendingOpen) return pendingOpen;
+  const correlationId = `db-open-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const factory = globalThis.indexedDB;
-  if (!factory) return Promise.reject(new Error('IndexedDB no está disponible en este navegador.'));
+  if (!factory) {
+    recordDebugEvent('db.open.error', { errorName: 'IndexedDBUnavailable' }, { correlationId });
+    return Promise.reject(new Error('IndexedDB no está disponible en este navegador.'));
+  }
   pendingOpen = new Promise((resolve, reject) => {
     let req;
     try {
       req = factory.open(DB_NAME, DB_VERSION);
     } catch (error) {
       pendingOpen = null;
+      recordDebugEvent('db.open.error', { errorName: error?.name || 'OpenError', message: error?.message }, { correlationId });
       reject(error);
       return;
     }
@@ -89,6 +96,7 @@ function openDB() {
     req.onupgradeneeded = initializeSchema;
     req.onblocked = () => {
       wasBlocked = true;
+      recordDebugEvent('db.open.blocked', {}, { correlationId });
       try {
         upgradeBlockedHandler?.({
           code: 'blocked-upgrade',
@@ -98,6 +106,7 @@ function openDB() {
     };
     req.onsuccess = () => {
       if (wasBlocked) {
+        recordDebugEvent('db.open.ready', {}, { correlationId });
         try { upgradeBlockedHandler?.({ code: 'upgrade-ready', message: '' }); }
         catch { /* Status handlers must not interfere with the upgraded connection. */ }
       }
@@ -124,7 +133,9 @@ function openDB() {
     };
     req.onerror = () => {
       pendingOpen = null;
-      reject(req.error?.name === 'VersionError' ? new ReloadRequiredError() : req.error);
+      const error = req.error?.name === 'VersionError' ? new ReloadRequiredError() : req.error;
+      recordDebugEvent('db.open.error', { errorName: error?.name || 'OpenError', message: error?.message }, { correlationId });
+      reject(error);
     };
   });
   return pendingOpen;
@@ -132,14 +143,17 @@ function openDB() {
 
 function runTransaction(stores, mode, work) {
   return openDB().then((database) => new Promise((resolve, reject) => {
+    const correlationId = `db-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     let transaction;
     try {
       transaction = database.transaction(stores, mode);
     } catch (error) {
       database.close();
+      recordDebugEvent('db.transaction.error', { stores, mode, errorName: error?.name || 'Error', message: error?.message }, { correlationId });
       reject(error);
       return;
     }
+    recordDebugEvent('db.transaction.start', { stores, mode }, { correlationId });
     let value;
     let failure;
     let settled = false;
@@ -152,6 +166,7 @@ function runTransaction(stores, mode, work) {
       if (settled) return;
       settled = true;
       close();
+      recordDebugEvent('db.transaction.complete', { stores, mode }, { correlationId });
       resolve(value);
     };
     transaction.onerror = () => { failure ??= transaction.error; };
@@ -159,6 +174,7 @@ function runTransaction(stores, mode, work) {
       if (settled) return;
       settled = true;
       close();
+      recordDebugEvent('db.transaction.error', { stores, mode, errorName: failure?.name || transaction.error?.name || 'AbortError', message: failure?.message || transaction.error?.message }, { correlationId });
       reject(failure || transaction.error || new Error('La transacción de Listar se canceló.'));
     };
     try {
@@ -620,8 +636,11 @@ export async function commitCommands({ snapshot, commands, operationId } = {}) {
   }
   const payload = stableSerialize({ listId, commands: commandSnapshot });
   const { applyCommands } = await import('./command-reducer.mjs');
-
-  return runTransaction([STORE_LISTS, STORE_ITEMS, STORE_OPERATIONS], 'readwrite', ({ transaction, setValue, abort }) => {
+  const correlationId = `commit-${operationId}`;
+  let replayed = false;
+  recordDebugEvent('commit.start', { listId, expectedVersion, commandCount: commandSnapshot.length }, { correlationId, operationId });
+  try {
+    const result = await runTransaction([STORE_LISTS, STORE_ITEMS, STORE_OPERATIONS], 'readwrite', ({ transaction, setValue, abort }) => {
     const listRequest = transaction.objectStore(STORE_LISTS).get(listId);
     const itemRequest = transaction.objectStore(STORE_ITEMS).index('listId').getAll(listId);
     const receiptRequest = transaction.objectStore(STORE_OPERATIONS).get(operationId);
@@ -637,6 +656,7 @@ export async function commitCommands({ snapshot, commands, operationId } = {}) {
       try {
         if (receipt) {
           if (receipt.payload !== payload) throw new Error(`Operation ID ${operationId} was already used with a different payload`);
+          replayed = true;
           setValue(receipt.result);
           return;
         }
@@ -675,5 +695,17 @@ export async function commitCommands({ snapshot, commands, operationId } = {}) {
     itemRequest.onerror = () => abort(itemRequest.error);
     receiptRequest.onsuccess = () => { receipt = receiptRequest.result; receiptReady = true; applyWhenReady(); };
     receiptRequest.onerror = () => abort(receiptRequest.error);
-  });
+    });
+    recordDebugEvent(replayed ? 'commit.replay' : 'commit.complete', {
+      listId, version: result.version, commandCount: commandSnapshot.length,
+      retryCount: replayed ? 1 : 0,
+    }, { correlationId, operationId });
+    return result;
+  } catch (error) {
+    const stale = error instanceof StaleSnapshotError || error?.code === 'stale-snapshot';
+    recordDebugEvent(stale ? 'commit.stale' : 'commit.error', {
+      errorName: error?.name || 'Error', message: error?.message, expectedVersion,
+    }, { correlationId, operationId });
+    throw error;
+  }
 }

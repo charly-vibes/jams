@@ -83,6 +83,13 @@
       </select>
       <label class="retention-option"><input id="save-audio-setting" type="checkbox"> Guardar audios para volver a transcribir</label>
       <button id="clear-audio" class="secondary-button full-width" type="button">Borrar los audios de esta lista</button>
+      <fieldset class="debug-settings">
+        <legend>Diagnóstico local (opcional)</legend>
+        <label class="retention-option"><input id="debug-log-setting" type="checkbox"> Guardar eventos de diagnóstico en este dispositivo</label>
+        <label class="retention-option"><input id="debug-text-setting" type="checkbox"> Incluir dictados, texto editado y mensajes de error (puede contener información privada)</label>
+        <p class="help-text">El registro no se envía por internet ni incluye audio; tampoco recopila eventos internos del navegador o del service worker. Conserva hasta 500 eventos o 256 KiB y descarta primero los más antiguos. Puedes descargarlo o borrarlo aquí. Desactivar el registro detiene nuevas entradas.</p>
+        <div class="debug-actions"><button id="debug-export" class="secondary-button" type="button">Descargar diagnóstico</button><button id="debug-clear" class="secondary-button" type="button">Borrar diagnóstico</button></div>
+      </fieldset>
       <div class="modal-actions"><button id="settings-cancel" class="secondary-button" type="button">Cancelar</button><button class="primary-button" type="submit">Guardar</button></div>
     </form>
   </dialog>
