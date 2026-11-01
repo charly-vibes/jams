@@ -1,0 +1,54 @@
+{
+  "id": "./index.html",
+  "name": "Listar — listas por voz",
+  "short_name": "Listar",
+  "description": "Listas de compras y tareas creadas con tu voz.",
+  "lang": "es",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#10131a",
+  "theme_color": "#10131a",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "share_target": {
+    "action": "./index.html",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url",
+      "files": [
+        {
+          "name": "audio",
+          "accept": [
+            "audio/*"
+          ]
+        }
+      ]
+    }
+  },
+  "file_handlers": [
+    {
+      "action": "./index.html",
+      "accept": {
+        "audio/*": [
+          ".wav",
+          ".mp3",
+          ".m4a",
+          ".ogg",
+          ".webm",
+          ".mp4"
+        ]
+      }
+    }
+  ],
+  "orientation": "portrait"
+}

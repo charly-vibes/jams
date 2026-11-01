@@ -1,0 +1,801 @@
+{
+  "schemaVersion": 1,
+  "baseline": "deterministic JavaScript analyzer",
+  "evaluatedSplit": "held-out",
+  "generatedAt": "2026-11-01T00:23:31.538Z",
+  "fixtureProvenance": "Hand-constructed regression fixtures from design/spec examples; not blinded and not transcribed speech.",
+  "fixturePartitions": {
+    "train": 3,
+    "dev": 3,
+    "heldout": 16,
+    "evaluated": [
+      "heldout"
+    ]
+  },
+  "promotion": {
+    "modelPromoted": false,
+    "decision": "No model experiment justified or available; retain deterministic baseline and collect real dictations."
+  },
+  "metrics": {
+    "caseCount": 16,
+    "parserFailureFixtures": 1,
+    "candidateCount": 18,
+    "exactIntentAccuracy": 1,
+    "perIntent": {
+      "increment": {
+        "cases": 1,
+        "correct": 1,
+        "accuracy": 1,
+        "proposals": 1,
+        "review": 0,
+        "actionable": 1,
+        "proposalCoverage": 1,
+        "safeActionCoverage": 1,
+        "reviewRate": 0
+      },
+      "set": {
+        "cases": 1,
+        "correct": 1,
+        "accuracy": 1,
+        "proposals": 1,
+        "review": 0,
+        "actionable": 1,
+        "proposalCoverage": 1,
+        "safeActionCoverage": 1,
+        "reviewRate": 0
+      },
+      "add": {
+        "cases": 3,
+        "correct": 3,
+        "accuracy": 1,
+        "proposals": 3,
+        "review": 0,
+        "actionable": 2,
+        "proposalCoverage": 1,
+        "safeActionCoverage": 0.6666666666666666,
+        "reviewRate": 0
+      },
+      "remove": {
+        "cases": 2,
+        "correct": 2,
+        "accuracy": 1,
+        "proposals": 2,
+        "review": 0,
+        "actionable": 1,
+        "proposalCoverage": 1,
+        "safeActionCoverage": 0.5,
+        "reviewRate": 0
+      },
+      "ambiguous": {
+        "cases": 1,
+        "correct": 1,
+        "accuracy": 1,
+        "proposals": 1,
+        "review": 0,
+        "actionable": 0,
+        "proposalCoverage": 1,
+        "safeActionCoverage": 0,
+        "reviewRate": 0
+      },
+      "update-attribute": {
+        "cases": 3,
+        "correct": 3,
+        "accuracy": 1,
+        "proposals": 3,
+        "review": 0,
+        "actionable": 0,
+        "proposalCoverage": 1,
+        "safeActionCoverage": 0,
+        "reviewRate": 0
+      },
+      "review": {
+        "cases": 7,
+        "correct": 7,
+        "accuracy": 1,
+        "proposals": 0,
+        "review": 7,
+        "actionable": 0,
+        "proposalCoverage": 0,
+        "safeActionCoverage": 0,
+        "reviewRate": 1
+      }
+    },
+    "targetResolutionAccuracy": 1,
+    "requiresChoiceLabelAccuracy": 1,
+    "quantityAccuracy": 1,
+    "unitAccuracy": 1,
+    "priceRoleAccuracy": 1,
+    "appendOnlyRoutingAccuracy": 1,
+    "proposalCoverage": 0.6111111111111112,
+    "safeActionCoverage": 0.2777777777777778,
+    "abstentionReviewRate": 0.3888888888888889,
+    "unresolvedChoiceRate": 0.7222222222222222,
+    "unsafeRouteCount": 0,
+    "unsafeRouteRateAmongActionable": 0,
+    "actualPersistenceCommits": 0,
+    "commitAuthority": "Every proposal still requires explicit UI confirmation before persistence.",
+    "sourceAlignmentRate": 1,
+    "nodeLatencyMs": {
+      "p50": 0.112,
+      "p95": 2.423,
+      "deviceLatency": "not measured"
+    },
+    "modelDownloadBytes": null,
+    "modelSize": "not applicable; no model dependency or artifact",
+    "realDictationCount": 0,
+    "humanCorrectionEffort": "not measured",
+    "resolutionCountProxy": 13,
+    "confidenceCalibration": "not measured; outputs are not probabilities",
+    "runtime": {
+      "node": "v26.12.1",
+      "platform": "linux",
+      "architecture": "x64"
+    }
+  },
+  "caseResults": [
+    {
+      "id": "heldout-increment-one-target",
+      "split": "held-out",
+      "provenance": "constructed-spec-fixture",
+      "route": "deterministic",
+      "candidateCount": 1,
+      "expectedIntents": [
+        "increment"
+      ],
+      "predictedIntents": [
+        "increment"
+      ],
+      "expectedQuantities": [
+        1
+      ],
+      "predictedQuantities": [
+        1
+      ],
+      "expectedUnits": [
+        "litro"
+      ],
+      "predictedUnits": [
+        "litro"
+      ],
+      "intentExact": true,
+      "targetExact": true,
+      "choiceExact": true,
+      "priceRoleExact": true,
+      "appendOnlyExact": true,
+      "evidenceAligned": true,
+      "requiresChoice": [
+        false
+      ],
+      "expectedHumanResolution": [
+        false
+      ],
+      "expectedAppendOnly": false,
+      "reviewCount": 0,
+      "latencyMs": 2.423
+    },
+    {
+      "id": "heldout-set-quantity",
+      "split": "held-out",
+      "provenance": "constructed-spec-fixture",
+      "route": "deterministic",
+      "candidateCount": 1,
+      "expectedIntents": [
+        "set"
+      ],
+      "predictedIntents": [
+        "set"
+      ],
+      "expectedQuantities": [
+        2
+      ],
+      "predictedQuantities": [
+        2
+      ],
+      "expectedUnits": [
+        "litros"
+      ],
+      "predictedUnits": [
+        "litros"
+      ],
+      "intentExact": true,
+      "targetExact": true,
+      "choiceExact": true,
+      "priceRoleExact": true,
+      "appendOnlyExact": true,
+      "evidenceAligned": true,
+      "requiresChoice": [
+        false
+      ],
+      "expectedHumanResolution": [
+        false
+      ],
+      "expectedAppendOnly": false,
+      "reviewCount": 0,
+      "latencyMs": 0.3
+    },
+    {
+      "id": "heldout-repeated-add-choice",
+      "split": "held-out",
+      "provenance": "constructed-spec-fixture",
+      "route": "deterministic",
+      "candidateCount": 1,
+      "expectedIntents": [
+        "add"
+      ],
+      "predictedIntents": [
+        "add"
+      ],
+      "expectedQuantities": [
+        null
+      ],
+      "predictedQuantities": [
+        null
+      ],
+      "expectedUnits": [
+        null
+      ],
+      "predictedUnits": [
+        null
+      ],
+      "intentExact": true,
+      "targetExact": true,
+      "choiceExact": true,
+      "priceRoleExact": true,
+      "appendOnlyExact": true,
+      "evidenceAligned": true,
+      "requiresChoice": [
+        true
+      ],
+      "expectedHumanResolution": [
+        true
+      ],
+      "expectedAppendOnly": false,
+      "reviewCount": 0,
+      "latencyMs": 0.343
+    },
+    {
+      "id": "heldout-duplicate-remove-targets",
+      "split": "held-out",
+      "provenance": "constructed-spec-fixture",
+      "route": "deterministic",
+      "candidateCount": 1,
+      "expectedIntents": [
+        "remove"
+      ],
+      "predictedIntents": [
+        "remove"
+      ],
+      "expectedQuantities": [
+        null
+      ],
+      "predictedQuantities": [
+        null
+      ],
+      "expectedUnits": [
+        null
+      ],
+      "predictedUnits": [
+        null
+      ],
+      "intentExact": true,
+      "targetExact": true,
+      "choiceExact": true,
+      "priceRoleExact": true,
+      "appendOnlyExact": true,
+      "evidenceAligned": true,
+      "requiresChoice": [
+        true
+      ],
+      "expectedHumanResolution": [
+        true
+      ],
+      "expectedAppendOnly": false,
+      "reviewCount": 0,
+      "latencyMs": 0.112
+    },
+    {
+      "id": "heldout-correction-ambiguity",
+      "split": "held-out",
+      "provenance": "constructed-spec-fixture",
+      "route": "deterministic",
+      "candidateCount": 1,
+      "expectedIntents": [
+        "ambiguous"
+      ],
+      "predictedIntents": [
+        "ambiguous"
+      ],
+      "expectedQuantities": [
+        null
+      ],
+      "predictedQuantities": [
+        null
+      ],
+      "expectedUnits": [
+        null
+      ],
+      "predictedUnits": [
+        null
+      ],
+      "intentExact": true,
+      "targetExact": true,
+      "choiceExact": true,
+      "priceRoleExact": true,
+      "appendOnlyExact": true,
+      "evidenceAligned": true,
+      "requiresChoice": [
+        true
+      ],
+      "expectedHumanResolution": [
+        true
+      ],
+      "expectedAppendOnly": false,
+      "reviewCount": 0,
+      "latencyMs": 0.092
+    },
+    {
+      "id": "heldout-price-observation-missing-fields",
+      "split": "held-out",
+      "provenance": "constructed-spec-fixture",
+      "route": "deterministic",
+      "candidateCount": 1,
+      "expectedIntents": [
+        "update-attribute"
+      ],
+      "predictedIntents": [
+        "update-attribute"
+      ],
+      "expectedQuantities": [
+        null
+      ],
+      "predictedQuantities": [
+        null
+      ],
+      "expectedUnits": [
+        null
+      ],
+      "predictedUnits": [
+        null
+      ],
+      "intentExact": true,
+      "targetExact": true,
+      "choiceExact": true,
+      "priceRoleExact": true,
+      "appendOnlyExact": true,
+      "evidenceAligned": true,
+      "requiresChoice": [
+        true
+      ],
+      "expectedHumanResolution": [
+        true
+      ],
+      "expectedAppendOnly": false,
+      "reviewCount": 0,
+      "latencyMs": 0.195
+    },
+    {
+      "id": "heldout-price-requirement-typed-currency",
+      "split": "held-out",
+      "provenance": "constructed-spec-fixture",
+      "route": "deterministic",
+      "candidateCount": 1,
+      "expectedIntents": [
+        "update-attribute"
+      ],
+      "predictedIntents": [
+        "update-attribute"
+      ],
+      "expectedQuantities": [
+        null
+      ],
+      "predictedQuantities": [
+        null
+      ],
+      "expectedUnits": [
+        null
+      ],
+      "predictedUnits": [
+        null
+      ],
+      "intentExact": true,
+      "targetExact": true,
+      "choiceExact": true,
+      "priceRoleExact": true,
+      "appendOnlyExact": true,
+      "evidenceAligned": true,
+      "requiresChoice": [
+        true
+      ],
+      "expectedHumanResolution": [
+        true
+      ],
+      "expectedAppendOnly": false,
+      "reviewCount": 0,
+      "latencyMs": 0.083
+    },
+    {
+      "id": "heldout-price-requirement-missing-currency",
+      "split": "held-out",
+      "provenance": "constructed-spec-fixture",
+      "route": "deterministic",
+      "candidateCount": 1,
+      "expectedIntents": [
+        "update-attribute"
+      ],
+      "predictedIntents": [
+        "update-attribute"
+      ],
+      "expectedQuantities": [
+        null
+      ],
+      "predictedQuantities": [
+        null
+      ],
+      "expectedUnits": [
+        null
+      ],
+      "predictedUnits": [
+        null
+      ],
+      "intentExact": true,
+      "targetExact": true,
+      "choiceExact": true,
+      "priceRoleExact": true,
+      "appendOnlyExact": true,
+      "evidenceAligned": true,
+      "requiresChoice": [
+        true
+      ],
+      "expectedHumanResolution": [
+        true
+      ],
+      "expectedAppendOnly": false,
+      "reviewCount": 0,
+      "latencyMs": 0.045
+    },
+    {
+      "id": "heldout-unsupported-delete-verb",
+      "split": "held-out",
+      "provenance": "constructed-spec-fixture",
+      "route": "deterministic",
+      "candidateCount": 1,
+      "expectedIntents": [
+        "review"
+      ],
+      "predictedIntents": [
+        "review"
+      ],
+      "expectedQuantities": [
+        null
+      ],
+      "predictedQuantities": [
+        null
+      ],
+      "expectedUnits": [
+        null
+      ],
+      "predictedUnits": [
+        null
+      ],
+      "intentExact": true,
+      "targetExact": true,
+      "choiceExact": true,
+      "priceRoleExact": true,
+      "appendOnlyExact": true,
+      "evidenceAligned": true,
+      "requiresChoice": [
+        true
+      ],
+      "expectedHumanResolution": [
+        true
+      ],
+      "expectedAppendOnly": false,
+      "reviewCount": 1,
+      "latencyMs": 0.068
+    },
+    {
+      "id": "heldout-unsupported-question",
+      "split": "held-out",
+      "provenance": "constructed-spec-fixture",
+      "route": "deterministic",
+      "candidateCount": 1,
+      "expectedIntents": [
+        "review"
+      ],
+      "predictedIntents": [
+        "review"
+      ],
+      "expectedQuantities": [
+        null
+      ],
+      "predictedQuantities": [
+        null
+      ],
+      "expectedUnits": [
+        null
+      ],
+      "predictedUnits": [
+        null
+      ],
+      "intentExact": true,
+      "targetExact": true,
+      "choiceExact": true,
+      "priceRoleExact": true,
+      "appendOnlyExact": true,
+      "evidenceAligned": true,
+      "requiresChoice": [
+        true
+      ],
+      "expectedHumanResolution": [
+        true
+      ],
+      "expectedAppendOnly": false,
+      "reviewCount": 1,
+      "latencyMs": 0.114
+    },
+    {
+      "id": "heldout-parser-failure-falls-back-to-review",
+      "split": "held-out",
+      "provenance": "constructed-spec-fixture",
+      "route": "deterministic-fallback",
+      "candidateCount": 1,
+      "expectedIntents": [
+        "review"
+      ],
+      "predictedIntents": [
+        "review"
+      ],
+      "expectedQuantities": [
+        null
+      ],
+      "predictedQuantities": [
+        null
+      ],
+      "expectedUnits": [
+        null
+      ],
+      "predictedUnits": [
+        null
+      ],
+      "intentExact": true,
+      "targetExact": true,
+      "choiceExact": true,
+      "priceRoleExact": true,
+      "appendOnlyExact": true,
+      "evidenceAligned": true,
+      "requiresChoice": [
+        true
+      ],
+      "expectedHumanResolution": [
+        true
+      ],
+      "expectedAppendOnly": false,
+      "reviewCount": 1,
+      "latencyMs": 0.339
+    },
+    {
+      "id": "heldout-invalid-snapshot",
+      "split": "held-out",
+      "provenance": "constructed-spec-fixture",
+      "route": "deterministic",
+      "candidateCount": 1,
+      "expectedIntents": [
+        "review"
+      ],
+      "predictedIntents": [
+        "review"
+      ],
+      "expectedQuantities": [
+        null
+      ],
+      "predictedQuantities": [
+        null
+      ],
+      "expectedUnits": [
+        null
+      ],
+      "predictedUnits": [
+        null
+      ],
+      "intentExact": true,
+      "targetExact": true,
+      "choiceExact": true,
+      "priceRoleExact": true,
+      "appendOnlyExact": true,
+      "evidenceAligned": true,
+      "requiresChoice": [
+        true
+      ],
+      "expectedHumanResolution": [
+        true
+      ],
+      "expectedAppendOnly": false,
+      "reviewCount": 1,
+      "latencyMs": 0.049
+    },
+    {
+      "id": "heldout-cross-list-item-excluded",
+      "split": "held-out",
+      "provenance": "constructed-spec-fixture",
+      "route": "deterministic",
+      "candidateCount": 1,
+      "expectedIntents": [
+        "remove"
+      ],
+      "predictedIntents": [
+        "remove"
+      ],
+      "expectedQuantities": [
+        null
+      ],
+      "predictedQuantities": [
+        null
+      ],
+      "expectedUnits": [
+        null
+      ],
+      "predictedUnits": [
+        null
+      ],
+      "intentExact": true,
+      "targetExact": true,
+      "choiceExact": true,
+      "priceRoleExact": true,
+      "appendOnlyExact": true,
+      "evidenceAligned": true,
+      "requiresChoice": [
+        false
+      ],
+      "expectedHumanResolution": [
+        false
+      ],
+      "expectedAppendOnly": false,
+      "reviewCount": 0,
+      "latencyMs": 0.036
+    },
+    {
+      "id": "heldout-mixed-explicit-and-unsupported-mentions",
+      "split": "held-out",
+      "provenance": "constructed-spec-fixture",
+      "route": "deterministic",
+      "candidateCount": 2,
+      "expectedIntents": [
+        "add",
+        "review"
+      ],
+      "predictedIntents": [
+        "add",
+        "review"
+      ],
+      "expectedQuantities": [
+        null,
+        null
+      ],
+      "predictedQuantities": [
+        null,
+        null
+      ],
+      "expectedUnits": [
+        null,
+        null
+      ],
+      "predictedUnits": [
+        null,
+        null
+      ],
+      "intentExact": true,
+      "targetExact": true,
+      "choiceExact": true,
+      "priceRoleExact": true,
+      "appendOnlyExact": true,
+      "evidenceAligned": true,
+      "requiresChoice": [
+        false,
+        true
+      ],
+      "expectedHumanResolution": [
+        false,
+        true
+      ],
+      "expectedAppendOnly": false,
+      "reviewCount": 1,
+      "latencyMs": 0.755
+    },
+    {
+      "id": "heldout-plain-item-extraction-only",
+      "split": "held-out",
+      "provenance": "constructed-spec-fixture",
+      "route": "deterministic",
+      "candidateCount": 2,
+      "expectedIntents": [
+        "review",
+        "review"
+      ],
+      "predictedIntents": [
+        "review",
+        "review"
+      ],
+      "expectedQuantities": [
+        null,
+        null
+      ],
+      "predictedQuantities": [
+        null,
+        null
+      ],
+      "expectedUnits": [
+        null,
+        null
+      ],
+      "predictedUnits": [
+        null,
+        null
+      ],
+      "intentExact": true,
+      "targetExact": true,
+      "choiceExact": true,
+      "priceRoleExact": true,
+      "appendOnlyExact": true,
+      "evidenceAligned": true,
+      "requiresChoice": [
+        true,
+        true
+      ],
+      "expectedHumanResolution": [
+        true,
+        true
+      ],
+      "expectedAppendOnly": true,
+      "reviewCount": 2,
+      "latencyMs": 0.123
+    },
+    {
+      "id": "heldout-audio-evidence-preserved",
+      "split": "held-out",
+      "provenance": "constructed-spec-fixture",
+      "route": "deterministic",
+      "candidateCount": 1,
+      "expectedIntents": [
+        "add"
+      ],
+      "predictedIntents": [
+        "add"
+      ],
+      "expectedQuantities": [
+        2
+      ],
+      "predictedQuantities": [
+        2
+      ],
+      "expectedUnits": [
+        "kilos"
+      ],
+      "predictedUnits": [
+        "kilos"
+      ],
+      "intentExact": true,
+      "targetExact": true,
+      "choiceExact": true,
+      "priceRoleExact": true,
+      "appendOnlyExact": true,
+      "evidenceAligned": true,
+      "requiresChoice": [
+        false
+      ],
+      "expectedHumanResolution": [
+        false
+      ],
+      "expectedAppendOnly": false,
+      "reviewCount": 0,
+      "latencyMs": 0.084
+    }
+  ],
+  "limitations": [
+    "All evaluation utterances are constructed specification fixtures, not real dictations.",
+    "Some utterances also appear in existing deterministic unit tests; the holdout is disjoint only within these three fixture files, not an independent empirical benchmark.",
+    "No persistence occurs in this evaluator; unsafeRouteCount is a candidate-routing proxy, not observed false commits.",
+    "Correction effort is not measured; resolutionCountProxy only counts review/choice cases.",
+    "Latency is a local Node measurement, not browser or device latency.",
+    "Real speech, device behavior, model download size and calibrated probabilities remain unevaluated."
+  ]
+}

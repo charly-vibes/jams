@@ -1,0 +1,112 @@
+[
+  {
+    "id": "dev-explicit-add",
+    "provenance": "constructed-spec-fixture",
+    "text": "agregá dos litros de leche",
+    "context": {
+      "listId": "dev-list",
+      "version": 1,
+      "items": []
+    },
+    "expected": {
+      "intents": [
+        "add"
+      ],
+      "targetIds": [
+        []
+      ],
+      "requiresChoice": [
+        false
+      ],
+      "priceRoles": [
+        null
+      ],
+      "appendOnly": false,
+      "requiresHumanResolution": [
+        false
+      ],
+      "quantities": [
+        2
+      ],
+      "units": [
+        "litros"
+      ]
+    }
+  },
+  {
+    "id": "dev-price-observation",
+    "provenance": "constructed-spec-fixture",
+    "text": "la leche cuesta 2100 pesos por litro",
+    "context": {
+      "listId": "dev-list",
+      "version": 2,
+      "items": [
+        {
+          "id": "milk",
+          "listId": "dev-list",
+          "label": "leche"
+        }
+      ]
+    },
+    "expected": {
+      "intents": [
+        "update-attribute"
+      ],
+      "targetIds": [
+        [
+          "milk"
+        ]
+      ],
+      "requiresChoice": [
+        true
+      ],
+      "priceRoles": [
+        "observation"
+      ],
+      "appendOnly": false,
+      "requiresHumanResolution": [
+        true
+      ],
+      "quantities": [
+        null
+      ],
+      "units": [
+        null
+      ]
+    }
+  },
+  {
+    "id": "dev-speech-repair",
+    "provenance": "constructed-spec-fixture",
+    "text": "arroz no fideos",
+    "context": {
+      "listId": "dev-list",
+      "version": 3,
+      "items": []
+    },
+    "expected": {
+      "intents": [
+        "ambiguous"
+      ],
+      "targetIds": [
+        []
+      ],
+      "requiresChoice": [
+        true
+      ],
+      "priceRoles": [
+        null
+      ],
+      "appendOnly": false,
+      "requiresHumanResolution": [
+        true
+      ],
+      "quantities": [
+        null
+      ],
+      "units": [
+        null
+      ]
+    }
+  }
+]

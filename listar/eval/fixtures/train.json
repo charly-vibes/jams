@@ -1,0 +1,130 @@
+[
+  {
+    "id": "train-increment-rice",
+    "provenance": "constructed-spec-fixture",
+    "text": "otro kilo de arroz",
+    "context": {
+      "listId": "train-list",
+      "version": 1,
+      "items": [
+        {
+          "id": "rice",
+          "listId": "train-list",
+          "label": "arroz",
+          "quantity": 1,
+          "unit": "kilo"
+        }
+      ]
+    },
+    "expected": {
+      "intents": [
+        "increment"
+      ],
+      "targetIds": [
+        [
+          "rice"
+        ]
+      ],
+      "requiresChoice": [
+        false
+      ],
+      "priceRoles": [
+        null
+      ],
+      "appendOnly": false,
+      "requiresHumanResolution": [
+        false
+      ],
+      "quantities": [
+        1
+      ],
+      "units": [
+        "kilo"
+      ]
+    }
+  },
+  {
+    "id": "train-set-milk",
+    "provenance": "constructed-spec-fixture",
+    "text": "poné dos paquetes de yerba",
+    "context": {
+      "listId": "train-list",
+      "version": 2,
+      "items": [
+        {
+          "id": "yerba",
+          "listId": "train-list",
+          "label": "yerba",
+          "quantity": 1,
+          "unit": "paquetes"
+        }
+      ]
+    },
+    "expected": {
+      "intents": [
+        "set"
+      ],
+      "targetIds": [
+        [
+          "yerba"
+        ]
+      ],
+      "requiresChoice": [
+        false
+      ],
+      "priceRoles": [
+        null
+      ],
+      "appendOnly": false,
+      "requiresHumanResolution": [
+        false
+      ],
+      "quantities": [
+        2
+      ],
+      "units": [
+        "paquetes"
+      ]
+    }
+  },
+  {
+    "id": "train-query-rice",
+    "provenance": "constructed-spec-fixture",
+    "text": "¿ya hay arroz?",
+    "context": {
+      "listId": "train-list",
+      "version": 3,
+      "items": [
+        {
+          "id": "rice",
+          "listId": "train-list",
+          "label": "arroz"
+        }
+      ]
+    },
+    "expected": {
+      "intents": [
+        "query"
+      ],
+      "targetIds": [
+        []
+      ],
+      "requiresChoice": [
+        false
+      ],
+      "priceRoles": [
+        null
+      ],
+      "appendOnly": false,
+      "requiresHumanResolution": [
+        true
+      ],
+      "quantities": [
+        null
+      ],
+      "units": [
+        null
+      ]
+    }
+  }
+]

@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#10131a">
+  <meta name="description" content="Crea listas de compras y tareas con tu voz.">
+  <link rel="manifest" href="./manifest.json">
+  <link rel="stylesheet" href="./style.css">
+  <title>Listar</title>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <button id="back-button" class="icon-button hidden" type="button" aria-label="Volver a listas">←</button>
+      <div class="brand"><span class="brand-mark">L</span><span>Listar</span></div>
+      <button id="create-list" class="icon-button" type="button" aria-label="Crear lista">＋</button>
+    </header>
+
+    <section id="home-view" aria-labelledby="home-heading">
+      <p class="eyebrow">TODO EN SU LUGAR</p>
+      <h1 id="home-heading">Tus listas</h1>
+      <p class="subhead">Ideas, compras y tareas listas para escuchar.</p>
+      <div id="lists-grid" class="lists-grid" aria-live="polite"></div>
+      <p id="home-empty" class="empty-state hidden">Todavía no hay listas. Crea una para empezar.</p>
+    </section>
+
+    <section id="list-view" class="hidden" aria-labelledby="list-heading">
+      <div class="list-title-row">
+        <div><p class="eyebrow">TU LISTA</p><h1 id="list-heading"></h1></div>
+        <div class="list-actions">
+          <button id="export-copy" class="icon-button" type="button" aria-label="Copiar lista">⧉</button>
+          <button id="export-share" class="icon-button" type="button" aria-label="Compartir lista">↗</button>
+          <button id="settings-button" class="icon-button" type="button" aria-label="Configuración">⚙</button>
+          <button id="rename-list" class="icon-button" type="button" aria-label="Renombrar lista">✎</button>
+          <button id="delete-list" class="icon-button danger" type="button" aria-label="Eliminar lista">×</button>
+        </div>
+      </div>
+      <div id="items-list" class="items-list" aria-live="polite"></div>
+      <p id="items-empty" class="empty-state hidden">Aún no hay artículos. Puedes dictarlos con el micrófono.</p>
+      <button id="clear-done" class="text-button hidden" type="button">Limpiar completados</button>
+      <section class="capture-card" aria-label="Agregar artículos por voz">
+        <div class="capture-heading"><span class="pulse-dot"></span><span id="capture-status">Agrega artículos hablando</span></div>
+        <button id="record-button" class="record-button" type="button" aria-label="Grabar una lista"><span id="record-icon">🎙</span></button>
+        <p id="record-timer" class="timer hidden">00:00</p>
+        <div class="capture-tools">
+          <label for="audio-file" class="upload-button">↑ Subir audio</label>
+          <input id="audio-file" type="file" accept="audio/*" class="visually-hidden">
+          <button id="open-settings" class="text-button" type="button">Idioma, modelo y audios</button>
+        </div>
+        <div id="progress-region" class="progress-region hidden" role="status" aria-live="polite">
+          <span id="progress-message"></span>
+          <button id="cancel-transcription" class="text-button" type="button">Cancelar</button>
+        </div>
+      </section>
+      <p id="app-status" class="app-status" role="status" aria-live="polite"></p>
+    </section>
+  </main>
+
+  <dialog id="list-dialog" class="modal">
+    <form id="list-form" method="dialog">
+      <p class="eyebrow">NUEVA LISTA</p><h2 id="list-dialog-title">Crear lista</h2>
+      <label for="list-emoji">Emoji</label><input id="list-emoji" maxlength="8" value="🛒">
+      <label for="list-name">Nombre</label><input id="list-name" maxlength="80" required placeholder="Compras">
+      <div class="modal-actions"><button id="list-cancel" class="secondary-button" type="button">Cancelar</button><button class="primary-button" type="submit">Guardar</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="settings-dialog" class="modal">
+    <form id="settings-form" method="dialog">
+      <p class="eyebrow">PREFERENCIAS</p><h2>Configuración</h2>
+      <label for="language-setting">Idioma del audio</label>
+      <select id="language-setting">
+        <option value="es">Español</option>
+        <option value="en">English</option>
+        <option value="auto">Detectar automáticamente</option>
+      </select>
+      <label for="model-setting">Modelo de transcripción</label>
+      <select id="model-setting">
+        <option value="tiny">Tiny · rápido</option>
+        <option value="base">Base · equilibrado</option>
+        <option value="small">Small · preciso</option>
+      </select>
+      <label class="retention-option"><input id="save-audio-setting" type="checkbox"> Guardar audios para volver a transcribir</label>
+      <button id="clear-audio" class="secondary-button full-width" type="button">Borrar los audios de esta lista</button>
+      <div class="modal-actions"><button id="settings-cancel" class="secondary-button" type="button">Cancelar</button><button class="primary-button" type="submit">Guardar</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="preview-dialog" class="modal preview-modal">
+    <form id="preview-form" method="dialog">
+      <p id="preview-eyebrow" class="eyebrow">REVISA ANTES DE AGREGAR</p><h2 id="preview-heading">Artículos detectados</h2>
+      <p id="preview-description" class="subhead">Puedes editar cada nombre y cantidad. Solo se agregan los seleccionados.</p>
+      <div id="preview-rows" class="preview-rows"></div>
+      <div class="modal-actions"><button id="preview-cancel" class="secondary-button" type="button">Cancelar</button><button id="confirm-append" class="primary-button" type="submit">Agregar a la lista</button></div>
+    </form>
+  </dialog>
+
+  <script type="module" src="./script.js"></script>
+</body>
+</html>

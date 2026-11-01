@@ -2,18 +2,16 @@
 // jams-y8c.
 import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { List, Item, Audio } from '../db.js';
+import { DB_NAME, DB_VERSION, List, Item, Audio } from '../db.js';
 
 // --- Setup: IndexedDB shim for Node ---
 import { indexedDB, IDBKeyRange } from 'fake-indexeddb';
 globalThis.indexedDB = indexedDB;
 globalThis.IDBKeyRange = IDBKeyRange;
-const DB_NAME = 'listar';
-
 async function clearStores() {
   // Open with the same schema as db.js (incl. indexes), then clear each store.
   const db = await new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
     req.onupgradeneeded = (e) => {
@@ -34,16 +32,16 @@ async function clearStores() {
         s.createIndex('listId', 'listId', { unique: false });
         s.createIndex('createdAt', 'createdAt', { unique: false });
       }
+      if (!db_.objectStoreNames.contains('operations')) db_.createObjectStore('operations', { keyPath: 'operationId' });
     };
   });
-  for (const s of ['lists', 'items', 'audio']) {
-    await new Promise((resolve, reject) => {
-      const tx = db.transaction(s, 'readwrite');
-      tx.objectStore(s).clear();
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-  }
+  await new Promise((resolve, reject) => {
+    const stores = ['lists', 'items', 'audio', 'operations'].filter((store) => db.objectStoreNames.contains(store));
+    const tx = db.transaction(stores, 'readwrite');
+    for (const store of stores) tx.objectStore(store).clear();
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+  });
   db.close();
 }
 
@@ -89,6 +87,7 @@ describe('List store', () => {
 describe('Item store', () => {
   beforeEach(async () => { await clearStores(); });
   test('add returns record with all fields incl listId, done:false', async () => {
+    await List.put({ id: 'list-1', name: 'list-1', emoji: '', createdAt: 0, order: 0 });
     const rec = await Item.add({ listId: 'list-1', label: 'Leche', text: '2 litros de leche', quantity: 2, unit: 'litros' });
     assert.ok(rec.id);
     assert.equal(rec.listId, 'list-1');
@@ -102,6 +101,8 @@ describe('Item store', () => {
   });
 
   test('list returns items for listId ordered by order asc', async () => {
+    await List.put({ id: 'L1', name: 'L1', emoji: '', createdAt: 0, order: 0 });
+    await List.put({ id: 'L2', name: 'L2', emoji: '', createdAt: 0, order: 1 });
     await Item.add({ listId: 'L1', label: 'B', order: 2 });
     await Item.add({ listId: 'L1', label: 'A', order: 1 });
     await Item.add({ listId: 'L2', label: 'Other' });
@@ -110,6 +111,7 @@ describe('Item store', () => {
   });
 
   test('put updates item', async () => {
+    await List.put({ id: 'L', name: 'L', emoji: '', createdAt: 0, order: 0 });
     const added = await Item.add({ listId: 'L', label: 'Old' });
     await Item.put({ ...added, label: 'New', done: true });
     const items = await Item.list('L');
@@ -118,6 +120,7 @@ describe('Item store', () => {
   });
 
   test('del removes item', async () => {
+    await List.put({ id: 'L', name: 'L', emoji: '', createdAt: 0, order: 0 });
     const added = await Item.add({ listId: 'L', label: 'DeleteMe' });
     await Item.del(added.id);
     const items = await Item.list('L');

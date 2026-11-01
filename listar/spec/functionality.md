@@ -69,7 +69,10 @@ split(transcript: string) → [{ label, text, quantity?, unit? }]
 
 This contract is the seam for a future optional "smart mode" (v2,
 opt-in, capability-gated) — it plugs in behind the same interface without
-touching the data model or the preview UX.
+touching the data model or the preview UX **for append-only item extraction**.
+Contextual commands use the separate `analyze()` candidate interface described
+in [the integration design](contextual-commands.md#separate-item-extraction-from-command-proposals);
+flat splitter output cannot authorize updates to existing items.
 
 ### Splitting procedure
 
@@ -157,19 +160,35 @@ listar/
 - Empty/hallucinated transcript → Transcript Filter handles (above); nothing appended silently.
 - Storage unavailable (private mode) → read-only warning; transcription still works.
 
-## Smart Mode (v2 plan): fine-tuned tiny structurer
+## Contextual commands and attributes
 
-The preferred v2 path for smarter splitting is a **fine-tuned tiny text model**
+The [contextual-command design](contextual-commands.md) incorporates the archived
+2026-10-28–29 discussion: typed attributes/prices, explicit commands against the
+active list, source evidence, ambiguity review and atomic versioned commits.
+It preserves v1's `split()` and append/preview flow. The contextual analyzer,
+confirmation UI, typed attributes and atomic commits are implemented. Release
+verification in a real browser/device and labeled dictation evaluation remain
+open in Beads `jams-0rt.1`.
+
+## Smart Mode (v2 candidate): fine-tuned tiny structurer
+
+After deterministic parsing and context resolution have been evaluated, a
+preferred model candidate for smarter splitting is a **fine-tuned tiny text model**
 (SmolLM/mT5-class, ONNX, ~30–150 MB q4) mapping `transcript → items` — *not* an
 instruct LLM (too heavy, see review) and *not* an end-to-end fine-tuned Whisper
 (synthetic-audio domain gap; loses the transcript). Training data is pure
 text→text, synthesizable at scale from templates + injected noise.
 
-- Plugs into the strategy contract above; heuristic splitter remains the
+- Model choice follows measured failures and the
+  [routing evaluation policy](contextual-commands.md#evaluate-deterministic-rules-before-model-escalation);
+  a model is optional, and agreement alone is not a correctness probability.
+- For item extraction, plugs into the strategy contract above; heuristic splitter remains the
   fallback (model not downloaded / low-memory device).
 - Emits a flat line format parsed by a trivial reader — no JSON grammar decoding.
 - **Promotion gate:** must beat heuristics on the golden corpus AND the negative
-  fixtures, validated on real dictation samples, before becoming default.
+  fixtures, validated on real dictation samples, before becoming default for
+  item extraction. Contextual model promotion additionally requires the separate
+  candidate adapter and command/ambiguity evaluation in the integration design.
 
 ## Verification
 

@@ -135,6 +135,11 @@ const UNITS = new Set([
   'piezas', 'pza', 'pzas', 'kg', 'g', 'l', 'ml',
 ]);
 
+/** Return whether a unit token is recognized by the legacy splitter. */
+export function isSupportedQuantityUnit(unit) {
+  return typeof unit === 'string' && UNITS.has(unit.toLocaleLowerCase('es'));
+}
+
 /** Parse a single quantity token (digit or Spanish number word) → Number|null. */
 function parseQtyToken(tok) {
   tok = tok.toLowerCase();

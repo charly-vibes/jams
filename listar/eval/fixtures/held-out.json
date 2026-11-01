@@ -1,0 +1,666 @@
+[
+  {
+    "id": "heldout-increment-one-target",
+    "provenance": "constructed-spec-fixture",
+    "text": "otro litro de leche",
+    "context": {
+      "listId": "held-list",
+      "version": 7,
+      "items": [
+        {
+          "id": "milk-one",
+          "listId": "held-list",
+          "label": "leche",
+          "quantity": 1,
+          "unit": "litros"
+        }
+      ]
+    },
+    "expected": {
+      "intents": [
+        "increment"
+      ],
+      "targetIds": [
+        [
+          "milk-one"
+        ]
+      ],
+      "requiresChoice": [
+        false
+      ],
+      "priceRoles": [
+        null
+      ],
+      "appendOnly": false,
+      "requiresHumanResolution": [
+        false
+      ],
+      "quantities": [
+        1
+      ],
+      "units": [
+        "litro"
+      ]
+    }
+  },
+  {
+    "id": "heldout-set-quantity",
+    "provenance": "constructed-spec-fixture",
+    "text": "poné dos litros de leche",
+    "context": {
+      "listId": "held-list",
+      "version": 8,
+      "items": [
+        {
+          "id": "milk-one",
+          "listId": "held-list",
+          "label": "leche",
+          "quantity": 1,
+          "unit": "litros"
+        }
+      ]
+    },
+    "expected": {
+      "intents": [
+        "set"
+      ],
+      "targetIds": [
+        [
+          "milk-one"
+        ]
+      ],
+      "requiresChoice": [
+        false
+      ],
+      "priceRoles": [
+        null
+      ],
+      "appendOnly": false,
+      "requiresHumanResolution": [
+        false
+      ],
+      "quantities": [
+        2
+      ],
+      "units": [
+        "litros"
+      ]
+    }
+  },
+  {
+    "id": "heldout-repeated-add-choice",
+    "provenance": "constructed-spec-fixture",
+    "text": "agregá leche",
+    "context": {
+      "listId": "held-list",
+      "version": 9,
+      "items": [
+        {
+          "id": "milk-one",
+          "listId": "held-list",
+          "label": "leche",
+          "quantity": 1,
+          "unit": "litros"
+        }
+      ]
+    },
+    "expected": {
+      "intents": [
+        "add"
+      ],
+      "targetIds": [
+        []
+      ],
+      "requiresChoice": [
+        true
+      ],
+      "priceRoles": [
+        null
+      ],
+      "appendOnly": false,
+      "requiresHumanResolution": [
+        true
+      ],
+      "quantities": [
+        null
+      ],
+      "units": [
+        null
+      ]
+    }
+  },
+  {
+    "id": "heldout-duplicate-remove-targets",
+    "provenance": "constructed-spec-fixture",
+    "text": "sacá la leche",
+    "context": {
+      "listId": "held-list",
+      "version": 10,
+      "items": [
+        {
+          "id": "milk-bottle",
+          "listId": "held-list",
+          "label": "leche"
+        },
+        {
+          "id": "milk-box",
+          "listId": "held-list",
+          "label": "leche"
+        }
+      ]
+    },
+    "expected": {
+      "intents": [
+        "remove"
+      ],
+      "targetIds": [
+        [
+          "milk-bottle",
+          "milk-box"
+        ]
+      ],
+      "requiresChoice": [
+        true
+      ],
+      "priceRoles": [
+        null
+      ],
+      "appendOnly": false,
+      "requiresHumanResolution": [
+        true
+      ],
+      "quantities": [
+        null
+      ],
+      "units": [
+        null
+      ]
+    }
+  },
+  {
+    "id": "heldout-correction-ambiguity",
+    "provenance": "constructed-spec-fixture",
+    "text": "leche no yogur",
+    "context": {
+      "listId": "held-list",
+      "version": 11,
+      "items": []
+    },
+    "expected": {
+      "intents": [
+        "ambiguous"
+      ],
+      "targetIds": [
+        []
+      ],
+      "requiresChoice": [
+        true
+      ],
+      "priceRoles": [
+        null
+      ],
+      "appendOnly": false,
+      "requiresHumanResolution": [
+        true
+      ],
+      "quantities": [
+        null
+      ],
+      "units": [
+        null
+      ]
+    }
+  },
+  {
+    "id": "heldout-price-observation-missing-fields",
+    "provenance": "constructed-spec-fixture",
+    "text": "la leche sale 2000 pesos por litro",
+    "context": {
+      "listId": "held-list",
+      "version": 12,
+      "items": [
+        {
+          "id": "milk-one",
+          "listId": "held-list",
+          "label": "leche"
+        }
+      ]
+    },
+    "expected": {
+      "intents": [
+        "update-attribute"
+      ],
+      "targetIds": [
+        [
+          "milk-one"
+        ]
+      ],
+      "requiresChoice": [
+        true
+      ],
+      "priceRoles": [
+        "observation"
+      ],
+      "appendOnly": false,
+      "requiresHumanResolution": [
+        true
+      ],
+      "quantities": [
+        null
+      ],
+      "units": [
+        null
+      ]
+    }
+  },
+  {
+    "id": "heldout-price-requirement-typed-currency",
+    "provenance": "constructed-spec-fixture",
+    "text": "no más de 1900 ARS por litro para la leche",
+    "context": {
+      "listId": "held-list",
+      "version": 13,
+      "items": [
+        {
+          "id": "milk-one",
+          "listId": "held-list",
+          "label": "leche"
+        }
+      ]
+    },
+    "expected": {
+      "intents": [
+        "update-attribute"
+      ],
+      "targetIds": [
+        [
+          "milk-one"
+        ]
+      ],
+      "requiresChoice": [
+        true
+      ],
+      "priceRoles": [
+        "requirement"
+      ],
+      "appendOnly": false,
+      "requiresHumanResolution": [
+        true
+      ],
+      "quantities": [
+        null
+      ],
+      "units": [
+        null
+      ]
+    }
+  },
+  {
+    "id": "heldout-price-requirement-missing-currency",
+    "provenance": "constructed-spec-fixture",
+    "text": "no más de 1900 pesos por litro para la leche",
+    "context": {
+      "listId": "held-list",
+      "version": 14,
+      "items": [
+        {
+          "id": "milk-one",
+          "listId": "held-list",
+          "label": "leche"
+        }
+      ]
+    },
+    "expected": {
+      "intents": [
+        "update-attribute"
+      ],
+      "targetIds": [
+        [
+          "milk-one"
+        ]
+      ],
+      "requiresChoice": [
+        true
+      ],
+      "priceRoles": [
+        "requirement"
+      ],
+      "appendOnly": false,
+      "requiresHumanResolution": [
+        true
+      ],
+      "quantities": [
+        null
+      ],
+      "units": [
+        null
+      ]
+    }
+  },
+  {
+    "id": "heldout-unsupported-delete-verb",
+    "provenance": "constructed-spec-fixture",
+    "text": "borrá la leche",
+    "context": {
+      "listId": "held-list",
+      "version": 15,
+      "items": [
+        {
+          "id": "milk-one",
+          "listId": "held-list",
+          "label": "leche"
+        }
+      ]
+    },
+    "expected": {
+      "intents": [
+        "review"
+      ],
+      "targetIds": [
+        []
+      ],
+      "requiresChoice": [
+        true
+      ],
+      "priceRoles": [
+        null
+      ],
+      "appendOnly": false,
+      "requiresHumanResolution": [
+        true
+      ],
+      "quantities": [
+        null
+      ],
+      "units": [
+        null
+      ]
+    }
+  },
+  {
+    "id": "heldout-unsupported-question",
+    "provenance": "constructed-spec-fixture",
+    "text": "¿cuánta leche queda?",
+    "context": {
+      "listId": "held-list",
+      "version": 16,
+      "items": [
+        {
+          "id": "milk-one",
+          "listId": "held-list",
+          "label": "leche"
+        }
+      ]
+    },
+    "expected": {
+      "intents": [
+        "review"
+      ],
+      "targetIds": [
+        []
+      ],
+      "requiresChoice": [
+        true
+      ],
+      "priceRoles": [
+        null
+      ],
+      "appendOnly": false,
+      "requiresHumanResolution": [
+        true
+      ],
+      "quantities": [
+        null
+      ],
+      "units": [
+        null
+      ]
+    }
+  },
+  {
+    "id": "heldout-parser-failure-falls-back-to-review",
+    "provenance": "constructed-spec-fixture",
+    "text": "borrame la lista",
+    "parserFailure": true,
+    "expectedRoute": "deterministic-fallback",
+    "context": {
+      "listId": "held-list",
+      "version": 160,
+      "items": [
+        {
+          "id": "milk-one",
+          "listId": "held-list",
+          "label": "leche"
+        }
+      ]
+    },
+    "expected": {
+      "intents": [
+        "review"
+      ],
+      "targetIds": [
+        []
+      ],
+      "requiresChoice": [
+        true
+      ],
+      "priceRoles": [
+        null
+      ],
+      "appendOnly": false,
+      "requiresHumanResolution": [
+        true
+      ],
+      "quantities": [
+        null
+      ],
+      "units": [
+        null
+      ]
+    }
+  },
+  {
+    "id": "heldout-invalid-snapshot",
+    "provenance": "constructed-spec-fixture",
+    "text": "sacá el pan",
+    "context": {
+      "listId": "held-list",
+      "version": "stale",
+      "items": [
+        {
+          "id": "bread-one",
+          "listId": "held-list",
+          "label": "pan"
+        }
+      ]
+    },
+    "expected": {
+      "intents": [
+        "review"
+      ],
+      "targetIds": [
+        []
+      ],
+      "requiresChoice": [
+        true
+      ],
+      "priceRoles": [
+        null
+      ],
+      "appendOnly": false,
+      "requiresHumanResolution": [
+        true
+      ],
+      "quantities": [
+        null
+      ],
+      "units": [
+        null
+      ]
+    }
+  },
+  {
+    "id": "heldout-cross-list-item-excluded",
+    "provenance": "constructed-spec-fixture",
+    "text": "sacá la leche fresca",
+    "context": {
+      "listId": "held-list",
+      "version": 17,
+      "items": [
+        {
+          "id": "milk-other-list",
+          "listId": "other-list",
+          "label": "leche fresca"
+        },
+        {
+          "id": "milk-current-list",
+          "listId": "held-list",
+          "label": "leche fresca"
+        }
+      ]
+    },
+    "expected": {
+      "intents": [
+        "remove"
+      ],
+      "targetIds": [
+        [
+          "milk-current-list"
+        ]
+      ],
+      "requiresChoice": [
+        false
+      ],
+      "priceRoles": [
+        null
+      ],
+      "appendOnly": false,
+      "requiresHumanResolution": [
+        false
+      ],
+      "quantities": [
+        null
+      ],
+      "units": [
+        null
+      ]
+    }
+  },
+  {
+    "id": "heldout-mixed-explicit-and-unsupported-mentions",
+    "provenance": "constructed-spec-fixture",
+    "text": "agregá leche y pan",
+    "context": {
+      "listId": "held-list",
+      "version": 18,
+      "items": []
+    },
+    "expected": {
+      "intents": [
+        "add",
+        "review"
+      ],
+      "targetIds": [
+        [],
+        []
+      ],
+      "requiresChoice": [
+        false,
+        true
+      ],
+      "priceRoles": [
+        null,
+        null
+      ],
+      "appendOnly": false,
+      "requiresHumanResolution": [
+        false,
+        true
+      ],
+      "quantities": [
+        null,
+        null
+      ],
+      "units": [
+        null,
+        null
+      ]
+    }
+  },
+  {
+    "id": "heldout-plain-item-extraction-only",
+    "provenance": "constructed-spec-fixture",
+    "text": "leche y pan",
+    "context": {
+      "listId": "held-list",
+      "version": 19,
+      "items": []
+    },
+    "expected": {
+      "intents": [
+        "review",
+        "review"
+      ],
+      "targetIds": [
+        [],
+        []
+      ],
+      "requiresChoice": [
+        true,
+        true
+      ],
+      "priceRoles": [
+        null,
+        null
+      ],
+      "appendOnly": true,
+      "requiresHumanResolution": [
+        true,
+        true
+      ],
+      "quantities": [
+        null,
+        null
+      ],
+      "units": [
+        null,
+        null
+      ]
+    }
+  },
+  {
+    "id": "heldout-audio-evidence-preserved",
+    "provenance": "constructed-spec-fixture",
+    "text": "agregá dos kilos de arroz",
+    "context": {
+      "listId": "held-list",
+      "version": 20,
+      "sourceAudioId": "synthetic-audio-ref",
+      "items": []
+    },
+    "expected": {
+      "intents": [
+        "add"
+      ],
+      "targetIds": [
+        []
+      ],
+      "requiresChoice": [
+        false
+      ],
+      "priceRoles": [
+        null
+      ],
+      "appendOnly": false,
+      "requiresHumanResolution": [
+        false
+      ],
+      "quantities": [
+        2
+      ],
+      "units": [
+        "kilos"
+      ]
+    }
+  }
+]
