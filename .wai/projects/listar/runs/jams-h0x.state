@@ -1,0 +1,13 @@
+ticket: jams-h0x
+branch: main
+status: complete
+brief: bd show jams-h0x + listar/spec/contextual-commands.md §§interpretation, confirmation, and persistence
+history:
+  - red: resolver/DOM tests failed because context-review.mjs did not exist
+  - green: snapshot-bound resolver, stable target/action/assertion choices, before/after/evidence preview, explicit confirmation via reducer+atomic commit
+  - fixes: typed price amount/currency/observedAt/source controls; requirements replace only same-role ID; observations preserved; persisted form→commit tests cover observation and requirement
+  - safety: queries show matching stable IDs read-only; ambiguous duplicate labels/corrections and repeated add require choice; incompatible units and unsupported command/question patterns remain review; `borrá`/`borrame` and interrogatives do not use append fallback; plain grocery extraction stays on splitter
+  - UX: cancel no writes; stale version rereads and refreshes proposal for reconfirmation; reload-required/blocked storage errors don't report success; blocked status remains visible while pending
+  - offline: context-review module added to service worker precache and recursive import closure tests
+  - verify: independent node --test listar/test/ 156/156; context-review suite 19/19; syntax checks context-review/script/sw; git diff --check
+  - deferred: arbitrary language coverage, browser/device rendering, real dictation and model evaluation remain unverified; no commit/push

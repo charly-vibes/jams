@@ -1,0 +1,13 @@
+ticket: jams-obu
+branch: main
+status: complete
+brief: bd show jams-obu + listar/spec/contextual-commands.md §§snapshot and connection lifecycle
+history:
+  - red: 17 tests initially failed on missing snapshot/commit/schema/lifecycle API
+  - green: DB v2, single-transaction snapshots, versioned legacy CRUD, atomic commits and durable replay receipts implemented
+  - lifecycle: connections close on transaction completion/abort/versionchange; pending opens dedupe; blocked upgrade gives visible Spanish guidance and clears on resume; VersionError requests reload; migration preserves v1 records and aborts safely
+  - integration: preview batch append uses stable operation/item IDs and atomic commit receipt; UI retries reuse timestamp/id; local import closure remains covered
+  - lead-fix: deep-clone commands and capture list/version before await; tests guard caller mutation race
+  - lead-fix: list deletion atomically clears only scoped receipts; old retry rejects after deletion; other lists retain receipts
+  - verify: node --test listar/test/ 137/137; focused command-commit 18/18; syntax checks db/app-core/script/sw; git diff --check
+  - deferred: real browser two-tab blocked/reload/retry smoke is tracked in jams-0rt.1 and unverified; no commit/push

@@ -1,0 +1,12 @@
+ticket: jams-kei
+branch: main
+status: complete
+brief: bd show jams-kei + listar/spec/contextual-commands.md
+history:
+  - red: reducer tests failed because confirmed-command module was absent
+  - red: lead review tests exposed increment overflow and unsupported unit without quantity
+  - green: pure confirmed-command reducer validates stable target IDs, list, quantity/unit compatibility, typed attributes, and atomic invalid batches
+  - semantics: query/noop return original snapshot; assertion IDs unique per item; attr append/replace/remove explicit with immutable id/role; independent attribute edits commute on item projection only
+  - integration: SW precaches reducer; recursive import-closure test includes reducer and DB/splitter dependencies
+  - verify: independent node --test listar/test/ 118/118; node --check listar/command-reducer.mjs; node --check listar/sw.js; git diff --check
+  - deferred: no browser/model claims; no commit/push

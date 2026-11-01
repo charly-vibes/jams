@@ -1,0 +1,11 @@
+ticket: jams-bc6
+branch: main
+status: complete
+brief: bd show jams-bc6 + listar/spec/contextual-commands.md
+history:
+  - red: tests exposed missing analyze module; later explicit add quantity and cross-list targeting were added as failing lead-review cases
+  - green: pure analyzer preserves snapshot/list/version, mentions, spans, audio references, intent distinctions and uncertainty; split() remains unchanged
+  - fixes: add proposal retains parsed quantity/unit; matching excludes records explicitly belonging to other lists
+  - integration: SW precaches analyze.mjs; test recursively verifies local static-import closure from app, worker and analyzer entrypoints
+  - verify: independent node --test listar/test/ 104/104; node --check listar/analyze.mjs; node --check listar/sw.js; git diff --check
+  - deferred: browser/device/offline behavior and model evaluation remain unverified; no commit/push

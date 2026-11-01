@@ -1,0 +1,16 @@
+ticket: jams-2ao
+branch: main
+brief: .wai/projects/listar/briefs/jams-2ao.md
+history:
+  - claim: completed; Codex subagent substitution per user authorization
+  - gates: baseline node --test listar/test/ was green (53 tests) before new tests
+  - brief: adapted; written after implementation began due parent delegation timing
+  - spawn: jams_2ao_impl; gpt-6-luna; direct collaboration spawn, not wai wrapper
+  - verify: lead-side review; no configured cross-family verifier
+  - ship: no commit permitted by conservative profile
+  - stop: ticket boundary after verification
+  - gates: evidence added; baseline and fresh test output recorded
+  - brief: documented policy adaptation and exact executable verification criteria; not committed
+  - spawn: direct named collaboration spawn, not pipeline wrapper; already completed
+  - ship: implementation issue closed; no git commit as policy prohibits it; HITL gates remain recorded
+  - stop: completed jams-2ao boundary; fresh ticket is jams-4ud

@@ -1,0 +1,5 @@
+---
+tags: [pipeline-run:epic-orchestrator-2026-10-30-listar-settings-export-jams-2vb, pipeline-step:verify]
+---
+
+VERIFY jams-2vb — REVIEW_REQUIRED (lead-side only; no cross-family/browser verifier configured). Read jams-2vb acceptance, .wai/projects/listar/briefs/jams-2vb.md, listar/app-core.mjs, listar/script.js, listar/index.html, listar/test/settings-export.test.js, listar/test/app-shell.test.js, and child report. Findings fixed: settings use validated es/en/auto, tiny/base/small; saving off safely stores no blob/record and pendingAudioId is nullable so transcription still reaches append; per-list clear leaves other lists; export carries completion markers and quantity/unit; clipboard fallback is used when API unavailable/rejected; Web Share abort is treated as user cancellation. Fresh verification: node --test listar/test/ => 84 tests, 84 passed, 0 failed; node --check listar/script.js, app-core.mjs, sw.js, worker.js exit 0; git diff --check exit 0. Browser Web Share/Clipboard behavior remains unverified. No commit under conservative profile. Item writes and audio persistence remain separate operations; jams-obu governs command/appends atomicity later.

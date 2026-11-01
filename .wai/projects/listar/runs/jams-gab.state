@@ -1,0 +1,12 @@
+ticket: jams-gab
+branch: main
+status: complete
+brief: .wai/projects/listar/briefs/jams-gab.md
+history:
+  - claim: completed; attrs persistence contracts and dependency chain inspected
+  - gates: baseline node --test listar/test/ passed 87/87
+  - red: added invalid dimensional price basis and immutable replacement id/role tests; they failed before implementation
+  - green: validated canonical basis-unit sets and rejected explicit ID/role replacement changes
+  - review: lead review accepted; no conversion implied; contract documented in spec
+  - verify: node --test listar/test/ 94/94; node --check listar/db.js; git diff --check
+  - tracking: jams-gab closed; no git commit under conservative policy

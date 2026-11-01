@@ -1,0 +1,305 @@
+# Epic-orchestrator pipeline: lead orchestrates only, subagents implement.
+#
+# Encodes the orchestrator + subagents pattern (canon:
+# ~/.wai/resources/patterns/orchestrator-subagents.md) as enforceable steps.
+# Canon Invariant 8 — "Prose does not enforce": wherever the pattern is
+# load-bearing, encode the loop as a wai pipeline + brief template + status
+# recipe, and let the tooling refuse bad spawns.
+#
+# Canon invariants encoded by this loop:
+#   1. The lead orchestrates only (claim → brief → spawn → verify → ship).
+#   3. One ticket per advance — the loop ends in an explicit STOP at the
+#      ticket boundary; no chaining past it.
+#   4. Briefs are repo artifacts, committed before spawn.
+#   5. Verify before trust — reports are claims, not facts.
+#   7. Progress must be pokeable — spawns stream to a known log path.
+#
+# Usage: wai pipeline start epic-orchestrator --topic="<epic name>"
+
+[pipeline]
+name = "epic-orchestrator"
+description = "Orchestrator loop: claim one ready child, gate, brief, spawn a subagent, verify, ship, STOP"
+
+[pipeline.metadata]
+when = "Executing one ready child issue of an epic via subagent orchestration instead of inline implementation"
+skills = ["tdd", "rule-of-5-universal", "commit"]
+
+[[steps]]
+id = "claim"
+prompt = """
+{topic}: Orient and claim exactly one ready child issue from the epic.
+
+Run:
+- `wai prime`
+- `wai status`
+- `bd ready` if beads is present
+- `openspec list` if openspec is present
+- `wai search "<topic>"`
+
+Rules:
+- Select exactly one ready, unblocked child issue. Prefer P1, then P2, then P3.
+- Claim atomically: `bd update <id> --claim`.
+- Check for file-level conflicts with other in_progress tickets before writing code.
+- Write the durable per-ticket run state file (create if absent):
+  `.wai/projects/<project>/runs/<ticket>.state` containing the ticket id,
+  branch, brief path (empty until the brief step), and an empty step history.
+- Retry entry: if the state file already exists, read it and run the drift
+  check before resuming — refuse to resume when HEAD advanced without a
+  completed step accounting for the advance. A mid-run advance is EXPECTED
+  (the implementor commits) and is never flagged as drift. Retry reads
+  state and resumes from the last completed gate, not from the beginning.
+- If the ticket is ambiguous or larger than one session, stop and file follow-up tickets.
+
+Record orientation: `wai add research "ORIENT: selected <id>; why chosen; blockers checked"`
+State checkpoint: append the step id + sha (current HEAD) to the state file before advancing.
+{{block:advance-trail}}
+"""
+
+[steps.gate.structural]
+min_artifacts = 1
+types = ["research"]
+
+[[steps]]
+id = "gates"
+prompt = """
+{topic}: Run pre-work gates before any implementation.
+
+Run:
+- the project's quality gates (`wai pipeline gates <pipeline>` or repo equivalent)
+- test suite baseline so later failures are attributable to this change only
+- openspec validation if the ticket references an openspec change
+
+Do not start implementation until gates are understood and baseline is green.
+
+Record gate status: `wai add research "GATES: <commands run>; results"`
+State checkpoint: append the step id + sha (current HEAD) to the state file before advancing.
+{{block:advance-trail}}
+"""
+
+[steps.gate.structural]
+min_artifacts = 1
+types = ["research"]
+
+[[steps]]
+id = "brief"
+prompt = """
+{topic}: Write the subagent brief as a committed repo artifact.
+
+Rules:
+- Briefs are repo artifacts, not /tmp files (canon Invariant 4).
+- Write the brief from the repo's brief template into a committed path:
+  `.wai/projects/<project>/briefs/<slug>.md` and record its path in the
+  state file's brief path field.
+- Include the three mandatory brief sections:
+  - `## Why` — delegation rationale: why this ticket goes to a subagent
+    instead of being done in the lead session.
+  - `## Completion criteria` — runnable commands only; exit 0 = done. A
+    criterion that cannot be executed is not a completion criterion.
+  - `## Spawn model` — the model to spawn plus a context ceiling
+    expressed as `≤ N%` of the actual model window, computed at spawn.
+    Fixed token counts are invalid — model windows differ per model.
+- Also include: ticket ID, desired outcome, out of scope, exact files,
+  exact test/review commands, red/green/refactor sequence, follow-up
+  threshold.
+- Verifier evidence contract (wai-px4g): instruct the verify session that
+  its review artifact must cite the artifacts it read and include fresh
+  test-run output before recording CONFIRM — otherwise REVIEW_REQUIRED.
+- Commit the brief before spawn so the subagent starts from a clean tree.
+
+Record brief: `wai add design "BRIEF: <path>; committed"`
+State checkpoint: append the step id + sha (current HEAD) to the state file before advancing.
+{{block:advance-trail}}
+"""
+
+[steps.gate.structural]
+min_artifacts = 1
+types = ["design"]
+
+[[steps]]
+id = "spawn"
+prompt = """
+{topic}: Spawn a named, resumable subagent session for the brief.
+
+Rules:
+- Refuse to spawn without a committed brief — the brief must be committed
+  at its recorded path before any spawn happens.
+- Before spawning, cd into the target worktree (or repo checkout) and run
+  `wai pipeline preflight`. It verifies lefthook, bd, and testaruda are
+  runnable there and fails fast with an actionable fix message. Refuse to
+  spawn until preflight passes — opaque mid-run lefthook/bd failures
+  (observed: 7+11+17 in one week) are the exact failure mode this prevents.
+  No auto-install at spawn; fix the environment or fix the plan.
+- Refuse to spawn without the state file — the spawn must be resumable
+  through it.
+- The spawn must be resumable and discoverable (canon Invariant 2) — a spawn
+  that leaves no session record loses usage/cost/trace forever.
+- Stream output to a known log path the orchestrator can tail (canon
+  Invariant 7). One command must answer: what is running, which step, done
+  or stuck, where is the log.
+- Poll or log rather than blind-blocking.
+- Spawning MUST go through the canonical spawn wrapper: `wai pipeline spawn
+  "<name>" "$(cat <brief-path>)" [--budget <minutes>]`. It launches the
+  subagent detached under a wall-clock budget, streams output to the
+  canonical log path, and writes a checkpoint — one command satisfies the
+  background/log/budget/checkpoint invariants. Improvised manual `pi -p
+  ... &` incantations are a violation of this step: they re-derive the
+  backgrounding, log path, budget, and resume syntax by hand and get them
+  wrong under pressure (October 2026: 178 blocking `pi -p` calls, ~48h;
+  several wedged until 3600–7200s bash timeouts).
+- Probe progress with `wai pipeline spawn-status [name]` — one line per
+  spawn answering running/exited/stuck + log path. Waiting on
+  CI/worktree status MUST use the canonical wait primitive:
+  `wai pipeline wait <pr> [--timeout <minutes>]`. It blocks via gh's own
+  watch mode and emits exactly one summary line — never re-poll to
+  reconstruct a result. Free-form `sleep <N>` poll loops (`sleep 300;
+  gh pr checks`) are a violation: each poll burns a tool turn plus
+  minutes of blocked wall-clock (observed: 539 sleep-poll commands,
+  ~53h in one week).
+- Retry is a new named session (canon Invariant 6): zero commits = clean
+  retry, partial commits = manual resume. Retry names get a `-retry`
+  suffix. Never resume a wedged spawn in-place.
+  Exception (canon Invariant 6): an interrupted-but-healthy spawn (harness
+  timeout, orchestrator crash) with evidence of progress (commits or a
+  session record) resumes the existing named session via
+  `wai pipeline spawn-resume "<name>"`. Re-prompting the full brief from
+  scratch in that situation re-runs finished work (observed: 30–60 min
+  lost) and is a violation of this step.
+- The spawn wrapper enforces the wall-clock budget by default (30m) —
+  override with `--budget` sized to the ticket as stated in the brief
+  (canon Invariant 8). A wedged subagent must cost minutes of orchestrator
+  attention, not hours: bare foreground `pi -p` calls that block until the
+  harness timeout are forbidden — background + probe, always.
+
+Record spawn: `wai add research "SPAWN: <session name>; log=<path>"`
+State checkpoint: append the step id + sha (current HEAD) to the state file before advancing.
+If the recorded log path or session record cannot be located, the spawn
+failed regardless of what the report claims — do not pass this step.
+{{block:advance-trail}}
+"""
+
+[steps.gate.structural]
+min_artifacts = 1
+types = ["research"]
+
+[[steps]]
+id = "verify"
+prompt = """
+{topic}: Verify before trust (canon Invariant 5) — isolation-based.
+
+Primary path (a second model family is configured): spawn a read-only
+verifier as a separate NAMED session `subagent:<ticket>:verify` and have it
+cross-check the implementor's report against reality.
+
+Verifier rules:
+- The verifier session is named `subagent:<ticket>:verify` and is resumable
+  and discoverable like any other spawn (canon Invariant 2).
+- The verifier runs read-only tools only: it inspects, it does not edit,
+  commit, or close anything. It cannot spawn further subagents.
+- Use a different model family than the implementor when one is
+  configured — independent judgment, not a second copy of the same model.
+- Default cross-family pair (2026-10-20): implementor glm-class → verifier
+  `openrouter/deepseek/deepseek-v4-flash` (1M window). Do not use
+  `moonshotai/kimi-k2.5` as verifier — it aborted 2× provider-side with
+  zero progress in a pinky-ee2 run (observed 2026-10-20). If deepseek
+  fails provider-side, fall back to the next available cross-family
+  model; do not retry the failed family more than once. If a future
+  implementor runs on deepseek, the verifier must switch family again.
+- The verifier cross-checks the implementor's report:
+  - commits listed in the report vs `git log` on the ticket's
+    branch/worktree — do they actually exist and match the claims?
+  - report claims vs ticket-tracker state (beads) — does the tracker
+    reflect the claimed work?
+- Verifier evidence contract (wai-px4g): the review artifact may record
+  CONFIRM only when it cites at least one read artifact path (e.g.
+  `.wai/projects/<p>/research/...`) and includes fresh test-run output
+  (the actual command + result, pasted). Lacking either, record
+  REVIEW_REQUIRED instead — never CONFIRM on claims alone.
+- A contradiction between report and reality fails the run —
+  no advance to ship. The discrepancy is a finding — fix or file it, then
+  re-verify with a fresh verifier session.
+
+Single-model degradation: when no second model family is configured, skip
+the spawned verifier and apply the lead-side checks below instead. This
+degradation is non-blocking — the run may advance once the lead-side
+checks pass — but the recorded verdict is REVIEW_REQUIRED with a note that
+verification was lead-side only, never CONFIRM.
+
+Lead-side checks (degradation path):
+- State checkpoint: record the branch head at verify entry — append the
+  step id + sha (current HEAD) to the state file before any verification.
+- `git log` / `git diff` vs the report — do the commits match the claims?
+- repo gates: run the relevant test suite; reports are claims, not facts
+- ticket state: does beads reflect the claimed work?
+
+Record verification: `wai add research "VERIFY: <evidence>"` — the review
+artifact must cite the artifacts read and include fresh test-run output
+before any CONFIRM verdict (verify-evidence oracle enforces this).
+State checkpoint: append the step id + sha (current HEAD) to the state file before advancing.
+{{block:advance-trail}}
+"""
+
+[steps.gate.structural]
+min_artifacts = 1
+types = ["research"]
+
+[[steps.gate.oracles]]
+name = "verify-evidence"
+description = "Verify review artifact must cite reads + fresh test-run output before CONFIRM"
+timeout = 30
+
+[[steps.gate.oracles]]
+name = "tests-pass"
+description = "Relevant tests must pass after verification"
+timeout = 300
+
+[[steps]]
+id = "ship"
+prompt = """
+{topic}: Ship the completed ticket.
+
+Do:
+- inspect `git diff` and commit atomically
+- never stage the beads database: `git add .beads` is a hard error (canon
+  Invariant 9) — the DB is already excluded by the global gitignore
+- close/update the beads ticket if applicable
+- mark openspec tasks complete if applicable
+- push only when project policy or user instruction explicitly says to push
+
+Record ship: `wai add research "SHIP: <commit/ticket state>"`
+State checkpoint: append the step id + sha (current HEAD) to the state file before advancing.
+{{block:advance-trail}}
+"""
+
+[steps.gate.structural]
+min_artifacts = 1
+types = ["research"]
+
+[[steps.gate.oracles]]
+name = "tests-pass"
+description = "Final tests must pass before close"
+timeout = 300
+
+[[steps]]
+id = "stop"
+prompt = """
+{topic}: STOP at the ticket boundary (canon Invariant 3).
+
+One ticket per advance: claim → brief → spawn → verify → ship → STOP.
+Do not chain past the ticket boundary. Inline execution is the path of
+least resistance and the historical failure mode (canon Invariant 1) —
+the next ticket starts a fresh run, not this one.
+
+Record STOP: `wai add research "STOP: ticket <id> complete; next run for next ticket"`
+State checkpoint: append the step id + sha (current HEAD) to the state file; the run is complete.
+{{block:advance-trail}}
+"""
+
+[steps.gate.structural]
+min_artifacts = 1
+types = ["research"]
+
+# Shared content blocks (wai-vsn6): referenced from step prompts as
+# {{block:<name>}} and expanded at load time. Rendered prompts unchanged.
+[[blocks]]
+name = "advance-trail"
+content = "Advance: `wai pipeline next`"

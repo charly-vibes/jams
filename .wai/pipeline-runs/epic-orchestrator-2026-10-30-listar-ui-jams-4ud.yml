@@ -1,0 +1,11 @@
+run_id: epic-orchestrator-2026-10-30-listar-ui-jams-4ud
+pipeline: epic-orchestrator
+topic: Listar UI jams-4ud
+created_at: '2026-10-30T00:55:38.655772879+00:00'
+current_step: 4
+approvals: {}
+epic: null
+child_issues: []
+child_runs: []
+handoff_artifact: null
+bypasses: []

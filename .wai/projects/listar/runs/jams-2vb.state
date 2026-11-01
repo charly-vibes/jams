@@ -1,0 +1,8 @@
+ticket: jams-2vb
+branch: main
+brief: .wai/projects/listar/briefs/jams-2vb.md
+history:
+  - claim: completed; selected after jams-4ud because settings depends on UI
+  - gates: baseline node --test listar/test/ passed 76/76
+  - brief: .wai/projects/listar/briefs/jams-2vb.md written, uncommitted
+  - spawn: jams_2ao_impl reused via direct collaboration followup; implementation in progress

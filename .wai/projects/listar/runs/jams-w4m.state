@@ -1,0 +1,11 @@
+ticket: jams-w4m
+status: complete-local-implementation
+brief: deterministic contextual baseline and parser adapter evaluation; see listar/spec/contextual-commands.md
+history:
+  - red: router/evaluation tests failed before analyzeWithFallback and evaluate.mjs existed
+  - green: deterministic fallback router, disjoint constructed fixture partitions, held-out-only report generator, route/evidence/quantity/unit checks
+  - fixes: unsafe route compares predicted candidates against labeled expected commands; parser flags do not disable required UI confirmation; report distinguishes abstention from resolution proxy
+  - verify: npm run eval:context regenerated JSON/Markdown; npm test 165/165; syntax checks passed; git diff --check passed
+  - report: 16 held-out constructed regression examples; metrics are not independent or real-speech accuracy; local Node timings only
+  - release-gates: genuine dictations, independent held-out labels, user correction effort, calibration, device latency, model size/promotion, installed browser/PWA smoke remain unverified in jams-0rt.1
+  - git: no commit or push under conservative policy

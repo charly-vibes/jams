@@ -1,0 +1,12 @@
+ticket: jams-4ud
+branch: main
+brief: .wai/projects/listar/briefs/jams-4ud.md
+history:
+  - claim: completed; selected because jams-2ao and db/splitter blockers are closed
+  - gates: baseline node --test listar/test/ passed 61/61; no build/lint configured
+  - brief: written to .wai/projects/listar/briefs/jams-4ud.md; uncommitted per policy
+  - spawn: jams_2ao_impl reused via followup_task for jams-4ud; direct collaboration per user/parent authorization
+  - active: implementation in progress; pipeline cursor has advanced to verify mechanically but no review has occurred yet
+  - implementation: child reports TDD red/green and Rule-of-5; lead verified acceptance files and fixes
+  - verify: lead-side review; fresh node:test 76/76, syntax checks for script/app-core/sw/worker, manifest JSON parse, git diff --check
+  - limitations: no browser/device runtime; share_target audio POST deferred to jams-rte; append transactions to be routed through jams-obu atomic versioning

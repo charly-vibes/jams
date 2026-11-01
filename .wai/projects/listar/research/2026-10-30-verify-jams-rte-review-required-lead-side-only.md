@@ -1,0 +1,5 @@
+---
+tags: [pipeline-run:epic-orchestrator-2026-10-30-listar-pwa-polish-jams-rte, pipeline-step:verify]
+---
+
+VERIFY jams-rte — REVIEW_REQUIRED (lead-side only; browser/device unavailable). Read jams-rte acceptance, .wai/projects/listar/briefs/jams-rte.md, listar/manifest.json, listar/icon.svg, listar/sw.js, relevant listar/script.js shared-audio handling, listar/test/pwa-share.test.js, child report, and release blocker jams-0rt.1. Code review confirms portrait standalone metadata, SVG icon, file handler, multipart audio POST share target, text-only POST redirect, scoped offline caches, one-time local cache token handoff and list-selection processing. Fresh checks: node --test listar/test/ => 87 tests passed, 0 failed; node --check listar/script.js/sw.js/app-core.mjs/worker.js exit 0; manifest JSON parse exit 0; git diff --check exit 0. Local Python static GET checks returned HTTP 200 for /listar/, /listar/style.css, /listar/icon.svg, /listar/manifest.json, /listar/sw.js, and /transcribir/. No browser/device install/share/offline test, no remote deploy or push. Follow-up jams-0rt.1 blocks epic closure and carries release evidence requirements.

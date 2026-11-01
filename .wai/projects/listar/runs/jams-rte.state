@@ -1,0 +1,8 @@
+ticket: jams-rte
+branch: main
+brief: .wai/projects/listar/briefs/jams-rte.md
+history:
+  - claim: completed; selected after UI was ready
+  - gates: baseline node --test listar/test/ passed 84/84
+  - brief: .wai/projects/listar/briefs/jams-rte.md written, uncommitted
+  - spawn: jams_2ao_impl reused via direct collaboration followup; implementation in progress
