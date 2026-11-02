@@ -52,7 +52,6 @@ renderQuickItems().catch((error) => setStatus(error.message, true));
 const listView = $('#list-view');
 const listsGrid = $('#lists-grid');
 const itemsList = $('#items-list');
-const homeEmpty = $('#home-empty');
 const itemsEmpty = $('#items-empty');
 const listHeading = $('#list-heading');
 const appStatus = $('#app-status');
