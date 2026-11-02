@@ -1,5 +1,10 @@
 # Listar — Voice-Powered Lists
 
+The proposed [simplified checklist UX](simplified-checklist.md) replaces the
+navigation and review presentation described here when implemented. It defines
+immutable application snapshots and derived views separately from persistence;
+this document continues to describe the existing app.
+
 ## Purpose
 
 Create and manage lists (shopping, tasks, ideas) entirely by voice. Speak, and the

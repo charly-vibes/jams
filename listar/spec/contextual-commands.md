@@ -1,5 +1,13 @@
 # Listar: contextual commands and typed attributes
 
+The proposed [simplified checklist UX](simplified-checklist.md) retains the semantic
+and confirmation safeguards here while replacing modal review presentation and
+extending command scope beyond a single list. It is not yet implemented.
+For that revision, its explicit `archive-item` and `remove-from-collection`
+semantics replace ordinary voice routing to destructive `remove`. Ambiguous
+removal requires a user choice; legacy reducer compatibility does not authorize
+deleting items through the revised UI.
+
 This design extends Listar beyond appending parsed items: interpretation uses the
 active list to propose explicit changes, and confirmation commits them atomically.
 It builds on [the v1 specification](functionality.md). The analyzer, contextual
