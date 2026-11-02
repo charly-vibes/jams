@@ -9,6 +9,7 @@ export const STANDARD_VIEWS = Object.freeze([
   Object.freeze({ id: 'todo', label: 'Todo' }),
   Object.freeze({ id: 'completados', label: 'Completados' }),
   Object.freeze({ id: 'sin-lista', label: 'Sin lista' }),
+  Object.freeze({ id: 'archivados', label: 'Archivados' }),
 ]);
 
 const DEFAULT_VIEW = 'pendientes';
@@ -18,6 +19,7 @@ function viewPredicate(view) {
   if (view === 'todo') return () => true;
   if (view === 'completados') return (item) => item.done === true;
   if (view === 'sin-lista') return (item) => item.collectionId == null;
+  if (view === 'archivados') return (item) => item.archived === true;
   if (view.startsWith('collection:')) {
     const collectionId = view.slice('collection:'.length);
     return (item) => item.collectionId === collectionId;
@@ -39,9 +41,10 @@ function byDeterministicOrder(a, b) {
 export function project(snapshot, view) {
   if (!snapshot || !Array.isArray(snapshot.items)) throw new TypeError('project needs a snapshot with items.');
   const predicate = viewPredicate(view);
-  return snapshot.items
-    .filter((item) => item.archived !== true)
-    .filter(predicate)
+  const visible = view === 'archivados'
+    ? snapshot.items.filter(predicate)
+    : snapshot.items.filter((item) => item.archived !== true).filter(predicate);
+  return visible
     .map((item) => (item.attributes ? { ...item, attributes: structuredClone(item.attributes) } : item))
     .sort(byDeterministicOrder);
 }

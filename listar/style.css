@@ -121,3 +121,9 @@ h2 { margin: 0 0 10px; letter-spacing: -.035em; }
 .debug-settings legend { padding: 0 0.35rem; font-weight: 650; }
 .debug-settings .help-text { margin: 0; color: var(--muted, #a5acb9); font-size: 0.82rem; line-height: 1.4; }
 .debug-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+
+.row-label.done { text-decoration: line-through; }
+.item-row .row-done { inline-size: auto; }
+.item-editing { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.row-edit-input { flex: 1 1 120px; min-height: 44px; }
+.row-edit-unit { flex: 0 1 90px; min-height: 44px; }

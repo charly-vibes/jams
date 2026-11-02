@@ -130,6 +130,112 @@ export async function captureItem(label, operationId = crypto.randomUUID(), expe
   });
 }
 
+function validatePatch(current, patch) {
+  const next = { ...current };
+  const touched = [];
+  if (Object.hasOwn(patch, 'label')) {
+    const label = String(patch.label ?? '');
+    if (!label.trim()) throw new TypeError('Item label cannot be empty.');
+    next.label = label;
+    touched.push(['label', label]);
+  }
+  if (Object.hasOwn(patch, 'quantity') || Object.hasOwn(patch, 'unit')) {
+    if (patch.quantity === null) {
+      delete next.quantity;
+      delete next.unit;
+      touched.push(['quantity', undefined], ['unit', undefined]);
+    } else {
+      const quantity = Number(patch.quantity);
+      if (!Number.isFinite(quantity) || quantity <= 0) throw new TypeError('Quantity must be a finite number greater than zero.');
+      next.quantity = quantity;
+      touched.push(['quantity', quantity]);
+      if (Object.hasOwn(patch, 'unit')) {
+        if (patch.unit === null || !String(patch.unit).trim()) { delete next.unit; touched.push(['unit', undefined]); }
+        else { next.unit = String(patch.unit); touched.push(['unit', next.unit]); }
+      }
+    }
+  }
+  const isNoop = touched.every(([key, value]) =>
+    value === undefined ? !Object.hasOwn(current, key) : current[key] === value);
+  return { next, isNoop };
+}
+
+async function findItem(snapshot, itemId) {
+  const item = snapshot.items.find((entry) => entry.id === itemId);
+  if (!item) throw new TypeError(`Unknown item: ${itemId}`);
+  return item;
+}
+
+async function commitItemRecord(item, record, expectedRevision) {
+  const { collectionId: _joined, ...persisted } = record;
+  const db = await open();
+  const workspaceOwned = await new Promise((resolve, reject) => {
+    const request = db.transaction('items', 'readonly').objectStore('items').get(item.id);
+    request.onsuccess = () => resolve(request.result != null);
+    request.onerror = () => reject(request.error);
+  });
+  if (workspaceOwned) {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(['meta', 'items'], 'readwrite');
+      const meta = tx.objectStore('meta');
+      let result;
+      const revisionRequest = meta.get('revision');
+      revisionRequest.onsuccess = () => {
+        const current = revisionRequest.result.value;
+        if (expectedRevision !== undefined && current !== expectedRevision) { tx.abort(); return; }
+        const revision = current + 1;
+        tx.objectStore('items').put(record);
+        meta.put({ key: 'revision', value: revision });
+        result = record;
+      };
+      tx.oncomplete = () => { db.close(); resolve(result); };
+      tx.onabort = () => { db.close(); reject(tx.error ?? new Error('Workspace changed during the edit.')); };
+    });
+  }
+  db.close();
+  // Legacy-owned items delegate field writes to the db.js adapter after a workspace
+  // revision bump; bump-first ordering makes a crash between the two reject later
+  // stale actions instead of allowing lost updates.
+  await bumpRevision(expectedRevision);
+  await Item.put(record);
+  return record;
+}
+
+function bumpRevision(expectedRevision) {
+  return open().then((db) => new Promise((resolve, reject) => {
+    const tx = db.transaction(['meta'], 'readwrite');
+    const meta = tx.objectStore('meta');
+    const revisionRequest = meta.get('revision');
+    revisionRequest.onsuccess = () => {
+      const current = revisionRequest.result.value;
+      if (expectedRevision !== undefined && current !== expectedRevision) { tx.abort(); return; }
+      meta.put({ key: 'revision', value: current + 1 });
+    };
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onabort = () => { db.close(); reject(tx.error ?? new Error('Workspace changed during the edit.')); };
+  }));
+}
+
+export async function applyItemUpdate(itemId, patch, expectedRevision) {
+  const snapshot = await readWorkspace();
+  const item = await findItem(snapshot, itemId);
+  const { next, isNoop } = validatePatch(item, patch);
+  if (isNoop) return item;
+  return commitItemRecord(item, next, expectedRevision);
+}
+
+export async function toggleDone(itemId, expectedRevision) {
+  const snapshot = await readWorkspace();
+  const item = await findItem(snapshot, itemId);
+  return commitItemRecord(item, { ...item, done: !item.done }, expectedRevision);
+}
+
+export async function setArchived(itemId, archived, expectedRevision) {
+  const snapshot = await readWorkspace();
+  const item = await findItem(snapshot, itemId);
+  return commitItemRecord(item, { ...item, archived: archived === true }, expectedRevision);
+}
+
 export async function moveItem(itemId, collectionId, expectedRevision) {
   if (typeof itemId !== 'string' || !itemId.trim()) throw new TypeError('moveItem needs an item ID.');
   if (collectionId !== null && (typeof collectionId !== 'string' || !collectionId.trim())) {

@@ -1,0 +1,34 @@
+#+TITLE: jams-8be.3 — Edit, complete, archive: fixture design
+#+DATE: 2026-11-02
+
+* Design
+
+**Persistence** (=listar/workspace.mjs=):
+- =applyItemUpdate(itemId, patch, expectedRevision)= — label, quantity/unit edits
+  (patch ={quantity: null, unit: null}= clears; absent stays absent)
+- =toggleDone(itemId, expectedRevision)= — flips only =done=
+- =setArchived(itemId, archived, expectedRevision)= — sets only archive state
+- workspace-owned items update in the guarded workspace tx; legacy-owned items
+  delegate field writes to =db.js Item.put= (validation, assertion identity)
+  after a workspace revision bump (bump-first ordering: a crash between them
+  rejects later stale actions — the conservative, safe direction)
+- same-value patches are no-ops (0 writes, no revision bump); invalid patches
+  (empty label, non-finite or non-positive quantity) reject with 0 writes
+
+**Pure layer** (=listar/views.mjs=): add =archivados= view (archived only);
+restore reverses it. Standard views keep excluding archived items.
+
+**UI** (=script.js= / =index.html=):
+- Tap label → inline editor (Guardar/Cancelar; Enter saves, Escape cancels;
+  failure keeps input — A15). Tap amount → quantity editor; rows without
+  amount get =Agregar cantidad= inside details.
+- =<details>= per row exposes attributes (readable), source and =Archivar= /
+  =Restaurar=; no raw IDs in rows; no always-visible delete icon.
+- Completion checkbox per row; save receipts capture before/after in memory —
+  the =Deshacer= button renders now and honestly reports that inverse
+  execution lands with jams-8be.5 (receipt *production* is this ticket).
+
+* Out of slice
+
+- Undo/redo execution, stale-reconfirmation dialogs (A13): jams-8be.5.
+- Dictation review (A02/A04): jams-8be.6.

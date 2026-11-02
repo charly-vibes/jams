@@ -71,6 +71,10 @@ test('projection does not mutate or unfreeze its inputs', () => {
   assert.ok(Object.isFrozen(snapshot.items[0]));
 });
 
+test('archivados shows only archived items for restoration', () => {
+  assert.deepEqual(ids(project(snapshot, 'archivados')), ['i-viejo']);
+});
+
 test('default destinations are pending; collection shortcuts default to their collection', () => {
   assert.deepEqual(defaultDestination('pendientes'), { done: false, collectionId: null });
   assert.deepEqual(defaultDestination('completados'), { done: false, collectionId: null });
@@ -84,5 +88,5 @@ test('first launch and invalid saved views fall back to pendientes', () => {
   assert.equal(resolveSavedView('completados', snapshot), 'completados');
   assert.equal(resolveSavedView('collection:c-compras', snapshot), 'collection:c-compras');
   assert.equal(resolveSavedView('collection:missing', snapshot), 'pendientes');
-  assert.deepEqual(STANDARD_VIEWS.map((view) => view.id), ['pendientes', 'todo', 'completados', 'sin-lista']);
+  assert.deepEqual(STANDARD_VIEWS.map((view) => view.id), ['pendientes', 'todo', 'completados', 'sin-lista', 'archivados']);
 });

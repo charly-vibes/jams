@@ -3,7 +3,7 @@
 // Rationale: voice-derived items stay reviewable and enter the database only after one explicit confirmation.
 
 import { Item, List } from './db.js';
-import { captureItem, moveItem, readWorkspace } from './workspace.mjs';
+import { captureItem, moveItem, readWorkspace, applyItemUpdate, toggleDone, setArchived } from './workspace.mjs';
 import { project, defaultDestination, resolveSavedView, STANDARD_VIEWS } from './views.mjs';
 import {
   bindDatabaseStatus, clearAudioForList, clearDoneItems, copyText, createList, createPreviewSubmission, decodeAudioToMono16k, deleteItem,
@@ -49,13 +49,130 @@ function collectionOptions(snapshot) {
   ];
 }
 
+let lastCapturedId = null;
+let editing = null;
+let lastReceipt = null;
+
+function attributeSummary(item) {
+  if (!item.attributes) return '';
+  return Object.entries(item.attributes)
+    .map(([key, assertions]) => `${key}: ${assertions.map((a) => a.value?.name ?? a.value?.type ?? '').filter(Boolean).join(', ')}`)
+    .join('; ');
+}
+
+function renderEditorRow(item, snapshot) {
+  const row = document.createElement('div');
+  row.className = 'item-row item-editing';
+  const isQuantity = editing.field === 'quantity';
+  const input = document.createElement('input');
+  input.className = 'row-edit-input';
+  input.setAttribute('aria-label', isQuantity ? `Cantidad de ${item.label}` : `Nombre de ${item.label}`);
+  if (isQuantity) {
+    input.type = 'number';
+    input.step = 'any';
+    input.value = item.quantity ?? '';
+  } else {
+    input.value = item.label;
+  }
+  const unitInput = document.createElement('input');
+  unitInput.className = 'row-edit-unit';
+  unitInput.setAttribute('aria-label', `Unidad de ${item.label}`);
+  unitInput.placeholder = 'unidad';
+  unitInput.value = item.unit ?? '';
+  const save = document.createElement('button');
+  save.type = 'button';
+  save.className = 'primary-button';
+  save.textContent = 'Guardar';
+  const cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.className = 'secondary-button';
+  cancel.textContent = 'Cancelar';
+  const finish = () => { editing = null; renderWorkspaceView().catch((error) => setStatus(error.message, true)); };
+  cancel.addEventListener('click', finish);
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') save.click();
+    if (event.key === 'Escape') finish();
+  });
+  unitInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') save.click();
+    if (event.key === 'Escape') finish();
+  });
+  save.addEventListener('click', async () => {
+    const patch = isQuantity
+      ? (input.value.trim() === '' ? { quantity: null, unit: null } : { quantity: input.value, unit: unitInput.value.trim() || null })
+      : { label: input.value };
+    try {
+      const updated = await applyItemUpdate(item.id, patch, lastSnapshot?.revision);
+      lastReceipt = { action: isQuantity ? 'quantity' : 'label', itemId: item.id, label: updated.label, before: item, after: updated };
+      finish();
+      showActionReceipt(`${updated.label} guardado.`);
+    } catch (error) {
+      // A15: keep the entered values and the editor open on failure.
+      setStatus(`No se pudo guardar: ${error.message}`, true);
+    }
+  });
+  row.append(input);
+  if (isQuantity) row.append(unitInput);
+  row.append(save, cancel);
+  return row;
+}
+
+function showActionReceipt(message) {
+  const receipt = $('#action-receipt');
+  receipt.textContent = message;
+  receipt.classList.remove('hidden');
+  const undo = $('#action-undo');
+  undo.classList.remove('hidden');
+  undo.onclick = () => setStatus('El deshacer todavía no está disponible; llega en una próxima actualización.', true);
+}
+
+async function toggleRow(itemId) {
+  try {
+    const updated = await toggleDone(itemId, lastSnapshot?.revision);
+    lastReceipt = { action: 'completion', itemId, label: updated.label, before: lastSnapshot?.items.find((entry) => entry.id === itemId), after: updated };
+    await renderWorkspaceView();
+    showActionReceipt(updated.done ? `${updated.label} completado.` : `${updated.label} reactivado.`);
+  } catch (error) {
+    setStatus(`No se pudo completar: ${error.message}`, true);
+    await renderWorkspaceView().catch(() => {});
+  }
+}
+
+async function archiveRow(itemId, archived) {
+  try {
+    const updated = await setArchived(itemId, archived, lastSnapshot?.revision);
+    lastReceipt = { action: archived ? 'archive' : 'restore', itemId, label: updated.label, before: lastSnapshot?.items.find((entry) => entry.id === itemId), after: updated };
+    if (currentView === 'archivados' && archived) editing = null;
+    await renderWorkspaceView();
+    showActionReceipt(archived ? `${updated.label} archivado.` : `${updated.label} restaurado.`);
+  } catch (error) {
+    setStatus(`No se pudo archivar: ${error.message}`, true);
+    await renderWorkspaceView().catch(() => {});
+  }
+}
+
 function renderRow(item, snapshot) {
+  if (editing && editing.itemId === item.id) return renderEditorRow(item, snapshot);
   const row = document.createElement('div');
   row.className = 'item-row';
-  const label = document.createElement('span');
-  label.textContent = item.label + (item.quantity != null ? ` — ${item.quantity}${item.unit ? ' ' + item.unit : ''}` : '');
-  if (item.done) label.style.textDecoration = 'line-through';
-  row.append(label);
+  const done = document.createElement('input');
+  done.type = 'checkbox';
+  done.className = 'row-done';
+  done.checked = item.done === true;
+  done.setAttribute('aria-label', `Completar ${item.label}`);
+  done.addEventListener('change', () => toggleRow(item.id));
+  const label = document.createElement('button');
+  label.type = 'button';
+  label.className = 'row-label';
+  label.textContent = item.label;
+  if (item.done) label.classList.add('done');
+  label.addEventListener('click', () => { editing = { itemId: item.id, field: 'label' }; renderWorkspaceView().catch((error) => setStatus(error.message, true)); });
+  const quantity = document.createElement('button');
+  quantity.type = 'button';
+  quantity.className = 'row-qty';
+  quantity.textContent = item.quantity != null ? `${item.quantity}${item.unit ? ` ${item.unit}` : ''}` : 'Agregar cantidad';
+  quantity.addEventListener('click', () => { editing = { itemId: item.id, field: 'quantity' }; renderWorkspaceView().catch((error) => setStatus(error.message, true)); });
+  row.append(done, label, quantity);
   const move = document.createElement('select');
   move.className = 'row-move';
   move.setAttribute('aria-label', `Mover ${item.label}`);
@@ -68,6 +185,28 @@ function renderRow(item, snapshot) {
   }
   move.addEventListener('change', () => moveRow(item.id, move.value || null));
   row.append(move);
+  const details = document.createElement('details');
+  details.className = 'row-details';
+  const summary = document.createElement('summary');
+  summary.textContent = 'Detalles';
+  details.append(summary);
+  const collectionName = snapshot.collections.find((c) => c.id === item.collectionId)?.name ?? 'Sin lista';
+  const facts = [
+    `Origen: ${item.text || item.label}`,
+    `Colección: ${collectionName}`,
+  ];
+  const attributes = attributeSummary(item);
+  if (attributes) facts.push(`Atributos: ${attributes}`);
+  const factsParagraph = document.createElement('p');
+  factsParagraph.textContent = facts.join('. ');
+  details.append(factsParagraph);
+  const archive = document.createElement('button');
+  archive.type = 'button';
+  archive.className = 'secondary-button';
+  archive.textContent = item.archived ? 'Restaurar' : 'Archivar';
+  archive.addEventListener('click', () => archiveRow(item.id, !item.archived));
+  details.append(archive);
+  row.append(details);
   return row;
 }
 
@@ -130,7 +269,6 @@ function showReceipt(message, destinationCollectionId, snapshot) {
   };
 }
 
-let lastCapturedId = null;
 quickCaptureForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const label = quickCaptureInput.value;

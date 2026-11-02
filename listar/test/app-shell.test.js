@@ -57,7 +57,7 @@ test('home offers direct unassigned capture wired to the guarded workspace', () 
     assert.match(html, new RegExp(`id="${id}"`));
   }
   const script = read('script.js');
-  assert.ok(script.includes("import { captureItem, moveItem, readWorkspace } from './workspace.mjs'"));
+  assert.ok(script.includes("import { captureItem, moveItem, readWorkspace, applyItemUpdate, toggleDone, setArchived } from './workspace.mjs'"));
   assert.match(script, /await captureItem\(label, crypto\.randomUUID\(\), lastSnapshot\?\.revision/);
   assert.match(script, /quickCaptureInput\.value = ''/);
   assert.match(script, /setStatus\(`No se pudo guardar: \$\{error\.message\}`, true\)/);
@@ -77,6 +77,23 @@ test('home exposes checklist views, destination control, receipt and per-row mov
   assert.match(script, /Ver en Pendientes/);
   assert.match(script, /Guardado en \$\{where\}\./);
   assert.match(script, /storeView\(currentView\)/);
+});
+
+test('rows expose inline editing, completion, details and archive without per-row delete', () => {
+  const html = read('index.html');
+  for (const id of ['action-receipt', 'action-undo']) assert.match(html, new RegExp(`id="${id}"`));
+  assert.match(html, /Deshacer/);
+  const script = read('script.js');
+  assert.ok(script.includes('applyItemUpdate, toggleDone, setArchived'));
+  assert.match(script, /Guardar/);
+  assert.match(script, /Cancelar/);
+  assert.match(script, /Agregar cantidad/);
+  assert.match(script, /Archivar/);
+  assert.match(script, /Restaurar/);
+  assert.match(script, /row-label/);
+  assert.match(script, /event\.key === 'Enter'/);
+  assert.match(script, /event\.key === 'Escape'/);
+  assert.doesNotMatch(script, /row-delete/);
 });
 
 test('manifest declares a Spanish standalone app with audio file handling and text share target', () => {
