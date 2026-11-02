@@ -12,6 +12,7 @@ import {
 import { planUndo } from './undo.mjs';
 import { project, defaultDestination, resolveSavedView, STANDARD_VIEWS } from './views.mjs';
 import { removeSavedView } from './views.mjs';
+import { formatViewExport, viewScopeLabel } from './view-export.mjs';
 import {
   bindDatabaseStatus, clearAudioForList, clearDoneItems, copyText, createList, createPreviewSubmission, decodeAudioToMono16k, deleteItem,
   deleteList, formatListExport, loadSettings, makePreview, renameList, saveAudioCapture, saveSettings,
@@ -382,6 +383,85 @@ viewSelector.addEventListener('change', () => {
   renderWorkspaceView().catch((error) => setStatus(error.message, true));
 });
 
+// The overflow menu is the single home for secondary actions (spec: one starting
+// screen — header actions are the view selector and a labeled overflow menu).
+const overflowButton = $('#overflow-button');
+const overflowMenu = $('#overflow-menu');
+
+function closeOverflowMenu({ refocus = false } = {}) {
+  overflowMenu.classList.add('hidden');
+  overflowButton.setAttribute('aria-expanded', 'false');
+  if (refocus) overflowButton.focus();
+}
+
+overflowButton.addEventListener('click', () => {
+  const opening = overflowMenu.classList.contains('hidden');
+  overflowMenu.classList.toggle('hidden');
+  overflowButton.setAttribute('aria-expanded', String(opening));
+});
+document.addEventListener('click', (event) => {
+  if (!overflowMenu.classList.contains('hidden') && !event.target.closest('.overflow')) closeOverflowMenu();
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !overflowMenu.classList.contains('hidden')) closeOverflowMenu({ refocus: true });
+});
+$('#overflow-collections').addEventListener('click', () => {
+  closeOverflowMenu();
+  $('#collections-panel').scrollIntoView?.({ block: 'nearest' });
+  $('#collection-name').focus();
+});
+$('#overflow-settings').addEventListener('click', () => {
+  closeOverflowMenu();
+  openSettings();
+});
+
+// Export (spec: Export): share/copy exactly the visible projection; the scope is
+// stated in the dialog before any copy/share control and the text carries no
+// source, attribute or diagnostic records.
+const exportDialog = $('#export-dialog');
+let exportViewText = '';
+
+function openViewExport() {
+  closeOverflowMenu();
+  const snapshot = lastSnapshot;
+  if (!snapshot) return;
+  const rows = project(snapshot, currentView);
+  if (rows.length === 0) {
+    setStatus(`La vista “${viewScopeLabel(currentView, snapshot)}” no tiene artículos para exportar.`);
+    return;
+  }
+  const scope = viewScopeLabel(currentView, snapshot);
+  exportViewText = formatViewExport(currentView, snapshot);
+  $('#export-scope').textContent = `${scope} · ${rows.length} artículo${rows.length === 1 ? '' : 's'}. Se exporta exactamente lo que ves, sin datos de origen ni diagnóstico.`;
+  $('#export-preview').value = exportViewText;
+  exportDialog.showModal();
+}
+$('#overflow-export').addEventListener('click', openViewExport);
+$('#export-cancel').addEventListener('click', () => exportDialog.close());
+
+async function exportCurrentView(mode) {
+  if (!exportViewText) return;
+  try {
+    if (mode === 'copy') {
+      await copyText(exportViewText);
+      exportDialog.close();
+      setStatus('Vista copiada al portapapeles.');
+      return;
+    }
+    const result = await shareOrCopy(exportViewText);
+    // Cancellation remains cancellation: no success message, no clipboard write.
+    if (result === 'cancelled') { exportDialog.close(); return; }
+    exportDialog.close();
+    if (result === 'shared') setStatus('Vista compartida.');
+    else setStatus('No se pudo compartir directamente; la vista se copió al portapapeles.');
+  } catch (error) {
+    // A failure never yields a success message; the dialog stays open for retry.
+    setStatus(`No se pudo exportar la vista: ${error.message}`, true);
+  }
+}
+$('#export-view-copy').addEventListener('click', () => exportCurrentView('copy'));
+$('#export-view-share').addEventListener('click', () => exportCurrentView('share'));
+
 async function moveRow(itemId, collectionId) {
   try {
     const before = lastSnapshot?.items.find((entry) => entry.id === itemId);
@@ -709,7 +789,7 @@ function goHome() {
 
 function setCaptureLock(locked) {
   captureLocked = locked;
-  for (const selector of ['#create-list', '#back-button', '#rename-list', '#delete-list', '#settings-button', '#open-settings', '#export-copy', '#export-share', '#audio-file']) {
+  for (const selector of ['#create-list', '#back-button', '#rename-list', '#delete-list', '#settings-button', '#export-copy', '#export-share', '#overflow-button', '#audio-file']) {
     const element = $(selector);
     if (element) element.disabled = locked;
   }
@@ -755,7 +835,6 @@ $('#list-cancel').addEventListener('click', () => listDialog.close());
 $('#back-button').addEventListener('click', goHome);
 $('#rename-list').addEventListener('click', () => showListDialog(activeList));
 $('#settings-button').addEventListener('click', openSettings);
-$('#open-settings').addEventListener('click', openSettings);
 $('#settings-cancel').addEventListener('click', () => settingsDialog.close());
 $('#delete-list').addEventListener('click', async () => {
   if (!activeList || !confirm(`¿Quitar la lista “${activeList.name}”? Sus artículos quedarán sin lista.`)) return;

@@ -94,6 +94,75 @@ test('home manages collections without deleting items and distinguishes shortcut
   assert.match(script, /no se puede deshacer/i);
 });
 
+test('home header has exactly two action groups: view selector and overflow menu', () => {
+  const html = read('index.html');
+  const topbar = html.match(/<header class="topbar">[\s\S]*?<\/header>/)[0];
+  assert.doesNotMatch(topbar, /create-list/, 'legacy list creation belongs in the overflow menu');
+  assert.doesNotMatch(topbar, /settings/i, 'settings has a single overflow entry, never a header link');
+  const viewBar = html.match(/<div class="view-bar">[\s\S]*?(?=<p class="subhead")/)[0];
+  assert.match(viewBar, /id="view-selector"/);
+  assert.match(viewBar, /id="overflow-button"/);
+  assert.match(viewBar, /id="overflow-menu"/);
+  assert.doesNotMatch(viewBar, /id="capture-destination"/, 'destination is a capture control, not a header action');
+  assert.match(html, /<label[^>]*for="capture-destination"[^>]*>\s*Destino\s*<\/label>/);
+  assert.doesNotMatch(html, /id="open-settings"/, 'no separate settings link near capture');
+});
+
+test('overflow menu gathers list creation, view copy/share, collections and the single settings entry', () => {
+  const html = read('index.html');
+  for (const id of [
+    'overflow-button', 'overflow-menu', 'overflow-export', 'overflow-collections', 'overflow-settings',
+    'export-dialog', 'export-scope', 'export-preview', 'export-view-copy', 'export-view-share',
+  ]) assert.match(html, new RegExp(`id="${id}"`));
+  const menu = html.match(/<div id="overflow-menu"[\s\S]*?<\/div>/)[0];
+  assert.match(menu, /id="create-list"/);
+  assert.match(menu, /Compartir o copiar vista/);
+  assert.match(menu, /Colecciones/);
+  assert.match(menu, /Configuración/);
+  const dialog = html.match(/<dialog id="export-dialog"[\s\S]*?<\/dialog>/)[0];
+  assert.match(dialog, /readonly/);
+  // The user sees the scope before any copy/share control (spec: Export).
+  assert.ok(dialog.indexOf('id="export-scope"') < dialog.indexOf('id="export-view-copy"'));
+  assert.ok(dialog.indexOf('id="export-preview"') < dialog.indexOf('id="export-view-share"'));
+});
+
+test('view export projects the visible scope and honours cancellation without a success claim', () => {
+  const script = read('script.js');
+  assert.ok(script.includes("from './view-export.mjs'"));
+  assert.match(script, /formatViewExport\(currentView, snapshot\)/);
+  assert.match(script, /project\(snapshot, currentView\)/);
+  assert.match(script, /viewScopeLabel\(currentView, snapshot\)/);
+  assert.match(script, /shareOrCopy\(exportViewText\)/);
+  assert.match(script, /await copyText\(exportViewText\)/);
+  assert.match(script, /if \(result === 'cancelled'\)/);
+  assert.match(script, /Vista copiada al portapapeles\./);
+  assert.match(script, /Vista compartida\./);
+  assert.doesNotMatch(script, /open-settings/);
+  // Exactly one settings entry point in the overflow menu.
+  assert.match(script, /\$\('#overflow-settings'\)\.addEventListener\('click'/);
+  assert.match(script, /closeOverflowMenu/);
+});
+
+test('settings keep language and retention first, model under Avanzado, diagnostics under Ayuda y diagnóstico', () => {
+  const html = read('index.html');
+  const settings = html.match(/<dialog id="settings-dialog"[\s\S]*?<\/dialog>/)[0];
+  for (const id of [
+    'language-setting', 'save-audio-setting', 'model-setting', 'clear-audio',
+    'debug-settings', 'debug-log-setting', 'debug-text-setting', 'debug-export', 'debug-clear',
+  ]) assert.match(settings, new RegExp(`id="${id}"`));
+  const order = [
+    settings.indexOf('id="language-setting"'),
+    settings.indexOf('id="save-audio-setting"'),
+    settings.indexOf('id="advanced-settings"'),
+    settings.indexOf('id="debug-settings"'),
+  ];
+  assert.deepEqual(order, [...order].sort((a, b) => a - b), 'language and retention come first, diagnostics last');
+  assert.match(settings, /<fieldset id="advanced-settings"[^>]*>[\s\S]*?<legend>Avanzado<\/legend>[\s\S]*?id="model-setting"/);
+  assert.match(settings, /<fieldset id="debug-settings"[^>]*>[\s\S]*?<legend>Ayuda y diagnóstico<\/legend>/);
+  assert.doesNotMatch(settings, /id="debug-log-setting"[^>]*checked/, 'diagnostics stay default-off');
+  assert.doesNotMatch(settings, /id="debug-text-setting"[^>]*checked/);
+});
+
 test('rows expose inline editing, completion, details and archive without per-row delete', () => {
   const html = read('index.html');
   for (const id of ['action-receipt', 'action-undo']) assert.match(html, new RegExp(`id="${id}"`));
@@ -127,7 +196,7 @@ test('manifest declares a Spanish standalone app with audio file handling and te
 
 test('offline shell precaches worker dependencies and removes only listar-owned caches', () => {
   const worker = read('sw.js');
-  for (const asset of ['./index.html', './style.css', './manifest.json', './script.js', './app-core.mjs', './context-review.mjs', './context-preview.mjs', './undo.mjs', './analysis-router.mjs', './debug.mjs', './db.js', './splitter.js', './transcript-filter.mjs', './analyze.mjs', './command-reducer.mjs', './worker.js']) {
+  for (const asset of ['./index.html', './style.css', './manifest.json', './script.js', './app-core.mjs', './context-review.mjs', './context-preview.mjs', './undo.mjs', './analysis-router.mjs', './debug.mjs', './db.js', './splitter.js', './transcript-filter.mjs', './analyze.mjs', './command-reducer.mjs', './worker.js', './view-export.mjs']) {
     assert.ok(worker.includes(asset), `missing precached ${asset}`);
   }
   const cacheAssets = new Set([...worker.matchAll(/'\.\/([^']+)'/gu)].map(([, asset]) => asset));
@@ -143,7 +212,7 @@ test('offline shell precaches worker dependencies and removes only listar-owned 
   };
   for (const entry of ['script.js', 'worker.js', 'analyze.mjs', 'command-reducer.mjs', 'context-review.mjs', 'db.js', 'app-core.mjs']) visitImports(entry);
   assert.match(worker, /key\.startsWith\('listar-'\)/);
-  assert.match(worker, /const CACHE_NAME = 'listar-shell-v6'/);
+  assert.match(worker, /const CACHE_NAME = 'listar-shell-v7'/);
   assert.doesNotMatch(worker, /caches\.delete\(key\)[\s\S]*startsWith\('transcribir-'/);
 });
 

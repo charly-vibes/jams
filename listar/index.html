@@ -14,8 +14,8 @@
     <header class="topbar">
       <button id="back-button" class="icon-button hidden" type="button" aria-label="Volver a listas">←</button>
       <div class="brand"><span class="brand-mark">L</span><span>Listar</span></div>
-      <button id="create-list" class="icon-button" type="button" aria-label="Crear lista">＋</button>
     </header>
+    <p id="app-status" class="app-status" role="status" aria-live="polite"></p>
 
     <section id="home-view" aria-labelledby="home-heading">
       <p class="eyebrow">TODO EN SU LUGAR</p>
@@ -23,8 +23,15 @@
       <div class="view-bar">
         <label class="visually-hidden" for="view-selector">Vista</label>
         <select id="view-selector"></select>
-        <label class="visually-hidden" for="capture-destination">Destino</label>
-        <select id="capture-destination"></select>
+        <div class="overflow">
+          <button id="overflow-button" class="icon-button" type="button" aria-label="Más acciones" aria-expanded="false" aria-controls="overflow-menu">⋯</button>
+          <div id="overflow-menu" class="overflow-menu hidden" aria-label="Más acciones">
+            <button id="create-list" type="button">Nueva lista</button>
+            <button id="overflow-export" type="button">Compartir o copiar vista…</button>
+            <button id="overflow-collections" type="button">Colecciones</button>
+            <button id="overflow-settings" type="button">Configuración</button>
+          </div>
+        </div>
       </div>
       <p class="subhead">Agrega algo y aparecerá aquí.</p>
       <form id="quick-capture" class="quick-capture">
@@ -32,6 +39,10 @@
         <input id="quick-capture-input" autocomplete="off" placeholder="Agregar algo…">
         <button id="quick-capture-submit" class="primary-button" type="submit">Agregar</button>
       </form>
+      <div class="destination-row">
+        <label class="destination-label" for="capture-destination">Destino</label>
+        <select id="capture-destination"></select>
+      </div>
       <p id="capture-receipt" class="capture-receipt hidden" aria-live="polite"></p>
       <button id="receipt-goto" class="secondary-button hidden" type="button">Ver en Pendientes</button>
       <p id="action-receipt" class="capture-receipt hidden" aria-live="polite"></p>
@@ -74,14 +85,12 @@
         <div class="capture-tools">
           <label for="audio-file" class="upload-button">↑ Subir audio</label>
           <input id="audio-file" type="file" accept="audio/*" class="visually-hidden">
-          <button id="open-settings" class="text-button" type="button">Idioma, modelo y audios</button>
         </div>
         <div id="progress-region" class="progress-region hidden" role="status" aria-live="polite">
           <span id="progress-message"></span>
           <button id="cancel-transcription" class="text-button" type="button">Cancelar</button>
         </div>
       </section>
-      <p id="app-status" class="app-status" role="status" aria-live="polite"></p>
     </section>
   </main>
 
@@ -112,22 +121,39 @@
         <option value="en">English</option>
         <option value="auto">Detectar automáticamente</option>
       </select>
-      <label for="model-setting">Modelo de transcripción</label>
-      <select id="model-setting">
-        <option value="tiny">Tiny · rápido</option>
-        <option value="base">Base · equilibrado</option>
-        <option value="small">Small · preciso</option>
-      </select>
       <label class="retention-option"><input id="save-audio-setting" type="checkbox"> Guardar audios para volver a transcribir</label>
       <button id="clear-audio" class="secondary-button full-width" type="button">Borrar los audios de esta lista</button>
-      <fieldset class="debug-settings">
-        <legend>Diagnóstico local (opcional)</legend>
+      <fieldset id="advanced-settings">
+        <legend>Avanzado</legend>
+        <label for="model-setting">Modelo de transcripción</label>
+        <select id="model-setting">
+          <option value="tiny">Tiny · rápido</option>
+          <option value="base">Base · equilibrado</option>
+          <option value="small">Small · preciso</option>
+        </select>
+      </fieldset>
+      <fieldset id="debug-settings" class="debug-settings">
+        <legend>Ayuda y diagnóstico</legend>
         <label class="retention-option"><input id="debug-log-setting" type="checkbox"> Guardar eventos de diagnóstico en este dispositivo</label>
         <label class="retention-option"><input id="debug-text-setting" type="checkbox"> Incluir dictados, texto editado y mensajes de error (puede contener información privada)</label>
         <p class="help-text">El registro no se envía por internet ni incluye audio; tampoco recopila eventos internos del navegador o del service worker. Conserva hasta 500 eventos o 256 KiB y descarta primero los más antiguos. Puedes descargarlo o borrarlo aquí. Desactivar el registro detiene nuevas entradas.</p>
         <div class="debug-actions"><button id="debug-export" class="secondary-button" type="button">Descargar diagnóstico</button><button id="debug-clear" class="secondary-button" type="button">Borrar diagnóstico</button></div>
       </fieldset>
       <div class="modal-actions"><button id="settings-cancel" class="secondary-button" type="button">Cancelar</button><button class="primary-button" type="submit">Guardar</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="export-dialog" class="modal">
+    <form method="dialog">
+      <p class="eyebrow">EXPORTAR VISTA</p>
+      <h2>Compartir o copiar</h2>
+      <p id="export-scope" class="subhead"></p>
+      <textarea id="export-preview" rows="8" readonly aria-label="Vista previa del texto a exportar"></textarea>
+      <div class="modal-actions">
+        <button id="export-cancel" class="secondary-button" type="button">Cerrar</button>
+        <button id="export-view-copy" class="secondary-button" type="button">Copiar</button>
+        <button id="export-view-share" class="primary-button" type="button">Compartir</button>
+      </div>
     </form>
   </dialog>
 

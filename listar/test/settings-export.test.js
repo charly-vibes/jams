@@ -87,6 +87,16 @@ test('export shares when available and falls back to clipboard when share is abs
   assert.deepEqual(outcomes, ['lista', 'copied', 'fallback']);
 });
 
+test('share cancellation remains cancellation and never falls back to copy', async () => {
+  let copied = false;
+  const result = await shareOrCopy('lista', {
+    navigator: { share: async () => { throw new DOMException('aborted', 'AbortError'); } },
+    copy: async () => { copied = true; },
+  });
+  assert.equal(result, 'cancelled');
+  assert.equal(copied, false);
+});
+
 test('retention off still reaches preview append without an audio source ID', async () => {
   const list = await List.add({ name: 'No audio retention flow' });
   const audio = await saveAudioCapture(list.id, new Blob(['discard']), 'comprar arroz', 'tiny', false);

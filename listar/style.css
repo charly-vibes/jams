@@ -127,3 +127,17 @@ h2 { margin: 0 0 10px; letter-spacing: -.035em; }
 .item-editing { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .row-edit-input { flex: 1 1 120px; min-height: 44px; }
 .row-edit-unit { flex: 0 1 90px; min-height: 44px; }
+
+/* jams-8be.10: two-group header (view selector + overflow) and view export */
+.view-bar { display: flex; align-items: center; gap: 10px; margin: 18px 0 0; }
+.view-bar > select { flex: 1; min-height: 44px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: #f0f2f7; }
+.overflow { position: relative; flex: none; }
+.overflow-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; min-width: 230px; display: flex; flex-direction: column; gap: 2px; padding: 6px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: 0 16px 40px #0009; }
+.overflow-menu button { min-height: 44px; padding: 10px 12px; border: 0; border-radius: 9px; background: transparent; text-align: left; cursor: pointer; }
+.overflow-menu button:hover { background: var(--surface-soft); }
+.destination-row { display: flex; align-items: center; gap: 10px; margin: 10px 0 0; }
+.destination-label { color: var(--muted); font-size: 13px; }
+.destination-row select { min-height: 40px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: #f0f2f7; }
+#export-preview { width: 100%; resize: vertical; padding: 12px; border: 1px solid var(--line); border-radius: 11px; background: #10141b; color: #f0f2f7; font: inherit; line-height: 1.5; }
+#advanced-settings { display: grid; gap: 0.55rem; margin: 1.2rem 0 0; padding: 0.9rem; border: 1px solid var(--line, #303644); border-radius: 0.8rem; }
+#advanced-settings legend { padding: 0 0.35rem; font-weight: 650; }

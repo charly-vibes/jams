@@ -1,0 +1,49 @@
+#+TITLE: jams-8be.10 — Share the visible view + settings overflow: fixture design
+#+DATE: 2026-11-02
+
+* Design
+
+**Pure layer** — new =listar/view-export.mjs= (imports only =views.mjs=):
+- =formatViewExport(view, snapshot)= → text whose rows come from =project(snapshot, view)=,
+  so the export is *structurally* the visible selection (spec: Export, A08).
+- Line 1 scope header: =<Scope> · N artículo(s)=; rows: =☐/✓ label ×<qty> <unit>=
+  (same glyph grammar as the legacy =formatListExport= seam; quantity =null/undefined= omitted).
+- Only label, quantity, unit, done are read — never =text=, source audio, attributes or debug data.
+- =viewScopeLabel(view, snapshot)=: standard view label, else collection name, else =Colección=.
+- Inputs are frozen snapshots; zero mutation, zero side effects.
+
+**Fixture table** (one frozen snapshot; items i1 leche ×2 litros en Compras,
+i2 pan sin lista, i3 arroz ×1 kg hecho en Compras, i4 yogur archivado en Compras,
+i5 café hecho sin lista; i1 carries text/sourceAudioId/attributes as bait):
+
+| view | required text |
+| pendientes | =Pendientes · 2 artículos= + ☐ leche ×2 litros, ☐ pan |
+| todo | =Todo · 4 artículos= (i4 archivado excluido) |
+| completados | =Completados · 2 artículos= (✓ arroz ×1 kg, ✓ café) |
+| sin-lista | =Sin lista · 2 artículos= incluye el café hecho |
+| archivados | =Archivados · 1 artículo= (☐ yogur) |
+| collection:c1 | =Compras · 2 artículos= |
+| vista vacía | header =… · 0 artículos=, sin filas |
+| filtrado de datos | el texto no contiene origen/audio/atributos/diagnóstico |
+
+**UI layer** — =index.html= / =script.js= / =style.css=:
+- Header = exactly 2 action groups: =#view-selector= + =#overflow-button= (⋯) with
+  =#overflow-menu= (Nueva lista, Compartir o copiar vista…, Colecciones, Configuración).
+  =#create-list= moves into the menu; =#open-settings= near capture is removed;
+  =#capture-destination= moves under the composer with a visible =Destino= label.
+- Export opens =#export-dialog=: =#export-scope= (scope · count · privacy note) shown
+  BEFORE =#export-view-copy= / =#export-view-share=; empty view → status, no dialog.
+- Cancellation stays silent (=result === 'cancelled'== → close, no success copy);
+  failure → error status, no success claim. =#app-status= moves to shell level so
+  home flows (export, capture errors) have one visible global status region.
+- Settings dialog: language + audio retention first, =<fieldset id="advanced-settings">=
+  (legend =Avanzado=) wraps the model, debug fieldset id =debug-settings= with legend
+  =Ayuda y diagnóstico=; all existing control ids and default-off diagnostics kept.
+
+**Shell** — =view-export.mjs= joins the SW precache: =listar-shell-v6→v7=;
+stale fixtures in =pwa-share.test.js= and precache list in =app-shell.test.js= updated.
+
+* Out of slice
+
+- Legacy per-list export (=formatListExport=, list-view buttons) stays untouched.
+- Arrow-key roving inside the overflow menu and deep a11y review belong to jams-8be.11.
