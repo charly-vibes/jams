@@ -3,6 +3,7 @@
 // Rationale: voice-derived items stay reviewable and enter the database only after one explicit confirmation.
 
 import { Item, List } from './db.js';
+import { captureItem, readWorkspace } from './workspace.mjs';
 import {
   bindDatabaseStatus, clearAudioForList, clearDoneItems, copyText, createList, createPreviewSubmission, decodeAudioToMono16k, deleteItem,
   deleteList, formatListExport, loadSettings, makePreview, renameList, saveAudioCapture, saveSettings,
@@ -20,6 +21,34 @@ const $ = (selector) => document.querySelector(selector);
 const disposeDebugInteractions = attachDebugInteractionListeners(document);
 window.addEventListener('pagehide', disposeDebugInteractions, { once: true });
 const homeView = $('#home-view');
+const quickCaptureForm = $('#quick-capture');
+const quickCaptureInput = $('#quick-capture-input');
+const quickItems = $('#quick-items');
+async function renderQuickItems() {
+  const workspace = await readWorkspace();
+  quickItems.replaceChildren(...workspace.items.map((item) => {
+    const row = document.createElement('div');
+    row.className = 'item-row';
+    row.textContent = item.label;
+    return row;
+  }));
+  $('#home-empty').classList.toggle('hidden', workspace.items.length > 0);
+}
+quickCaptureForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const label = quickCaptureInput.value;
+  if (!label.trim()) return;
+  quickCaptureInput.disabled = true;
+  try {
+    await captureItem(label);
+    quickCaptureInput.value = '';
+    await renderQuickItems();
+    setStatus('Guardado en Pendientes.');
+  } catch (error) {
+    setStatus(`No se pudo guardar: ${error.message}`, true);
+  } finally { quickCaptureInput.disabled = false; }
+});
+renderQuickItems().catch((error) => setStatus(error.message, true));
 const listView = $('#list-view');
 const listsGrid = $('#lists-grid');
 const itemsList = $('#items-list');
@@ -196,7 +225,6 @@ function button(label, className, onClick, ariaLabel = label) {
 async function renderHome() {
   const lists = await List.all();
   listsGrid.replaceChildren();
-  homeEmpty.classList.toggle('hidden', lists.length > 0);
   for (const list of lists) {
     const card = document.createElement('article');
     card.className = 'list-card';

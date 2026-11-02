@@ -19,10 +19,16 @@
 
     <section id="home-view" aria-labelledby="home-heading">
       <p class="eyebrow">TODO EN SU LUGAR</p>
-      <h1 id="home-heading">Tus listas</h1>
-      <p class="subhead">Ideas, compras y tareas listas para escuchar.</p>
+      <h1 id="home-heading">Pendientes</h1>
+      <p class="subhead">Agrega algo y aparecerá aquí.</p>
+      <form id="quick-capture" class="quick-capture">
+        <label class="visually-hidden" for="quick-capture-input">Agregar algo</label>
+        <input id="quick-capture-input" autocomplete="off" placeholder="Agregar algo…">
+        <button class="primary-button" type="submit">Agregar</button>
+      </form>
+      <div id="quick-items" class="items-list" aria-live="polite"></div>
       <div id="lists-grid" class="lists-grid" aria-live="polite"></div>
-      <p id="home-empty" class="empty-state hidden">Todavía no hay listas. Crea una para empezar.</p>
+      <p id="home-empty" class="empty-state hidden">Todavía no hay artículos.</p>
     </section>
 
     <section id="list-view" class="hidden" aria-labelledby="list-heading">

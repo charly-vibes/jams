@@ -5,7 +5,7 @@ const CACHE_NAME = 'listar-shell-v2';
 const SHARED_AUDIO_CACHE = 'listar-shared-audio-v1';
 const SHELL = [
   './', './index.html', './style.css', './manifest.json', './icon.svg', './sw.js', './script.js',
-  './app-core.mjs', './context-review.mjs', './analysis-router.mjs', './debug.mjs', './db.js', './splitter.js', './transcript-filter.mjs', './analyze.mjs', './command-reducer.mjs', './worker.js',
+  './app-core.mjs', './workspace.mjs', './context-review.mjs', './analysis-router.mjs', './debug.mjs', './db.js', './splitter.js', './transcript-filter.mjs', './analyze.mjs', './command-reducer.mjs', './worker.js',
 ];
 
 function audioFile(file) {
