@@ -23,6 +23,7 @@ window.addEventListener('pagehide', disposeDebugInteractions, { once: true });
 const homeView = $('#home-view');
 const quickCaptureForm = $('#quick-capture');
 const quickCaptureInput = $('#quick-capture-input');
+const quickCaptureSubmit = $('#quick-capture-submit');
 const quickItems = $('#quick-items');
 async function renderQuickItems() {
   const workspace = await readWorkspace();
@@ -39,6 +40,7 @@ quickCaptureForm.addEventListener('submit', async (event) => {
   const label = quickCaptureInput.value;
   if (!label.trim()) return;
   quickCaptureInput.disabled = true;
+  quickCaptureSubmit.disabled = true;
   try {
     await captureItem(label);
     quickCaptureInput.value = '';
@@ -46,7 +48,10 @@ quickCaptureForm.addEventListener('submit', async (event) => {
     setStatus('Guardado en Pendientes.');
   } catch (error) {
     setStatus(`No se pudo guardar: ${error.message}`, true);
-  } finally { quickCaptureInput.disabled = false; }
+  } finally {
+    quickCaptureInput.disabled = false;
+    quickCaptureSubmit.disabled = false;
+  }
 });
 renderQuickItems().catch((error) => setStatus(error.message, true));
 const listView = $('#list-view');

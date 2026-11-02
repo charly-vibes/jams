@@ -53,7 +53,7 @@ test('UI uses real IndexedDB domain APIs, worker protocol, splitter preview, and
 
 test('home offers direct unassigned capture wired to the guarded workspace', () => {
   const html = read('index.html');
-  for (const id of ['quick-capture', 'quick-capture-input', 'quick-items']) {
+  for (const id of ['quick-capture', 'quick-capture-input', 'quick-capture-submit', 'quick-items']) {
     assert.match(html, new RegExp(`id="${id}"`));
   }
   const script = read('script.js');
@@ -61,6 +61,8 @@ test('home offers direct unassigned capture wired to the guarded workspace', () 
   assert.ok(script.includes('await captureItem(label)'));
   assert.match(script, /quickCaptureInput\.value = ''/);
   assert.match(script, /setStatus\(`No se pudo guardar: \$\{error\.message\}`, true\)/);
+  assert.match(script, /quickCaptureSubmit\.disabled = true/);
+  assert.match(script, /quickCaptureSubmit\.disabled = false/);
 });
 
 test('manifest declares a Spanish standalone app with audio file handling and text share target', () => {
@@ -91,7 +93,7 @@ test('offline shell precaches worker dependencies and removes only listar-owned 
   };
   for (const entry of ['script.js', 'worker.js', 'analyze.mjs', 'command-reducer.mjs', 'context-review.mjs', 'db.js', 'app-core.mjs']) visitImports(entry);
   assert.match(worker, /key\.startsWith\('listar-'\)/);
-  assert.match(worker, /const CACHE_NAME = 'listar-shell-v2'/);
+  assert.match(worker, /const CACHE_NAME = 'listar-shell-v3'/);
   assert.doesNotMatch(worker, /caches\.delete\(key\)[\s\S]*startsWith\('transcribir-'/);
 });
 

@@ -70,6 +70,7 @@ async function seedLegacy() {
 async function readLegacyById(legacy) {
   const items = [];
   for (const fixtureItem of legacy.items) items.push(await Item.get(fixtureItem.id));
+  // The legacy guard legitimately bumps list.version on its own writes; identity lives in the other fields.
   const { version: _version, ...listRest } = await List.get(legacy.list.id);
   return { list: listRest, items, audio: await Audio.byList(legacy.list.id) };
 }

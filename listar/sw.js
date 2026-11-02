@@ -1,7 +1,7 @@
 // Purpose: cache Listar's local app shell and receive offline-safe shared audio.
 // Responsibilities: same-origin app caching, POST share handoff, one-time local file delivery.
 // Rationale: audio must survive the navigation from a share sheet without reaching a server.
-const CACHE_NAME = 'listar-shell-v2';
+const CACHE_NAME = 'listar-shell-v3';
 const SHARED_AUDIO_CACHE = 'listar-shared-audio-v1';
 const SHELL = [
   './', './index.html', './style.css', './manifest.json', './icon.svg', './sw.js', './script.js',
