@@ -5,11 +5,12 @@
 //   confirmation, reviewed drafts commit through one guarded batch with durable retry, and collection
 //   removal always preserves items by leaving them unassigned (A10).
 
-import { Item, List } from './db.js';
+import { Item, List, Intake } from './db.js';
 import {
-  captureItem, captureBatch, commitVoiceActions, moveItem, readWorkspace, applyItemUpdate, toggleDone, setArchived, applyItemFields, removeCapturedItem,
+  captureItem, captureBatch, commitVoiceActions, moveItem, readWorkspace, applyItemUpdate, toggleDone, setArchived, applyItemFields, removeCapturedItem, receiptFor,
   createCollection, renameCollection, removeCollection,
 } from './workspace.mjs';
+import { planRecovery, nextOperationIdentity } from './intake.mjs';
 import {
   actionSummaries, analyzeVoiceTranscript, answerStep, createVoiceSession, sessionActions, sessionStep,
 } from './voice-resolution.mjs';
@@ -91,6 +92,80 @@ function collectionOptions(snapshot) {
     ...snapshot.collections.map((collection) => ({ value: collection.id, label: collection.name })),
   ];
 }
+
+// jams-8be.8 (A16): the active durable intake whose audio feeds the current
+// capture; its frozen payload + stable operation ID persist BEFORE the commit
+// begins, and cleanup only happens once the outcome is a definitive success.
+let activeIntake = null;
+const intakeCard = $('#intake-card');
+const intakeSummary = $('#intake-summary');
+const intakeReview = $('#intake-review');
+const intakeDiscard = $('#intake-discard');
+
+async function peekSharedAudio(token) {
+  const key = new URL(`./__shared_audio__/${encodeURIComponent(token)}`, import.meta.url).href;
+  const response = await globalThis.caches?.open(SHARED_AUDIO_CACHE).then((cache) => cache.match(key));
+  if (!response) throw new Error('El archivo ya no está disponible.');
+  const blob = await response.blob();
+  const name = response.headers.get('X-Shared-Filename') || 'audio-compartido';
+  return new File([blob], name, { type: blob.type || 'application/octet-stream' });
+}
+
+async function deleteSharedAudioFile(token) {
+  const key = new URL(`./__shared_audio__/${encodeURIComponent(token)}`, import.meta.url).href;
+  await globalThis.caches?.open(SHARED_AUDIO_CACHE).then((cache) => cache.delete(key)).catch(() => {});
+}
+
+// Idempotent handoff completion: removes the durable record and the temporary
+// file; safe to re-run after a crash between the two steps.
+async function finishIntakeCleanup(intake) {
+  await Intake.remove(intake.token);
+  await deleteSharedAudioFile(intake.token);
+  if (activeIntake?.token === intake.token) activeIntake = null;
+}
+
+async function renderIntakeCard() {
+  const intakes = await Intake.getAll();
+  const count = intakes.length;
+  intakeCard.classList.toggle('hidden', count === 0 || workspaceDraft != null || voiceSession != null);
+  if (!count) return;
+  intakeSummary.textContent = count === 1
+    ? 'Hay 1 audio compartido esperando revisión.'
+    : `Hay ${count} audios compartidos esperando; quedan en la cola detrás de la revisión actual.`;
+}
+
+async function recoverIntakes() {
+  const intakes = await Intake.getAll();
+  if (!intakes.length) { await renderIntakeCard(); return; }
+  const receiptIds = [];
+  for (const intake of intakes) {
+    if (intake.operationId && await receiptFor(intake.operationId)) receiptIds.push(intake.operationId);
+  }
+  const { finish } = planRecovery(intakes, receiptIds);
+  for (const intake of finish) await finishIntakeCleanup(intake);
+  await renderIntakeCard();
+}
+
+intakeReview.addEventListener('click', async () => {
+  const [next] = await Intake.getAll();
+  if (!next) return;
+  activeIntake = next;
+  try {
+    const file = await peekSharedAudio(next.token);
+    await processWorkspaceAudio(file);
+  } catch (error) {
+    setStatus(`No se pudo revisar el audio: ${error.message}`, true);
+  }
+  await renderIntakeCard();
+});
+
+intakeDiscard.addEventListener('click', async () => {
+  const [next] = await Intake.getAll();
+  if (!next) return;
+  await finishIntakeCleanup(next);
+  setStatus('Audio descartado. No se guardó nada.');
+  await renderIntakeCard();
+});
 
 let lastCapturedId = null;
 let editing = null;
@@ -581,6 +656,7 @@ function draftDestinationName() {
 function renderDraft() {
   const captureActive = workspaceDraft != null || voiceSession != null;
   draftCard.classList.toggle('hidden', !captureActive);
+  renderIntakeCard().catch(() => {});
   // A second capture waits for an explicit choice; it never silently replaces
   // the active capture.
   draftChoice.classList.toggle('hidden', !pendingDraftSource);
@@ -820,6 +896,11 @@ voiceConfirm.addEventListener('click', async () => {
   renderDraft();
   const session = voiceSession;
   try {
+    // A14/frozen-before-submit: an intake-bound voice commit persists its stable
+    // operation ID and exact actions with the intake record before the transaction.
+    if (activeIntake) {
+      await Intake.save({ ...activeIntake, operationId: session.operationId, payload: plan.actions });
+    }
     // Retry after an unknown transaction result reuses the session's operation
     // ID and payload first (A14); a renewed session after stale rejection
     // carries a fresh identity for the re-reviewed plan.
@@ -834,6 +915,8 @@ voiceConfirm.addEventListener('click', async () => {
     await renderWorkspaceView();
     const summaries = actionSummaries(plan.actions, session.snapshot).join('; ');
     showActionReceipt(`Cambios guardados: ${summaries}.`, voiceReceipt(session, plan.actions));
+    if (activeIntake) await finishIntakeCleanup(activeIntake);
+    await renderIntakeCard();
     // A capture that arrived while committing is offered again, not dropped.
     if (pending) openIncomingCapture(pending.incoming, { source: pending.source, kind: pending.kind });
   } catch (error) {
@@ -854,6 +937,7 @@ voiceConfirm.addEventListener('click', async () => {
       }
     } else {
       // A15: storage failure keeps the review open with its resolutions and offers retry.
+      if (activeIntake) await Intake.save({ ...activeIntake, commitFailed: true }).catch(() => {});
       setStatus(`No se pudo guardar: ${error.message}. La revisión sigue abierta; puedes reintentar.`, true);
     }
     renderDraft();
@@ -867,8 +951,20 @@ draftConfirm.addEventListener('click', async () => {
   renderDraft();
   draftStatus.textContent = CAPTURE_STATES.committing;
   const proposals = payloadForCommit(workspaceDraft);
-  const operationId = crypto.randomUUID();
   const destinationCollectionId = draftCollectionId;
+  // A14/frozen-before-submit: an intake-bound draft persists its stable
+  // operation ID and exact payload with the intake record BEFORE the commit
+  // begins; the ID is replaced only after a definitive failure with edits.
+  let operationId;
+  if (activeIntake) {
+    const edited = activeIntake.payload != null
+      && JSON.stringify(activeIntake.payload) !== JSON.stringify(proposals);
+    operationId = nextOperationIdentity(activeIntake, { failed: activeIntake.commitFailed === true, edited });
+    activeIntake = { ...activeIntake, operationId, payload: proposals };
+    await Intake.save(activeIntake);
+  } else {
+    operationId = crypto.randomUUID();
+  }
   try {
     const items = await captureBatch(proposals, operationId, lastSnapshot?.revision, { collectionId: destinationCollectionId });
     lastCapturedId = items[items.length - 1]?.id ?? null;
@@ -884,11 +980,18 @@ draftConfirm.addEventListener('click', async () => {
       ? (lastSnapshot?.collections.find((c) => c.id === destinationCollectionId)?.name ?? 'colección')
       : 'Pendientes';
     showReceipt(`${count} artículo${count === 1 ? '' : 's'} guardado${count === 1 ? '' : 's'} en ${where}.`, destinationCollectionId, lastSnapshot);
+    // Definitive success completes the handoff idempotently.
+    if (activeIntake) await finishIntakeCleanup(activeIntake);
+    await renderIntakeCard();
     // A capture that arrived while committing is offered again, not dropped.
     if (pending) openDraft(pending.incoming, { source: pending.source });
   } catch (error) {
     // A15: storage failure keeps the draft open with its values and offers retry.
     draftCommitting = false;
+    if (activeIntake) {
+      activeIntake = { ...activeIntake, commitFailed: true };
+      await Intake.save(activeIntake);
+    }
     renderDraft();
     if (pendingDraftSource) draftChoice.classList.remove('hidden');
     setStatus(`No se pudo guardar: ${error.message}. La revisión sigue abierta; puedes reintentar.`, true);
@@ -1175,6 +1278,8 @@ async function openList(id) {
   if (queuedSharedAudioToken) {
     try {
       const file = await consumeSharedAudio(queuedSharedAudioToken);
+      await Intake.remove(queuedSharedAudioToken).catch(() => {});
+      await renderIntakeCard();
       queuedSharedAudioToken = null;
       const url = new URL(location.href);
       url.searchParams.delete('shared_audio');
@@ -1711,6 +1816,9 @@ async function storeSharedAudio(file) {
   await cache.put(key, new Response(file, {
     headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-Shared-Filename': file.name || 'audio-compartido' },
   }));
+  // Durable handoff marker written BEFORE the transfer is ever consumed.
+  await Intake.save({ token, createdAt: Date.now(), status: 'pending' });
+  await renderIntakeCard();
   return token;
 }
 
@@ -1757,7 +1865,10 @@ async function initialize() {
   const url = new URL(location.href);
   queuedSharedAudioToken = url.searchParams.get('shared_audio');
   if (queuedSharedAudioToken) {
-    setStatus('Audio compartido guardado en este dispositivo. Abre una lista para transcribirlo.');
+    // The SW already stored the bytes; make the acknowledged handoff durable
+    // before anything consumes it, so a reload recovers through the intake card.
+    await Intake.save({ token: queuedSharedAudioToken, createdAt: Date.now(), status: 'pending' });
+    setStatus('Audio compartido guardado en este dispositivo.');
   } else if (url.searchParams.has('share_error')) {
     setStatus('No se pudo guardar el audio compartido. Puedes subir el archivo desde una lista.', true);
   } else if (url.searchParams.get('text')) {
@@ -1765,4 +1876,8 @@ async function initialize() {
   }
 }
 
-initialize().catch(showDatabaseError);
+initialize()
+  .catch(showDatabaseError)
+  // A storage failure during intake recovery must not blank the app: report it
+  // in the status region and keep the checklist usable.
+  .then(() => recoverIntakes().catch((error) => setStatus(`No se pudieron recuperar los audios guardados: ${error.message}`, true)));

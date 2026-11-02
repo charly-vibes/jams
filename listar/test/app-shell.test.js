@@ -184,6 +184,22 @@ test('rows expose inline editing, completion, details and archive without per-ro
   assert.doesNotMatch(script, /row-delete/);
 });
 
+test('shared audio handoffs are durable through an intake card with frozen-identity commits', () => {
+  const html = read('index.html');
+  for (const id of ['intake-card', 'intake-summary', 'intake-review', 'intake-discard']) {
+    assert.match(html, new RegExp(`id="${id}"`));
+  }
+  assert.match(html, /hasta que lo guardes o lo descartes[^<]*Destino: Sin lista/);
+  const script = read('script.js');
+  assert.ok(script.includes("import { planRecovery, nextOperationIdentity } from './intake.mjs'"));
+  assert.match(script, /await Intake\.save\(\{ token, createdAt: Date\.now\(\), status: 'pending' \}\)/);
+  assert.match(script, /recoverIntakes\(\)\.catch/);
+  assert.match(script, /planRecovery\(intakes, receiptIds\)/);
+  assert.match(script, /await Intake\.save\(activeIntake\);/);
+  assert.match(script, /await finishIntakeCleanup\(activeIntake\);/);
+  assert.match(script, /commitFailed: true/);
+});
+
 test('home offers an inline draft review before one batch commit', () => {
   const html = read('index.html');
   for (const id of [
@@ -239,7 +255,7 @@ test('offline shell precaches worker dependencies and removes only listar-owned 
   };
   for (const entry of ['script.js', 'worker.js', 'analyze.mjs', 'command-reducer.mjs', 'context-review.mjs', 'db.js', 'app-core.mjs']) visitImports(entry);
   assert.match(worker, /key\.startsWith\('listar-'\)/);
-  assert.match(worker, /const CACHE_NAME = 'listar-shell-v9'/);
+  assert.match(worker, /const CACHE_NAME = 'listar-shell-v10'/);
   assert.doesNotMatch(worker, /caches\.delete\(key\)[\s\S]*startsWith\('transcribir-'/);
 });
 

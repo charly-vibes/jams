@@ -233,7 +233,7 @@ test('interleaved snapshot read sees old items with old version, then writer com
 test('upgrade from production v1 preserves legacy data and initializes list version zero', async () => {
   await makeV1Database();
   const snapshot = await readSnapshot('legacy-list');
-  assert.equal(DB_VERSION, 2);
+  assert.equal(DB_VERSION, 3);
   assert.equal(snapshot.version, 0);
   assert.equal(snapshot.items[0].id, 'legacy-item');
   assert.deepEqual(snapshot.items[0].attributes.note[0], {
@@ -242,6 +242,7 @@ test('upgrade from production v1 preserves legacy data and initializes list vers
   const database = await openRaw();
   assert.equal(database.version, DB_VERSION);
   assert.ok(database.objectStoreNames.contains('operations'));
+  assert.ok(database.objectStoreNames.contains('intakes'));
   database.close();
 });
 

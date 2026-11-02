@@ -6,11 +6,12 @@
 
 import { recordDebugEvent } from './debug.mjs';
 export const DB_NAME = 'listar';
-export const DB_VERSION = 2;
+export const DB_VERSION = 3;
 
 const STORE_LISTS = 'lists';
 const STORE_ITEMS = 'items';
 const STORE_AUDIO = 'audio';
+const STORE_INTAKES = 'intakes';
 const STORE_OPERATIONS = 'operations';
 
 export class ReloadRequiredError extends Error {
@@ -60,6 +61,9 @@ function initializeSchema(event) {
   }
   if (!db.objectStoreNames.contains(STORE_OPERATIONS)) {
     db.createObjectStore(STORE_OPERATIONS, { keyPath: 'operationId' });
+  }
+  if (!db.objectStoreNames.contains(STORE_INTAKES)) {
+    db.createObjectStore(STORE_INTAKES, { keyPath: 'token' });
   }
 
   if (event.oldVersion < DB_VERSION) {
@@ -589,6 +593,41 @@ export class Audio {
 // A10: removing a collection detaches membership instead of deleting content.
 // Every item and audio of the list keeps its record and id, only the listId is
 // stripped, then the list itself is removed — all in one legacy transaction.
+/** Intake store { token, createdAt, status: 'pending'|'committed', transcript?, operationId?, payload?, committedAt? }
+ *  Durable handoff marker for shared/file audio: written before the transfer is
+ *  consumed so reload can resume review or finish cleanup by commit receipt. */
+export class Intake {
+  static async save(rec) {
+    if (typeof rec?.token !== 'string' || !rec.token.trim()) throw new TypeError('Intakes need a token.');
+    return runTransaction(STORE_INTAKES, 'readwrite', ({ transaction, setValue, abort }) => {
+      const request = transaction.objectStore(STORE_INTAKES).put(rec);
+      request.onsuccess = () => setValue(rec);
+      request.onerror = () => abort(request.error);
+    });
+  }
+  static async getAll() {
+    return runTransaction(STORE_INTAKES, 'readonly', ({ transaction, setValue, abort }) => {
+      const request = transaction.objectStore(STORE_INTAKES).getAll();
+      request.onsuccess = () => setValue(request.result.sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0)));
+      request.onerror = () => abort(request.error);
+    });
+  }
+  static async get(token) {
+    return runTransaction(STORE_INTAKES, 'readonly', ({ transaction, setValue, abort }) => {
+      const request = transaction.objectStore(STORE_INTAKES).get(token);
+      request.onsuccess = () => setValue(request.result);
+      request.onerror = () => abort(request.error);
+    });
+  }
+  static async remove(token) {
+    return runTransaction(STORE_INTAKES, 'readwrite', ({ transaction, setValue, abort }) => {
+      const request = transaction.objectStore(STORE_INTAKES).delete(token);
+      request.onsuccess = () => setValue(undefined);
+      request.onerror = () => abort(request.error);
+    });
+  }
+}
+
 export function detachListContent(listId) {
   return runTransaction([STORE_LISTS, STORE_ITEMS, STORE_AUDIO], 'readwrite', ({ transaction, setValue, abort }) => {
     const itemStore = transaction.objectStore(STORE_ITEMS);

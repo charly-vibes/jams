@@ -1,0 +1,57 @@
+#+TITLE: jams-8be.8 — Durable shared-audio intake: fixture design
+#+DATE: 2026-11-02
+
+* Design
+
+**Storage (=db.js= v2→v3):
+- new =intakes= object store (keyPath =token=): ={ token, createdAt, status: 'pending' | 'committed', transcript?, operationId?, payload?, committedAt? }=
+- =Intake.save/getAll/remove=; v3 upgrade creates only the intakes store (failed
+  migration aborts, prior schema/data intact — existing upgrade fixtures cover)
+- audio bytes stay in the SW CacheStorage handoff (namespace unchanged); the
+  intake record is the durable handoff marker: written BEFORE the transfer is
+  consumed, removed only after commit-success cleanup or discard (idempotent)
+
+**Commit identity (=workspace.mjs=):
+- =receiptFor(operationId)= — reads the operations replay receipt (the durable
+  commit receipt; captureBatch/captureItem/commitVoiceActions already write it)
+- freeze-before-submit: intake record gains the stable operationId + frozen
+  payload BEFORE the transaction starts; unknown outcomes can never replace it
+
+**Pure state (=listar/intake.mjs=):
+- =planRecovery(intakes, receiptExists)= → ={ resume: [...], finish: [...] }= —
+  committed-with-receipt intakes finish cleanup only; uncommitted resume review
+  with the same identity; never re-analyze-and-append a committed intake
+- =nextOperationIdentity(intake, { failed, edited })= — same ID while outcome is
+  unknown or identical retry; a new ID only after a DEFINITIVE failed commit
+  with an edited payload (spec)
+
+**UI (=script.js= / =index.html=):
+- global =#intake-card= on home (visible in every view): pending count, filename,
+  =Destino: Sin lista= default, disclose "se guarda hasta guardar o descartar",
+  Revisar / Descartar buttons; a second shared file queues behind an active
+  draft with its pending count (A16: 0 collection-creation steps)
+- storeSharedAudio persists the intake record before deleting the URL param;
+  reload path renders intake-card from Intake.getAll() + planRecovery with
+  workspace receipts; confirmed save retains a long-term audio record only
+  when saveAudio is enabled; discard deletes cache entry + record; explicit
+  audio clearing removes pending intake files in its scope; failed save keeps
+  the intake retryable (A15)
+
+* Fixture table (inputs → required results)
+
+| # | Given | Input | Required result |
+|---+-------|-------|-----------------|
+| I1 | fresh share handoff | storeSharedAudio | intake record durable BEFORE transfer consumed; URL param deletion after |
+| I2 | reload, uncommitted | planRecovery | resume with frozen operationId + payload; 0 new items until confirm |
+| I3 | reload, committed (crash before cleanup) | receipt exists | finish cleanup only; exactly 1 batch; repeated cleanup is a no-op |
+| I4 | discard | Intake.remove + cache delete | temp file gone; 0 items; record gone |
+| I5 | definitive failed save, payload edited | nextOperationIdentity | new operationId; unchanged retry keeps the original |
+| I6 | active draft + second share | Intake.getAll | both durable; pending count shown; no overwrite |
+| I7 | unknown outcome (timeout) | identity | original ID + payload first; never replaced pre-outcome |
+
+* Out of slice
+
+- A17 first-use offline model messaging: capture states already explain download
+  needs (jams-8be.6); browser-level verification stays with jams-8be.12.
+- Real DOM/reload evidence: jams-8be.12; here the reload path is modeled by
+  re-reading from the durable store (same as jams-8be.1 reopen fixtures).

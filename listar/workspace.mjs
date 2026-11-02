@@ -373,6 +373,15 @@ export async function removeCapturedItem(itemId, expectedRevision, { expected } 
   });
 }
 
+export async function receiptFor(operationId) {
+  const db = await open();
+  return new Promise((resolve, reject) => {
+    const request = db.transaction('operations', 'readonly').objectStore('operations').get(operationId);
+    request.onsuccess = () => { db.close(); resolve(request.result ?? null); };
+    request.onerror = () => { db.close(); reject(request.error); };
+  });
+}
+
 const VOICE_KINDS = new Set(['archive', 'detach', 'add', 'increment']);
 
 function normalizeVoiceActions(actions) {
