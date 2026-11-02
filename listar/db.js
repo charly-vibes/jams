@@ -421,6 +421,14 @@ export class Item {
       request.onerror = () => abort(request.error);
     });
   }
+  static async all() {
+    return runTransaction(STORE_ITEMS, 'readonly', ({ transaction, setValue, abort }) => {
+      const request = transaction.objectStore(STORE_ITEMS).getAll();
+      request.onsuccess = () => setValue(request.result);
+      request.onerror = () => abort(request.error);
+    });
+  }
+
   static async list(listId) {
     return runTransaction(STORE_ITEMS, 'readonly', ({ transaction, setValue, abort }) => {
       const request = transaction.objectStore(STORE_ITEMS).index('listId').getAll(listId);

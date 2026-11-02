@@ -1,0 +1,37 @@
+#+TITLE: jams-8be.2 — Views, collections, membership: fixture design
+#+DATE: 2026-11-02
+
+* Design
+
+**Pure layer** — new =listar/views.mjs= (no storage/DOM):
+- =project(snapshot, view)= → rows; views: =pendientes | todo | completados | sin-lista | collection:<id>=
+- archived items excluded from all standard views; =sin-lista= includes done items
+- order: explicit =order=, then =createdAt=, then =id=
+- =defaultDestination(view)= → pending + unassigned (standard) / pending + that collection (shortcut)
+- =resolveSavedView(savedId, snapshot)= → saved id when valid, else =pendientes=
+- inputs are frozen snapshots; zero mutation, zero side effects
+
+**Persistence layer** — =listar/workspace.mjs= v2:
+- upgrade adds =collections= and =memberships= (keyPath =itemId=, zero-or-one membership) stores
+- =readWorkspace()= assembles one coherent snapshot: workspace items + collections,
+  merged with the legacy =listar= DB through a read adapter (legacy list IDs become
+  collection IDs, legacy =listId= becomes membership; no item copy, legacy untouched)
+- an explicit membership record overrides legacy =listId= (move of a legacy item
+  writes one membership record; the legacy row is never modified)
+- =captureItem(..., { collectionId })= records destination membership
+- =moveItem(itemId, collectionId | null, expectedRevision)=: guarded commit,
+  exactly one membership write, 0 item-field writes; same-destination move is a
+  no-op; stale revision rejects with zero partial writes
+
+**UI layer** — =index.html= / =script.js=:
+- view selector, per-view rows via =project()=, destination control defaulting to
+  the view's defaults, last-view restore, save receipt outside rows offering
+  =Ver en Pendientes= when the current view hides the new item (A07), per-row
+  =Mover a= control (A09)
+
+* Out of slice
+
+- Undo (A12/A13) is jams-8be.5; archiving UI is jams-8be.3; legacy writers joining
+  the workspace revision guard is deferred (adapter reads legacy at snapshot time;
+  conservative stale-reject after unrelated writes remains acceptable per spec).
+- Two-tab live refresh and real-DOM evidence stay with jams-8be.12.

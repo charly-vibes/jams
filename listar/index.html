@@ -20,12 +20,20 @@
     <section id="home-view" aria-labelledby="home-heading">
       <p class="eyebrow">TODO EN SU LUGAR</p>
       <h1 id="home-heading">Pendientes</h1>
+      <div class="view-bar">
+        <label class="visually-hidden" for="view-selector">Vista</label>
+        <select id="view-selector"></select>
+        <label class="visually-hidden" for="capture-destination">Destino</label>
+        <select id="capture-destination"></select>
+      </div>
       <p class="subhead">Agrega algo y aparecerá aquí.</p>
       <form id="quick-capture" class="quick-capture">
         <label class="visually-hidden" for="quick-capture-input">Agregar algo</label>
         <input id="quick-capture-input" autocomplete="off" placeholder="Agregar algo…">
         <button id="quick-capture-submit" class="primary-button" type="submit">Agregar</button>
       </form>
+      <p id="capture-receipt" class="capture-receipt hidden" aria-live="polite"></p>
+      <button id="receipt-goto" class="secondary-button hidden" type="button">Ver en Pendientes</button>
       <div id="quick-items" class="items-list" aria-live="polite"></div>
       <div id="lists-grid" class="lists-grid" aria-live="polite"></div>
       <p id="home-empty" class="empty-state hidden">Todavía no hay artículos.</p>

@@ -77,12 +77,11 @@ async function readLegacyById(legacy) {
 
 test('A11: workspace captures preserve every legacy ID, absent optional field, attribute, evidence, order, setting and retained audio', async () => {
   const { storage, listId, legacy } = await seedLegacy();
-  await captureItem('pan', 'capture-a', 0);
-  const workspaceAfterFirstCapture = await readWorkspace();
+  const pan = await captureItem('pan', 'capture-a', 0);
 
   // Interleave a legacy writer between workspace captures.
   const eggs = await Item.add({ listId, label: 'Huevos', text: 'huevos', order: 3 });
-  await captureItem('sal', 'capture-b', 1);
+  const sal = await captureItem('sal', 'capture-b', 1);
 
   assert.deepEqual(await readLegacyById(legacy), {
     list: (({ version: _v, ...rest }) => rest)(structuredClone(legacy.list)),
@@ -94,26 +93,30 @@ test('A11: workspace captures preserve every legacy ID, absent optional field, a
   assert.equal((await Item.get(eggs.id)).label, 'Huevos');
 
   const workspace = await readWorkspace();
-  assert.deepEqual(workspace, {
-    revision: 2,
-    items: [...workspaceAfterFirstCapture.items, { id: 'capture-b', label: 'sal', text: 'sal', done: false, archived: false, order: 2 }],
-  });
-  for (const item of workspace.items) {
-    assert.equal(Object.hasOwn(item, 'listId'), false);
-    assert.equal(item.done, false);
+  assert.equal(workspace.revision, 2);
+  const byId = new Map(workspace.items.map((entry) => [entry.id, entry]));
+  assert.deepEqual(byId.get('capture-a'), { ...pan, collectionId: null });
+  assert.deepEqual(byId.get('capture-b'), { ...sal, collectionId: null });
+  assert.ok(byId.get(eggs.id));
+  assert.ok(workspace.collections.some((collection) => collection.id === legacy.list.id));
+  for (const id of ['capture-a', 'capture-b']) {
+    assert.equal(Object.hasOwn(byId.get(id), 'listId'), false);
+    assert.equal(byId.get(id).done, false);
   }
 });
 
 test('frozen legacy fixture and held workspace snapshot stay unchanged through interleaved writes', async () => {
   const { legacy } = await seedLegacy();
   const heldSnapshot = await readWorkspace();
+  const heldClone = structuredClone(heldSnapshot);
   const fixtureClone = structuredClone(legacy);
 
   await captureItem('pan', 'capture-c', 0);
   await Item.put({ ...(await Item.get(legacy.items[0].id)) });
   await captureItem('aceite', 'capture-d', 1);
 
-  assert.deepEqual(heldSnapshot, { revision: 0, items: [] });
+  assert.deepEqual(heldSnapshot, heldClone);
+  assert.equal(heldSnapshot.revision, 0);
   assert.deepEqual(await readLegacyById(legacy), {
     list: (({ version: _v, ...rest }) => rest)(fixtureClone.list),
     items: [structuredClone(legacy.items[0]), structuredClone(legacy.items[1])],
@@ -126,7 +129,10 @@ test('A15: stale capture aborts with zero partial records on workspace and legac
   const pan = await captureItem('pan', 'capture-e', 0);
   await assert.rejects(captureItem('leche', 'capture-f', 0));
 
-  assert.deepEqual(await readWorkspace(), { revision: 1, items: [pan] });
+  const workspace = await readWorkspace();
+  assert.equal(workspace.revision, 1);
+  assert.deepEqual(workspace.items.find((entry) => entry.id === 'capture-e'), { ...pan, collectionId: null });
+  assert.equal(workspace.items.filter((entry) => !entry.listId && entry.id.startsWith('capture-')).length, 1);
   assert.equal((await Item.list(listId)).length, 2);
   assert.deepEqual((await readLegacyById(legacy)).items, structuredClone(legacy.items));
 });
@@ -134,9 +140,12 @@ test('A15: stale capture aborts with zero partial records on workspace and legac
 test('A01/A14: captured unassigned item survives reopen and identical retry returns the original item', async () => {
   const pan = await captureItem('pan', 'capture-g', 0);
   const reopened = await readWorkspace();
-  assert.deepEqual(reopened, { revision: 1, items: [pan] });
+  assert.equal(reopened.revision, 1);
+  assert.deepEqual(reopened.items.find((entry) => entry.id === 'capture-g'), { ...pan, collectionId: null });
 
   const retry = await captureItem('pan', 'capture-g', 0);
   assert.deepEqual(retry, pan);
-  assert.deepEqual(await readWorkspace(), { revision: 1, items: [pan] });
+  const afterRetry = await readWorkspace();
+  assert.equal(afterRetry.revision, 1);
+  assert.equal(afterRetry.items.filter((entry) => entry.id === 'capture-g').length, 1);
 });

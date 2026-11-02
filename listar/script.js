@@ -3,7 +3,8 @@
 // Rationale: voice-derived items stay reviewable and enter the database only after one explicit confirmation.
 
 import { Item, List } from './db.js';
-import { captureItem, readWorkspace } from './workspace.mjs';
+import { captureItem, moveItem, readWorkspace } from './workspace.mjs';
+import { project, defaultDestination, resolveSavedView, STANDARD_VIEWS } from './views.mjs';
 import {
   bindDatabaseStatus, clearAudioForList, clearDoneItems, copyText, createList, createPreviewSubmission, decodeAudioToMono16k, deleteItem,
   deleteList, formatListExport, loadSettings, makePreview, renameList, saveAudioCapture, saveSettings,
@@ -25,16 +26,111 @@ const quickCaptureForm = $('#quick-capture');
 const quickCaptureInput = $('#quick-capture-input');
 const quickCaptureSubmit = $('#quick-capture-submit');
 const quickItems = $('#quick-items');
-async function renderQuickItems() {
-  const workspace = await readWorkspace();
-  quickItems.replaceChildren(...workspace.items.map((item) => {
-    const row = document.createElement('div');
-    row.className = 'item-row';
-    row.textContent = item.label;
-    return row;
-  }));
-  $('#home-empty').classList.toggle('hidden', workspace.items.length > 0);
+const viewSelector = $('#view-selector');
+const captureDestination = $('#capture-destination');
+const captureReceipt = $('#capture-receipt');
+const receiptGoto = $('#receipt-goto');
+const VIEW_STORAGE_KEY = 'listar-last-view';
+let currentView = 'pendientes';
+let lastSnapshot = null;
+
+function savedView() {
+  try { return globalThis.localStorage?.getItem(VIEW_STORAGE_KEY) ?? null; } catch { return null; }
 }
+
+function storeView(view) {
+  try { globalThis.localStorage?.setItem(VIEW_STORAGE_KEY, view); } catch { /* view persistence is best-effort */ }
+}
+
+function collectionOptions(snapshot) {
+  return [
+    { value: '', label: 'Sin lista' },
+    ...snapshot.collections.map((collection) => ({ value: collection.id, label: collection.name })),
+  ];
+}
+
+function renderRow(item, snapshot) {
+  const row = document.createElement('div');
+  row.className = 'item-row';
+  const label = document.createElement('span');
+  label.textContent = item.label + (item.quantity != null ? ` — ${item.quantity}${item.unit ? ' ' + item.unit : ''}` : '');
+  if (item.done) label.style.textDecoration = 'line-through';
+  row.append(label);
+  const move = document.createElement('select');
+  move.className = 'row-move';
+  move.setAttribute('aria-label', `Mover ${item.label}`);
+  for (const option of collectionOptions(snapshot)) {
+    const entry = document.createElement('option');
+    entry.value = option.value;
+    entry.textContent = option.label;
+    if ((item.collectionId ?? '') === option.value) entry.selected = true;
+    move.append(entry);
+  }
+  move.addEventListener('change', () => moveRow(item.id, move.value || null));
+  row.append(move);
+  return row;
+}
+
+async function renderWorkspaceView() {
+  const snapshot = await readWorkspace();
+  lastSnapshot = snapshot;
+  currentView = resolveSavedView(currentView, snapshot);
+  const views = [...STANDARD_VIEWS, ...snapshot.collections.map((collection) => ({ id: 'collection:' + collection.id, label: collection.name }))];
+  viewSelector.replaceChildren(...views.map((view) => {
+    const option = document.createElement('option');
+    option.value = view.id;
+    option.textContent = view.label;
+    if (view.id === currentView) option.selected = true;
+    return option;
+  }));
+  const previousDestination = captureDestination.value;
+  captureDestination.replaceChildren(...collectionOptions(snapshot).map((option) => {
+    const entry = document.createElement('option');
+    entry.value = option.value;
+    entry.textContent = option.label;
+    return entry;
+  }));
+  // An existing draft destination survives rerenders; only an empty control resets to the view defaults.
+  const validPrevious = collectionOptions(snapshot).some((option) => option.value === previousDestination);
+  captureDestination.value = validPrevious ? previousDestination : (defaultDestination(currentView).collectionId ?? '');
+  const rows = project(snapshot, currentView);
+  quickItems.replaceChildren(...rows.map((item) => renderRow(item, snapshot)));
+  $('#home-empty').classList.toggle('hidden', rows.length > 0);
+}
+
+viewSelector.addEventListener('change', () => {
+  currentView = viewSelector.value;
+  storeView(currentView);
+  renderWorkspaceView().catch((error) => setStatus(error.message, true));
+});
+
+async function moveRow(itemId, collectionId) {
+  try {
+    const result = await moveItem(itemId, collectionId, lastSnapshot?.revision);
+    if (result.moved) setStatus(collectionId ? 'Movido de colección.' : 'Quitado de la colección.');
+    await renderWorkspaceView();
+  } catch (error) {
+    setStatus(`No se pudo mover: ${error.message}`, true);
+    await renderWorkspaceView().catch(() => {});
+  }
+}
+
+function showReceipt(message, destinationCollectionId, snapshot) {
+  captureReceipt.textContent = message;
+  captureReceipt.classList.remove('hidden');
+  const destinationView = destinationCollectionId ? 'collection:' + destinationCollectionId : 'pendientes';
+  const visible = project(snapshot, currentView).some((row) => row.id === lastCapturedId)
+    || (destinationCollectionId == null && currentView === 'pendientes');
+  receiptGoto.classList.toggle('hidden', visible);
+  receiptGoto.textContent = destinationCollectionId ? 'Ver en colección' : 'Ver en Pendientes';
+  receiptGoto.onclick = () => {
+    currentView = destinationView;
+    storeView(currentView);
+    renderWorkspaceView().catch((error) => setStatus(error.message, true));
+  };
+}
+
+let lastCapturedId = null;
 quickCaptureForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const label = quickCaptureInput.value;
@@ -42,10 +138,17 @@ quickCaptureForm.addEventListener('submit', async (event) => {
   quickCaptureInput.disabled = true;
   quickCaptureSubmit.disabled = true;
   try {
-    await captureItem(label);
+    const destinationCollectionId = captureDestination.value || null;
+    const captured = await captureItem(label, crypto.randomUUID(), lastSnapshot?.revision, { collectionId: destinationCollectionId });
+    lastCapturedId = captured.id;
     quickCaptureInput.value = '';
-    await renderQuickItems();
-    setStatus('Guardado en Pendientes.');
+    const snapshot = await readWorkspace();
+    lastSnapshot = snapshot;
+    await renderWorkspaceView();
+    const where = destinationCollectionId
+      ? (snapshot.collections.find((c) => c.id === destinationCollectionId)?.name ?? 'colección')
+      : 'Pendientes';
+    showReceipt(`Guardado en ${where}.`, destinationCollectionId, snapshot);
   } catch (error) {
     setStatus(`No se pudo guardar: ${error.message}`, true);
   } finally {
@@ -53,7 +156,10 @@ quickCaptureForm.addEventListener('submit', async (event) => {
     quickCaptureSubmit.disabled = false;
   }
 });
-renderQuickItems().catch((error) => setStatus(error.message, true));
+// Resolve against the real snapshot on first render; a cold start must not
+// downgrade a saved collection view before the snapshot exists.
+currentView = savedView() ?? 'pendientes';
+renderWorkspaceView().catch((error) => setStatus(error.message, true));
 const listView = $('#list-view');
 const listsGrid = $('#lists-grid');
 const itemsList = $('#items-list');

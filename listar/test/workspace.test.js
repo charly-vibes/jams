@@ -21,7 +21,7 @@ test('capture stores one literal unassigned item and identical retries do not du
   const first = await captureItem(input, 'capture-1', 0);
   const replay = await captureItem(input, 'capture-1', 0);
   assert.deepEqual(replay, first);
-  assert.deepEqual(await readWorkspace(), { revision: 1, items: [first] });
+  assert.deepEqual(await readWorkspace(), { revision: 1, items: [{ ...first, collectionId: null }], collections: [] });
   assert.equal(Object.hasOwn(first, 'listId'), false);
 });
 

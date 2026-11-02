@@ -86,6 +86,16 @@ describe('List store', () => {
 
 describe('Item store', () => {
   beforeEach(async () => { await clearStores(); });
+  test('all retrieves items across lists for the workspace adapter', async () => {
+    await List.put({ id: 'list-a', name: 'A', emoji: '', createdAt: 0, order: 0 });
+    await List.put({ id: 'list-b', name: 'B', emoji: '', createdAt: 0, order: 1 });
+    const first = await Item.add({ listId: 'list-a', label: 'Pan', order: 2 });
+    const second = await Item.add({ listId: 'list-b', label: 'Leche', order: 1 });
+    const all = await Item.all();
+    assert.deepEqual(all.map((item) => item.id).sort(), [first.id, second.id].sort());
+    assert.equal(all.length, 2);
+  });
+
   test('add returns record with all fields incl listId, done:false', async () => {
     await List.put({ id: 'list-1', name: 'list-1', emoji: '', createdAt: 0, order: 0 });
     const rec = await Item.add({ listId: 'list-1', label: 'Leche', text: '2 litros de leche', quantity: 2, unit: 'litros' });
