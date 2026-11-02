@@ -108,7 +108,7 @@ test('manifest declares a Spanish standalone app with audio file handling and te
 
 test('offline shell precaches worker dependencies and removes only listar-owned caches', () => {
   const worker = read('sw.js');
-  for (const asset of ['./index.html', './style.css', './manifest.json', './script.js', './app-core.mjs', './context-review.mjs', './analysis-router.mjs', './debug.mjs', './db.js', './splitter.js', './transcript-filter.mjs', './analyze.mjs', './command-reducer.mjs', './worker.js']) {
+  for (const asset of ['./index.html', './style.css', './manifest.json', './script.js', './app-core.mjs', './context-review.mjs', './context-preview.mjs', './analysis-router.mjs', './debug.mjs', './db.js', './splitter.js', './transcript-filter.mjs', './analyze.mjs', './command-reducer.mjs', './worker.js']) {
     assert.ok(worker.includes(asset), `missing precached ${asset}`);
   }
   const cacheAssets = new Set([...worker.matchAll(/'\.\/([^']+)'/gu)].map(([, asset]) => asset));
@@ -124,7 +124,7 @@ test('offline shell precaches worker dependencies and removes only listar-owned 
   };
   for (const entry of ['script.js', 'worker.js', 'analyze.mjs', 'command-reducer.mjs', 'context-review.mjs', 'db.js', 'app-core.mjs']) visitImports(entry);
   assert.match(worker, /key\.startsWith\('listar-'\)/);
-  assert.match(worker, /const CACHE_NAME = 'listar-shell-v4'/);
+  assert.match(worker, /const CACHE_NAME = 'listar-shell-v5'/);
   assert.doesNotMatch(worker, /caches\.delete\(key\)[\s\S]*startsWith\('transcribir-'/);
 });
 
