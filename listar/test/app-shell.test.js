@@ -51,6 +51,18 @@ test('UI uses real IndexedDB domain APIs, worker protocol, splitter preview, and
   assert.match(script, /bindDatabaseStatus\(appStatus\)/);
 });
 
+test('home offers direct unassigned capture wired to the guarded workspace', () => {
+  const html = read('index.html');
+  for (const id of ['quick-capture', 'quick-capture-input', 'quick-items']) {
+    assert.match(html, new RegExp(`id="${id}"`));
+  }
+  const script = read('script.js');
+  assert.ok(script.includes("import { captureItem, readWorkspace } from './workspace.mjs'"));
+  assert.ok(script.includes('await captureItem(label)'));
+  assert.match(script, /quickCaptureInput\.value = ''/);
+  assert.match(script, /setStatus\(`No se pudo guardar: \$\{error\.message\}`, true\)/);
+});
+
 test('manifest declares a Spanish standalone app with audio file handling and text share target', () => {
   const manifest = JSON.parse(read('manifest.json'));
   assert.equal(manifest.lang, 'es');

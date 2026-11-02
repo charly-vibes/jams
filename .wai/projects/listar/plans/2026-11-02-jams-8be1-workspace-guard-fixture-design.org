@@ -1,0 +1,41 @@
+#+TITLE: jams-8be.1 — Workspace guard fixture design (bounded)
+#+DATE: 2026-11-02
+
+* Decision
+
+The first capture slice uses a greenfield workspace database (`listar-workspace`,
+v1) beside the legacy database (`listar`, v2). No item copy, no synthetic list.
+Legacy membership adapter and any schema migration of legacy stores are deferred
+to the view/collection tickets (jams-8be.2 onward), where legacy items first
+become visible in the workspace.
+
+Rationale: A11 demands that an existing populated installation survive the
+upgrade. With a separate workspace DB, the upgrade is non-interfering by
+construction; the executable evidence required now is a rich legacy fixture that
+proves preservation while workspace writers interleave, plus abort behavior that
+writes zero partial records on both sides.
+
+* Fixtures (inputs → expected outputs)
+
+| Fixture | Given | Required result |
+|---|---|---|
+| A01 reopen | empty install, `captureItem('pan', 'op', 0)` | exactly 1 pending unassigned item; fresh connection read returns it with stable ID |
+| A11 legacy preservation | legacy list with 2 items (quantity+unit+attributes+evidence; done+sourceAudioId, absent optionals), audio record, settings | every ID, absent optional field, attribute, evidence, order, setting and audio record survives interleaved workspace captures; workspace items carry no `listId` |
+| A14 replay | retry same operation ID + payload after reopen | original item returned; revision and item count unchanged; changed payload with reused ID rejects |
+| A15 abort | stale `expectedRevision` capture | transaction aborts; legacy data/schema and prior workspace revision/items unchanged |
+
+* Guard preconditions (current contract)
+
+- `captureItem(label, operationId, expectedRevision?)`
+- blank/whitespace label → `null`, zero writes
+- replay lookup precedes stale rejection; replay with changed payload aborts
+- `expectedRevision` mismatch aborts before any write
+- success is reported only after `tx.oncomplete`
+
+* Out of slice (traceability)
+
+- Three-item batch replay (A14 batch half) lands with dictation review
+  (jams-8be.6); the operation-ID replay contract is proven at the capture
+  boundary with N=1 and is payload-agnostic.
+- Real DOM/browser behavior evidence is owned by jams-8be.12's Playwright
+  harness; this slice adds source-wiring assertions only.
