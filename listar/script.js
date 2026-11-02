@@ -432,6 +432,9 @@ async function renderWorkspaceView() {
   }
   const rows = project(snapshot, currentView);
   quickItems.replaceChildren(...rows.map((item) => renderRow(item, snapshot)));
+  // Keyboard contract: opening a row editor must move focus into it, so Enter
+  // and Escape reach the editor handlers (demonstrated by the browser harness).
+  if (editing) quickItems.querySelector('.row-edit-input')?.focus();
   $('#home-empty').classList.toggle('hidden', rows.length > 0);
   renderCollectionsPanel(snapshot);
   const forgetShortcut = $('#forget-shortcut');
@@ -1026,6 +1029,16 @@ draftConfirm.addEventListener('click', async () => {
   }
 });
 
+quickCaptureInput.addEventListener('paste', (event) => {
+  // A text input cannot hold newlines, so a multiline paste would silently
+  // collapse into one literal item. Route it through the reviewable draft.
+  const text = event.clipboardData?.getData('text/plain') ?? '';
+  const multiLine = draftFromText(text);
+  if (multiLine) {
+    event.preventDefault();
+    openDraft(multiLine, { source: 'text' });
+  }
+});
 quickCaptureForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const label = quickCaptureInput.value;

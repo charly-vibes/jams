@@ -23,7 +23,7 @@ async function deleteDatabases() {
 
 beforeEach(async () => { await deleteDatabases(); });
 
-test('I1/I4: intake records round-trip durably and discard removes exactly the record', async () => {
+test('A16/I1/I4: intake records round-trip durably and discard removes exactly the record', async () => {
   assert.equal(DB_VERSION, 3);
   await Intake.save({ token: 'tok-1', createdAt: 1, status: 'pending' });
   await Intake.save({ token: 'tok-2', createdAt: 2, status: 'pending' });

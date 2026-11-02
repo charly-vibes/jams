@@ -75,7 +75,7 @@ test('archivados shows only archived items for restoration', () => {
   assert.deepEqual(ids(project(snapshot, 'archivados')), ['i-viejo']);
 });
 
-test('default destinations are pending; collection shortcuts default to their collection', () => {
+test('A07: default destinations are pending even from Completados; shortcuts default to their collection', () => {
   assert.deepEqual(defaultDestination('pendientes'), { done: false, collectionId: null });
   assert.deepEqual(defaultDestination('completados'), { done: false, collectionId: null });
   assert.deepEqual(defaultDestination('sin-lista'), { done: false, collectionId: null });

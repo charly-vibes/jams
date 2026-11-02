@@ -40,7 +40,7 @@ test('quantity inverse can return to absent values', () => {
   assert.deepEqual(plan, { ok: true, kind: 'fields', fields: { quantity: null, unit: null } });
 });
 
-test('completion and archive inverses revert only their flag', () => {
+test('A12: completion and archive inverses revert only their flag', () => {
   const completion = planUndo(
     { action: 'completion', itemId: 'i-milk', before: { ...milkBefore, done: false }, after: { ...milkAfter, done: true } },
     { ...milkAfter, done: true },

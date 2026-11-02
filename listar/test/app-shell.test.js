@@ -63,6 +63,7 @@ test('home offers direct unassigned capture wired to the guarded workspace', () 
   assert.match(script, /setStatus\(`No se pudo guardar: \$\{error\.message\}`, true\)/);
   assert.match(script, /quickCaptureSubmit\.disabled = true/);
   assert.match(script, /quickCaptureSubmit\.disabled = false/);
+  assert.match(script, /quickCaptureInput\.addEventListener\('paste'/);
 });
 
 test('home exposes checklist views, destination control, receipt and per-row moves', () => {
