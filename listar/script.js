@@ -11,6 +11,7 @@ import {
   createCollection, renameCollection, removeCollection,
 } from './workspace.mjs';
 import { planRecovery, nextOperationIdentity } from './intake.mjs';
+import { keyAction, createFocusKeeper } from './a11y.mjs';
 import {
   actionSummaries, analyzeVoiceTranscript, answerStep, createVoiceSession, sessionActions, sessionStep,
 } from './voice-resolution.mjs';
@@ -97,6 +98,7 @@ function collectionOptions(snapshot) {
 // capture; its frozen payload + stable operation ID persist BEFORE the commit
 // begins, and cleanup only happens once the outcome is a definitive success.
 let activeIntake = null;
+const captureFocus = createFocusKeeper(() => document);
 const intakeCard = $('#intake-card');
 const intakeSummary = $('#intake-summary');
 const intakeReview = $('#intake-review');
@@ -206,15 +208,22 @@ function renderEditorRow(item, snapshot) {
   cancel.type = 'button';
   cancel.className = 'secondary-button';
   cancel.textContent = 'Cancelar';
-  const finish = () => { editing = null; renderWorkspaceView().catch((error) => setStatus(error.message, true)); };
+  const finish = () => {
+    editing = null;
+    renderWorkspaceView()
+      .then(() => captureFocus.restore())
+      .catch((error) => setStatus(error.message, true));
+  };
   cancel.addEventListener('click', finish);
   input.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') save.click();
-    if (event.key === 'Escape') finish();
+    const action = keyAction(event);
+    if (action === 'save') save.click();
+    if (action === 'cancel') finish();
   });
   unitInput.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') save.click();
-    if (event.key === 'Escape') finish();
+    const action = keyAction(event);
+    if (action === 'save') save.click();
+    if (action === 'cancel') finish();
   });
   save.addEventListener('click', async () => {
     const patch = isQuantity
@@ -290,11 +299,13 @@ async function undoLast() {
 }
 
 async function toggleRow(itemId) {
+  captureFocus.save();
   try {
     const updated = await toggleDone(itemId, lastSnapshot?.revision);
     lastReceipt = { action: 'completion', itemId, label: updated.label, before: lastSnapshot?.items.find((entry) => entry.id === itemId), after: updated };
     undoAwaitingConfirm = false;
     await renderWorkspaceView();
+    captureFocus.restore();
     showActionReceipt(updated.done ? `${updated.label} completado.` : `${updated.label} reactivado.`);
   } catch (error) {
     setStatus(`No se pudo completar: ${error.message}`, true);
@@ -303,12 +314,17 @@ async function toggleRow(itemId) {
 }
 
 async function archiveRow(itemId, archived) {
+  captureFocus.save();
   try {
     const updated = await setArchived(itemId, archived, lastSnapshot?.revision);
     lastReceipt = { action: archived ? 'archive' : 'restore', itemId, label: updated.label, before: lastSnapshot?.items.find((entry) => entry.id === itemId), after: updated };
     undoAwaitingConfirm = false;
     if (currentView === 'archivados' && archived) editing = null;
     await renderWorkspaceView();
+    // Restore returns focus when the row persists (e.g. restore from Archivados);
+    // archiving leaves the view and the keeper degrades to a no-op while the
+    // aria-live receipt announces the outcome.
+    captureFocus.restore();
     showActionReceipt(archived ? `${updated.label} archivado.` : `${updated.label} restaurado.`);
   } catch (error) {
     setStatus(`No se pudo archivar: ${error.message}`, true);
@@ -323,23 +339,31 @@ function renderRow(item, snapshot) {
   const done = document.createElement('input');
   done.type = 'checkbox';
   done.className = 'row-done';
+  done.id = `row-done-${item.id}`;
   done.checked = item.done === true;
   done.setAttribute('aria-label', `Completar ${item.label}`);
   done.addEventListener('change', () => toggleRow(item.id));
+  const doneHit = document.createElement('label');
+  doneHit.className = 'row-done-hit';
+  doneHit.htmlFor = done.id;
+  doneHit.append(done);
   const label = document.createElement('button');
   label.type = 'button';
   label.className = 'row-label';
+  label.id = `row-label-${item.id}`;
   label.textContent = item.label;
   if (item.done) label.classList.add('done');
-  label.addEventListener('click', () => { editing = { itemId: item.id, field: 'label' }; renderWorkspaceView().catch((error) => setStatus(error.message, true)); });
+  label.addEventListener('click', () => { captureFocus.save(); editing = { itemId: item.id, field: 'label' }; renderWorkspaceView().catch((error) => setStatus(error.message, true)); });
   const quantity = document.createElement('button');
   quantity.type = 'button';
   quantity.className = 'row-qty';
+  quantity.id = `row-qty-${item.id}`;
   quantity.textContent = item.quantity != null ? `${item.quantity}${item.unit ? ` ${item.unit}` : ''}` : 'Agregar cantidad';
-  quantity.addEventListener('click', () => { editing = { itemId: item.id, field: 'quantity' }; renderWorkspaceView().catch((error) => setStatus(error.message, true)); });
-  row.append(done, label, quantity);
+  quantity.addEventListener('click', () => { captureFocus.save(); editing = { itemId: item.id, field: 'quantity' }; renderWorkspaceView().catch((error) => setStatus(error.message, true)); });
+  row.append(doneHit, label, quantity);
   const move = document.createElement('select');
   move.className = 'row-move';
+  move.id = `row-move-${item.id}`;
   move.setAttribute('aria-label', `Mover ${item.label}`);
   for (const option of collectionOptions(snapshot)) {
     const entry = document.createElement('option');
@@ -612,6 +636,7 @@ $('#export-view-copy').addEventListener('click', () => exportCurrentView('copy')
 $('#export-view-share').addEventListener('click', () => exportCurrentView('share'));
 
 async function moveRow(itemId, collectionId) {
+  captureFocus.save();
   try {
     const before = lastSnapshot?.items.find((entry) => entry.id === itemId);
     const result = await moveItem(itemId, collectionId, lastSnapshot?.revision);
@@ -621,9 +646,11 @@ async function moveRow(itemId, collectionId) {
       showActionReceipt(collectionId ? `${result.item.label} movido de colección.` : `${result.item.label} quitado de la colección.`);
     }
     await renderWorkspaceView();
+    captureFocus.restore();
   } catch (error) {
     setStatus(`No se pudo mover: ${error.message}`, true);
     await renderWorkspaceView().catch(() => {});
+    captureFocus.restore();
   }
 }
 
@@ -754,8 +781,9 @@ function renderDraftRow(row, index) {
       collapseEdit();
     };
     input.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') applyEdit();
-      if (event.key === 'Escape') collapseEdit();
+      const action = keyAction(event);
+      if (action === 'save') applyEdit();
+      if (action === 'cancel') collapseEdit();
     });
     element.append(input);
   } else {

@@ -1,0 +1,33 @@
+#+TITLE: jams-8be.11 — Accessibility: fixture design
+#+DATE: 2026-11-02
+
+* Design
+
+**Pure/executable layer — =listar/a11y.mjs=:
+- =keyAction(event)= -> ='save' | 'cancel' | null= (Enter/Escape only)
+- =createFocusKeeper(getDocument)= -> ={ save(), restore() }= — remembers the
+  active element ID before a re-render and refocuses the same ID after;
+  missing targets degrade to no-op (focus stays with the body, never throws)
+
+**UI (script.js/index.html/style.css):**
+- rows get stable ids (#row-label-<itemId>); editors capture focus origin on
+  open (label or amount button) and restore it after save/cancel/failure paths
+  that keep the same row (A: focus returns to origin)
+- editor keydown handlers use keyAction()
+- all primary interactive controls declare min-height 44px (buttons, selects,
+  composer input, row controls, checkbox 20px visual with 44px hit row height)
+- status announcements: #app-status role=status aria-live polite remains global
+  across home and list views; intake card and receipts announce (already
+  aria-live); completion state distinguished by line-through + checkbox, not
+  color alone
+
+**Automated gate:** a11y.test.js exercises keyAction and focus keeper with an
+injected fake document (executable, no new dependencies). 320 CSS px layout,
+200% zoom and real screen-reader behavior are documented as jams-8be.13 human
+gate evidence; CSS assertions here only pin declared minimums.
+
+**Shell:** a11y.mjs joins imports -> SHELL + cache rotation v10->v11; transcribir
+cache fixtures unchanged.
+
+* Out of slice
+- VoiceOver/TalkBack and device matrix: jams-8be.12/13.

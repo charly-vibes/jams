@@ -179,8 +179,8 @@ test('rows expose inline editing, completion, details and archive without per-ro
   assert.match(script, /planUndo\(lastReceipt, current, \{ confirmStale: undoAwaitingConfirm \}\)/);
   assert.match(script, /removeCapturedItem\(plan\.itemId, snapshot\.revision, \{ expected \}\)/);
   assert.match(script, /Esto cambió en otra pestaña/);
-  assert.match(script, /event\.key === 'Enter'/);
-  assert.match(script, /event\.key === 'Escape'/);
+  assert.match(script, /const action = keyAction\(event\);/);
+  assert.match(script, /if \(action === 'save'\) save\.click\(\);/);
   assert.doesNotMatch(script, /row-delete/);
 });
 
@@ -198,6 +198,24 @@ test('shared audio handoffs are durable through an intake card with frozen-ident
   assert.match(script, /await Intake\.save\(activeIntake\);/);
   assert.match(script, /await finishIntakeCleanup\(activeIntake\);/);
   assert.match(script, /commitFailed: true/);
+});
+
+test('keyboard, focus, and touch-target accessibility contracts are declared and wired', () => {
+  const css = read('style.css');
+  assert.match(css, /button, select, input:not\(\[type="checkbox"\]\) \{ min-height: 44px; \}/);
+  assert.match(css, /\.primary-button, \.secondary-button \{ min-height: 44px;/);
+  assert.match(css, /\.row-done-hit \{[^}]*min-width: 44px[^}]*min-height: 44px/);
+  assert.match(css, /body \{ min-width: 320px/);
+  const script = read('script.js');
+  assert.ok(script.includes("import { keyAction, createFocusKeeper } from './a11y.mjs'"));
+  assert.match(script, /const captureFocus = createFocusKeeper\(\(\) => document\)/);
+  assert.match(script, /captureFocus\.save\(\);\s*editing = \{ itemId: item\.id, field: 'label' \}/);
+  assert.match(script, /\.then\(\(\) => captureFocus\.restore\(\)\)/);
+  assert.match(script, /captureFocus\.restore\(\)/);
+  assert.match(script, /const action = keyAction\(event\);/);
+  assert.match(script, /row-label-\$\{item\.id\}/);
+  assert.match(script, /row-done-\$\{item\.id\}/);
+  assert.match(script, /row-move-\$\{item\.id\}/);
 });
 
 test('home offers an inline draft review before one batch commit', () => {
@@ -255,7 +273,7 @@ test('offline shell precaches worker dependencies and removes only listar-owned 
   };
   for (const entry of ['script.js', 'worker.js', 'analyze.mjs', 'command-reducer.mjs', 'context-review.mjs', 'db.js', 'app-core.mjs']) visitImports(entry);
   assert.match(worker, /key\.startsWith\('listar-'\)/);
-  assert.match(worker, /const CACHE_NAME = 'listar-shell-v10'/);
+  assert.match(worker, /const CACHE_NAME = 'listar-shell-v11'/);
   assert.doesNotMatch(worker, /caches\.delete\(key\)[\s\S]*startsWith\('transcribir-'/);
 });
 
