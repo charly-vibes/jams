@@ -1,0 +1,64 @@
+#+TITLE: jams-8be.7 — Voice changes: one question at a time (fixture design)
+#+DATE: 2026-11-02
+
+* Design
+
+**Pure layer** — new =listar/voice-resolution.mjs= (no storage/DOM):
+- =analyzeVoiceTranscript(transcript, workspaceSnapshot, { collectionId })= →
+  scopes to non-archived items in the collection (or the whole workspace),
+  reuses =analyze()= over a list-shaped context; =commandLike= = any candidate
+  that is not a plain add (A05 repair, A06 removal, repeat adds).
+- =createVoiceSession(voice, { operationId, audioId })= → frozen session holding
+  snapshot, scope label (=Cambios en Compras= / =todas tus listas=) and answers.
+- =sessionStep(session)= → the FIRST pending question only, or =null= when fully
+  resolved: =target= (duplicate labels; choices = label · colección · cantidad ·
+  marca · paquete; identical undistinguished labels get =Leche · entrada 1=
+  aliases), =disposition= (=¿Archivar o quitar de la lista?=; detach only when a
+  membership exists; unassigned items explain only archive is available),
+  =repair= (A05 =leche no yogur= → =Agregar leche= / =Agregar yogur=),
+  =repeat-add= (add-distinct vs increment-existing), =blocked= (unsupported /
+  set / attribute candidates → only =Quitar de esta captura=, never an add).
+- =answerStep= / =excludeCandidate= → new immutable session;
+  =sessionActions(session)= → ={ ok, actions }= with kinds =add | archive |
+  detach | increment= — NEVER destructive =remove=; unresolved → =ok: false=.
+- =isSessionStale(session, snapshot)= → revision moved (A18 fresh review).
+
+**Persistence** — =workspace.mjs= =commitVoiceActions(actions, operationId,
+expectedRevision)=: fresh-snapshot preconditions (detach verifies the expected
+membership; stale membership rejects for fresh review, 0 writes), operations-store
+replay (identical retry returns the original outcome), one guarded transaction
+for workspace-owned targets; legacy-owned archive delegates after a guarded
+revision bump (existing bump-first precedent). Archive preserves ID/membership/
+source/attributes; detach writes one membership record, item stays in Sin lista.
+
+**UI** — =script.js= / =index.html=: dictation whose analysis is command-like
+opens the voice card instead of the add draft: one select per question, scope
+line, =Guardar N cambios= when resolved, =Cancelar= writes nothing; single-action
+commits get an undoable receipt (archive/membership/quantity inverses exist);
+stale commit or changed membership re-runs analysis (renewed review). Destination
+change re-scopes mid-review (renewed analysis); view navigation never touches
+scope. Shell gains =voice-resolution.mjs= → cache v9.
+
+* Fixture table (inputs → required results)
+
+| # | Given | Input | Required result |
+|---+-------+-------+-----------------|
+| R1 | two =leche= (distinct colección/cantidad) | =sacá la leche= | one =target= step; IDs never in choice text; then =disposition=; archive → ={kind:'archive'}=; detach → ={kind:'detach', fromCollectionId}= |
+| R2 | one unassigned =leche= | =sacá la leche= | disposition offers archive only + =no está en ninguna lista= detail |
+| R3 | — | =sacá la leche= resolved then cancelled | 0 persisted writes (DB read equals baseline) |
+| R4 | empty scope | =leche no yogur= | one =repair= step (=Agregar leche= / =Agregar yogur=); unresolved blocks (=ok:false=); answer → one =add= action |
+| R5 | — | =sacá la leche= any resolution | action kinds never =remove= (legacy destructive intent stays behind the list-scoped compat boundary) |
+| R6 | two identical =leche=, no facts | =sacá la leche= | choices =Leche · entrada 1= / =Leche · entrada 2=, stable order |
+| R7 | archived + scoped items | =sacá la leche= | scope = all non-archived items; items outside the visible view still match |
+| R8 | item con membresía | commit detach with wrong =fromCollectionId= | rejects; revision and membership unchanged |
+| R9 | — | commit with moved revision | rejects with 0 partial writes |
+| R10 | — | same =operationId= + payload after reopen | returns original outcome; no double write |
+| R11 | — | add + archive batch | one revision bump, both applied |
+| R12 | legacy-owned item | archive via voice commit | legacy record gains =archived=true=, other fields preserved |
+
+* Out of slice
+
+- Batch (multi-action) undo receipt: single-action voice commits are undoable;
+  multi-action commits show a plain receipt — follow-up ticket.
+- =set= / typed-attribute voice candidates stay =blocked= (exclude); the typed
+  editor flow (A18 full editor reconfirmation) is jams-8be.12 browser territory.

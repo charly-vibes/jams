@@ -143,7 +143,11 @@ test('queries and unsupported phrases remain state identities and never produce 
   const queryDom = new FakeElement('div');
   renderContextPreview({ document: { createElement: (tag) => new FakeElement(tag) }, container: queryDom, review });
   assert.match(queryDom.textContent, new RegExp(`Coincidencias \\(solo lectura\\): leche · ID ${milk.id}`));
-  const unsupported = await prepareContextReview('borrá la lista', list.id);
+  // jams-8be.7 spec traceability: borrá/borra are now routed destructive verbs
+  // (simplified-checklist contextual command table), so the unsupported-phrase
+  // fixture moved to a verb that remains unresolvable. The legacy list-scoped
+  // flow still never executes destructive deletes through the revised UI.
+  const unsupported = await prepareContextReview('ordená la lista', list.id);
   assert.equal(getContextPreviewCards(unsupported)[0].intent, 'review');
   assert.throws(() => previewContextCandidate(unsupported, 0), /revis|no está disponible/i);
   let commits = 0;
@@ -154,6 +158,7 @@ test('queries and unsupported phrases remain state identities and never produce 
   assert.deepEqual((await Item.list(list.id)).map(({ id }) => id), [milk.id]);
   assert.equal(isAppendOnlyExtraction(unsupported.analysis), false, 'unsupported commands never fall through to legacy append');
   const deleteIntent = await prepareContextReview('borrá la leche', list.id);
+  assert.equal(getContextPreviewCards(deleteIntent)[0].intent, 'remove', 'borrá now routes to the remove verb in the legacy list-scoped flow; the revised workspace UI resolves it as archive-or-detach only');
   const deleteMeIntent = await prepareContextReview('borrame la leche', list.id);
   const question = await prepareContextReview('¿cuánta leche queda?', list.id);
   assert.equal(isAppendOnlyExtraction(deleteIntent.analysis), false);

@@ -373,6 +373,170 @@ export async function removeCapturedItem(itemId, expectedRevision, { expected } 
   });
 }
 
+const VOICE_KINDS = new Set(['archive', 'detach', 'add', 'increment']);
+
+function normalizeVoiceActions(actions) {
+  if (!Array.isArray(actions) || actions.length === 0) {
+    throw new TypeError('Se necesita al menos un cambio confirmado.');
+  }
+  return actions.map((action, index) => {
+    if (!action || !VOICE_KINDS.has(action.kind)) throw new TypeError(`Cambio de voz sin soporte: ${action?.kind}`);
+    if (action.kind === 'add') {
+      const label = String(action.item?.label ?? '').trim();
+      if (!label) throw new TypeError(`El cambio ${index + 1} necesita una etiqueta.`);
+      const item = { label, text: String(action.item.text ?? label) };
+      if (action.item.quantity != null) {
+        const quantity = Number(action.item.quantity);
+        if (!Number.isFinite(quantity) || quantity <= 0) throw new TypeError('La cantidad debe ser un número finito mayor que cero.');
+        item.quantity = quantity;
+      }
+      if (action.item.unit != null && String(action.item.unit).trim()) item.unit = String(action.item.unit).trim();
+      if (action.item.sourceAudioId != null) item.sourceAudioId = action.item.sourceAudioId;
+      return { kind: 'add', item, collectionId: action.collectionId ?? null };
+    }
+    if (typeof action.itemId !== 'string' || !action.itemId.trim()) throw new TypeError(`El cambio ${index + 1} necesita un artículo de destino.`);
+    if (action.kind === 'detach') {
+      if (typeof action.fromCollectionId !== 'string' || !action.fromCollectionId.trim()) {
+        throw new TypeError('Quitar de una lista necesita la membresía esperada.');
+      }
+      return { kind: 'detach', itemId: action.itemId, fromCollectionId: action.fromCollectionId };
+    }
+    if (action.kind === 'increment') {
+      const quantity = Number(action.quantity);
+      if (!Number.isFinite(quantity) || quantity <= 0) throw new TypeError('El incremento debe ser un número finito mayor que cero.');
+      return { kind: 'increment', itemId: action.itemId, quantity, ...(action.unit == null ? {} : { unit: String(action.unit) }) };
+    }
+    return { kind: 'archive', itemId: action.itemId };
+  });
+}
+
+// A05/A06 persistence seam: resolved voice changes commit through the same
+// guarded workspace revision as every other writer. Fresh preconditions run
+// against the live snapshot (a missing target or a changed membership rejects
+// for renewed review with zero writes); identical retries replay the original
+// outcome through the operations receipt. Archive preserves the full record;
+// detach writes exactly one membership record and never deletes an item.
+export async function commitVoiceActions(actions, operationId = crypto.randomUUID(), expectedRevision) {
+  const batch = normalizeVoiceActions(actions);
+  if (typeof operationId !== 'string' || !operationId.trim()) throw new TypeError('Capture needs a stable operation ID.');
+  const snapshot = await readWorkspace();
+  const itemById = new Map(snapshot.items.map((item) => [item.id, item]));
+  for (const action of batch) {
+    if (action.kind === 'add') continue;
+    const item = itemById.get(action.itemId);
+    if (!item) throw new TypeError('El artículo ya no existe; vuelve a revisar el cambio.');
+    if (action.kind === 'detach' && (item.collectionId ?? null) !== action.fromCollectionId) {
+      throw new Error('La membresía cambió desde la revisión; vuelve a revisar el cambio.');
+    }
+    if (action.kind === 'increment' && item.quantity == null) {
+      throw new TypeError('No hay una cantidad base que pueda incrementarse; edita la cantidad.');
+    }
+  }
+  const payload = batch.map((action) => ({ ...action, item: action.kind === 'add' ? { ...action.item } : undefined }));
+  const db = await open();
+  const owned = await Promise.all(batch.map((action) => (action.kind === 'add'
+    ? Promise.resolve(true)
+    : new Promise((resolve, reject) => {
+      const request = db.transaction('items', 'readonly').objectStore('items').get(action.itemId);
+      request.onsuccess = () => resolve(request.result != null);
+      request.onerror = () => reject(request.error);
+    }))));
+  const legacyArchives = batch.filter((action, index) => !owned[index] && (action.kind === 'archive' || action.kind === 'increment'));
+  // Legacy-owned archive/increment delegate to the db.js adapter after a guarded
+  // revision bump; bump-first ordering rejects later stale actions instead of
+  // allowing lost updates (same precedent as commitItemRecord). When every
+  // write delegates, the workspace transaction only records the receipt and
+  // must not advance the revision a second time.
+  let guard = expectedRevision;
+  let skipBump = false;
+  if (legacyArchives.length) {
+    await bumpRevision(expectedRevision);
+    for (const action of legacyArchives) {
+      const { collectionId: _viewField, ...current } = itemById.get(action.itemId);
+      const record = action.kind === 'archive'
+        ? { ...current, archived: true }
+        : { ...current, quantity: (current.quantity ?? 0) + action.quantity, ...(action.unit === undefined ? {} : { unit: action.unit }) };
+      await Item.put(record);
+    }
+    guard = expectedRevision === undefined ? undefined : expectedRevision + 1;
+    skipBump = batch.every((action, index) => !owned[index] && (action.kind === 'archive' || action.kind === 'increment'));
+  }
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(['meta', 'items', 'memberships', 'operations'], 'readwrite');
+    const meta = tx.objectStore('meta');
+    const items = tx.objectStore('items');
+    const memberships = tx.objectStore('memberships');
+    const operations = tx.objectStore('operations');
+    const replay = operations.get(operationId);
+    let result;
+    replay.onsuccess = () => {
+      if (replay.result) {
+        if (JSON.stringify(replay.result.payload) !== JSON.stringify(payload)) { tx.abort(); return; }
+        result = replay.result.outcome;
+        return;
+      }
+      const revisionRequest = meta.get('revision');
+      revisionRequest.onsuccess = () => {
+        const current = revisionRequest.result.value;
+        if (guard !== undefined && current !== guard) { tx.abort(); return; }
+        const revision = skipBump ? current : current + 1;
+        const createdAt = Date.now();
+        const added = [];
+        const archived = [];
+        const detached = [];
+        const incremented = [];
+        let addIndex = 0;
+        batch.forEach((action, index) => {
+          if (action.kind === 'add') {
+            const item = {
+              id: `${operationId}:item:${addIndex++}`,
+              ...action.item,
+              done: false,
+              createdAt: createdAt + index,
+              order: revision,
+            };
+            items.add(item);
+            if (action.collectionId !== null) memberships.put({ itemId: item.id, collectionId: action.collectionId });
+            added.push(item);
+            return;
+          }
+          if (action.kind === 'archive' || action.kind === 'increment') {
+            if (action.kind === 'archive') archived.push(action.itemId);
+            else incremented.push(action.itemId);
+            if (!owned[index]) return; // legacy-owned writes already delegated above
+            const read = items.get(action.itemId);
+            read.onsuccess = () => {
+              if (!read.result) return;
+              if (action.kind === 'archive') {
+                items.put({ ...read.result, archived: true });
+                return;
+              }
+              const record = { ...read.result };
+              record.quantity = (record.quantity ?? 0) + action.quantity;
+              if (action.unit !== undefined) record.unit = action.unit;
+              items.put(record);
+            };
+            return;
+          }
+          if (action.kind === 'detach') {
+            memberships.put({ itemId: action.itemId, collectionId: null });
+            detached.push(action.itemId);
+            return;
+          }
+        });
+        meta.put({ key: 'revision', value: revision });
+        result = { revision, archived, detached, incremented, added };
+        operations.add({ id: operationId, payload, outcome: result });
+      };
+    };
+    tx.oncomplete = () => { db.close(); resolve(result); };
+    tx.onabort = () => {
+      db.close();
+      reject(tx.error ?? new Error('El espacio de trabajo se actualizó o el ID de operación se reutilizó con un contenido diferente.'));
+    };
+  });
+}
+
 export async function moveItem(itemId, collectionId, expectedRevision) {
   if (typeof itemId !== 'string' || !itemId.trim()) throw new TypeError('moveItem needs an item ID.');
   if (collectionId !== null && (typeof collectionId !== 'string' || !collectionId.trim())) {

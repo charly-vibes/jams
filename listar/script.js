@@ -7,9 +7,12 @@
 
 import { Item, List } from './db.js';
 import {
-  captureItem, captureBatch, moveItem, readWorkspace, applyItemUpdate, toggleDone, setArchived, applyItemFields, removeCapturedItem,
+  captureItem, captureBatch, commitVoiceActions, moveItem, readWorkspace, applyItemUpdate, toggleDone, setArchived, applyItemFields, removeCapturedItem,
   createCollection, renameCollection, removeCollection,
 } from './workspace.mjs';
+import {
+  actionSummaries, analyzeVoiceTranscript, answerStep, createVoiceSession, sessionActions, sessionStep,
+} from './voice-resolution.mjs';
 import {
   CAPTURE_STATES, canConfirm, confirmLabel, draftFromText, draftFromTranscript,
   editRowLabel, payloadForCommit, planSecondCapture, removeRow, setEditingRow, setRowIncluded,
@@ -50,6 +53,15 @@ const draftScope = $('#draft-scope');
 const draftConfirm = $('#draft-confirm');
 const draftCancel = $('#draft-cancel');
 const draftChoice = $('#draft-choice');
+const draftActions = $('#draft-actions');
+const voiceCard = $('#voice-resolution');
+const voiceScope = $('#voice-scope');
+const voiceQuestion = $('#voice-question');
+const voiceChoices = $('#voice-choices');
+const voiceDetail = $('#voice-detail');
+const voiceSummary = $('#voice-summary');
+const voiceConfirm = $('#voice-confirm');
+const voiceCancel = $('#voice-cancel');
 const VIEW_STORAGE_KEY = 'listar-last-view';
 let currentView = 'pendientes';
 let lastSnapshot = null;
@@ -58,6 +70,11 @@ let lastSnapshot = null;
 let workspaceDraft = null;
 let draftCollectionId = null;
 let draftCommitting = false;
+
+// jams-8be.7 (A05/A06): dictated voice changes resolve one question at a time
+// in this session; nothing persists until Guardar N cambios commits the batch.
+let voiceSession = null;
+let voiceCommitting = false;
 let pendingDraftSource = null;
 
 function savedView() {
@@ -145,11 +162,18 @@ function renderEditorRow(item, snapshot) {
   return row;
 }
 
-function showActionReceipt(message) {
-  const receipt = $('#action-receipt');
-  receipt.textContent = message;
-  receipt.classList.remove('hidden');
+function showActionReceipt(message, receipt = undefined) {
+  if (receipt) lastReceipt = receipt;
+  const receiptElement = $('#action-receipt');
+  receiptElement.textContent = message;
+  receiptElement.classList.remove('hidden');
   const undo = $('#action-undo');
+  if (receipt === false) {
+    lastReceipt = null;
+    undoAwaitingConfirm = false;
+    undo.classList.add('hidden');
+    return;
+  }
   undo.classList.remove('hidden');
   undo.onclick = () => undoLast().catch((error) => setStatus(error.message, true));
 }
@@ -297,11 +321,13 @@ async function renderWorkspaceView() {
   }));
   // An existing draft destination survives rerenders; only an empty control resets to the view defaults.
   const validPrevious = collectionOptions(snapshot).some((option) => option.value === previousDestination);
-  if (workspaceDraft) {
-    // View navigation never retargets an active draft; only an explicit change
-    // of the destination control (below) moves it.
-    const validDraftDestination = collectionOptions(snapshot).some((option) => option.value === (draftCollectionId ?? ''));
-    captureDestination.value = validDraftDestination ? (draftCollectionId ?? '') : '';
+  if (workspaceDraft || voiceSession) {
+    // View navigation never retargets an active capture; only an explicit change
+    // of the destination control (below) moves it. A voice review pins the
+    // reviewed scope, which the destination control mirrors.
+    const pinnedDestination = workspaceDraft ? draftCollectionId : voiceSession.scope.collectionId;
+    const validCaptureDestination = collectionOptions(snapshot).some((option) => option.value === (pinnedDestination ?? ''));
+    captureDestination.value = validCaptureDestination ? (pinnedDestination ?? '') : '';
   } else {
     captureDestination.value = validPrevious ? previousDestination : (defaultDestination(currentView).collectionId ?? '');
   }
@@ -414,6 +440,20 @@ captureDestination.addEventListener('change', () => {
     // view switching never retargets it (renderWorkspaceView pins it).
     draftCollectionId = captureDestination.value || null;
     renderDraft();
+  }
+  if (voiceSession && !voiceCommitting) {
+    // Explicit re-scoping restarts the review against the new command scope;
+    // the resolved answers belong to the previous scope and are discarded.
+    const transcript = voiceSession.transcript;
+    const audioId = voiceSession.audioId;
+    const collectionId = captureDestination.value || null;
+    readWorkspace()
+      .then((snapshot) => {
+        lastSnapshot = snapshot;
+        voiceSession = createVoiceSession(analyzeVoiceTranscript(transcript, snapshot, { collectionId, audioId: audioId ?? undefined }), { audioId });
+        renderDraft();
+      })
+      .catch((error) => setStatus(error.message, true));
   }
 });
 
@@ -530,7 +570,8 @@ function showReceipt(message, destinationCollectionId, snapshot) {
 function updateLeaveWarning() {
   // Reload durability is not promised: only unsaved input installs the browser
   // leave warning, and only while it exists.
-  window.onbeforeunload = workspaceDraft && canConfirm(workspaceDraft) ? (event) => { event.preventDefault(); } : null;
+  const unsaved = (workspaceDraft && canConfirm(workspaceDraft)) || voiceSession != null;
+  window.onbeforeunload = unsaved ? (event) => { event.preventDefault(); } : null;
 }
 
 function draftDestinationName() {
@@ -538,14 +579,16 @@ function draftDestinationName() {
 }
 
 function renderDraft() {
-  if (!workspaceDraft) {
-    draftCard.classList.add('hidden');
-    return;
-  }
-  draftCard.classList.remove('hidden');
+  const captureActive = workspaceDraft != null || voiceSession != null;
+  draftCard.classList.toggle('hidden', !captureActive);
   // A second capture waits for an explicit choice; it never silently replaces
-  // the active draft.
+  // the active capture.
   draftChoice.classList.toggle('hidden', !pendingDraftSource);
+  draftRows.classList.toggle('hidden', workspaceDraft == null);
+  draftScope.classList.toggle('hidden', workspaceDraft == null);
+  draftActions.classList.toggle('hidden', workspaceDraft == null);
+  renderVoice();
+  if (!workspaceDraft) return;
   draftConfirm.disabled = !canConfirm(workspaceDraft) || draftCommitting;
   draftCancel.disabled = draftCommitting;
   draftConfirm.textContent = confirmLabel(workspaceDraft);
@@ -553,6 +596,59 @@ function renderDraft() {
   draftRows.replaceChildren(...workspaceDraft.rows.map((row, index) => renderDraftRow(row, index)));
   // Focus lands on the expanded editor only after its row is attached.
   draftRows.querySelector('input[type="text"]')?.focus();
+}
+
+// A05/A06: one question, one control. The voice card shows the first pending
+// step (target, disposition, repair, repeat-add or blocked); once nothing is
+// pending it lists concrete change summaries and enables Guardar N cambios.
+function renderVoice() {
+  const active = voiceSession != null;
+  voiceCard.classList.toggle('hidden', !active);
+  if (!active) return;
+  voiceScope.textContent = `Cambios en ${voiceSession.scope.label}.`;
+  const step = sessionStep(voiceSession);
+  voiceChoices.replaceChildren();
+  if (step) {
+    voiceSummary.classList.add('hidden');
+    voiceQuestion.textContent = step.question;
+    voiceDetail.textContent = step.detail ?? '';
+    voiceChoices.classList.remove('hidden');
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = 'Elige una opción';
+    voiceChoices.append(placeholder);
+    for (const choice of step.choices) {
+      const option = document.createElement('option');
+      option.value = choice.value;
+      option.textContent = choice.text;
+      voiceChoices.append(option);
+    }
+    voiceChoices.value = '';
+    // Unresolved proposals block the batch: no saving until answered or excluded.
+    voiceConfirm.disabled = true;
+    voiceConfirm.textContent = 'Guardar cambios';
+    return;
+  }
+  const plan = sessionActions(voiceSession);
+  voiceChoices.classList.add('hidden');
+  voiceQuestion.textContent = plan.ok ? 'Revisa los cambios antes de guardarlos.' : 'Quedan propuestas sin resolver.';
+  voiceDetail.textContent = '';
+  voiceSummary.classList.toggle('hidden', !plan.ok || plan.actions.length === 0);
+  voiceSummary.replaceChildren(...(plan.ok ? actionSummaries(plan.actions, voiceSession.snapshot) : []).map((text) => {
+    const entry = document.createElement('li');
+    entry.textContent = text;
+    return entry;
+  }));
+  voiceConfirm.disabled = !plan.ok || voiceCommitting;
+  voiceConfirm.textContent = `Guardar ${plan.actions.length} cambio${plan.actions.length === 1 ? '' : 's'}`;
+}
+
+function startVoiceSession(voice) {
+  voiceSession = createVoiceSession(voice);
+  voiceCommitting = false;
+  draftStatus.textContent = CAPTURE_STATES.draft;
+  renderDraft();
+  updateLeaveWarning();
 }
 
 function renderDraftRow(row, index) {
@@ -618,13 +714,18 @@ function renderDraftRow(row, index) {
   return element;
 }
 
-function openDraft(incoming, { source } = {}) {
-  const plan = planSecondCapture(workspaceDraft);
+function openIncomingCapture(incoming, { source, kind } = {}) {
+  // Only one active capture: a plain draft and a voice review both count.
+  const plan = planSecondCapture(workspaceDraft ?? (voiceSession ? voiceSession.candidates : null));
   if (plan.kind === 'choose') {
-    // A second capture never silently overwrites the active draft.
-    pendingDraftSource = { incoming, source };
+    // A second capture never silently overwrites the active capture.
+    pendingDraftSource = { incoming, source, kind };
     draftChoice.classList.remove('hidden');
     draftStatus.textContent = 'Hay una captura sin confirmar.';
+    return;
+  }
+  if (kind === 'voice') {
+    startVoiceSession(incoming.voice);
     return;
   }
   workspaceDraft = incoming;
@@ -632,6 +733,10 @@ function openDraft(incoming, { source } = {}) {
   draftStatus.textContent = CAPTURE_STATES.draft;
   renderDraft();
   updateLeaveWarning();
+}
+
+function openDraft(incoming, { source } = {}) {
+  openIncomingCapture(incoming, { source, kind: 'draft' });
 }
 
 function discardDraft(message = 'Captura descartada. No se agregó nada.') {
@@ -650,10 +755,111 @@ $('#draft-continue').addEventListener('click', () => {
 $('#draft-replace').addEventListener('click', () => {
   const pending = pendingDraftSource;
   workspaceDraft = null;
+  voiceSession = null;
   pendingDraftSource = null;
-  if (pending) openDraft(pending.incoming, { source: pending.source });
+  if (!pending) return;
+  if (pending.kind === 'voice') startVoiceSession(pending.incoming.voice);
+  else openDraft(pending.incoming, { source: pending.source });
 });
 draftCancel.addEventListener('click', () => discardDraft());
+
+voiceChoices.addEventListener('change', () => {
+  if (!voiceSession || !voiceChoices.value || voiceCommitting) return;
+  const step = sessionStep(voiceSession);
+  if (!step) return;
+  try {
+    voiceSession = answerStep(voiceSession, step, voiceChoices.value);
+  } catch (error) {
+    setStatus(error.message, true);
+  }
+  renderDraft();
+});
+
+voiceCancel.addEventListener('click', () => {
+  // Cancellation writes nothing: the session is dropped before any commit.
+  voiceSession = null;
+  voiceCommitting = false;
+  renderDraft();
+  updateLeaveWarning();
+  setStatus('Cambios descartados. No se guardó nada.');
+});
+
+// Single-action voice commits get an undoable receipt (archive, membership and
+// quantity inverses already exist); multi-action batches report without undo.
+function voiceReceipt(session, actions) {
+  if (actions.length !== 1) return false;
+  const action = actions[0];
+  const item = session.snapshot.items.find((entry) => entry.id === action.itemId) ?? null;
+  if (action.kind === 'archive') {
+    return { action: 'archive', itemId: action.itemId, label: item?.label ?? 'artículo', before: item, after: item ? { ...item, archived: true } : null };
+  }
+  if (action.kind === 'detach') {
+    return {
+      action: 'membership', itemId: action.itemId, label: item?.label ?? 'artículo',
+      before: { collectionId: action.fromCollectionId }, after: { collectionId: null },
+    };
+  }
+  if (action.kind === 'increment') {
+    return {
+      action: 'quantity', itemId: action.itemId, label: item?.label ?? 'artículo',
+      before: item ? { quantity: item.quantity, unit: item.unit } : null,
+      after: { quantity: (item?.quantity ?? 0) + action.quantity, unit: action.unit ?? item?.unit },
+    };
+  }
+  if (action.kind === 'add') {
+    return { action: 'capture', itemId: action.item.id, label: action.item.label, before: null, after: action.item };
+  }
+  return false;
+}
+
+voiceConfirm.addEventListener('click', async () => {
+  if (!voiceSession || voiceCommitting) return;
+  const plan = sessionActions(voiceSession);
+  if (!plan.ok) return;
+  voiceCommitting = true;
+  renderDraft();
+  const session = voiceSession;
+  try {
+    // Retry after an unknown transaction result reuses the session's operation
+    // ID and payload first (A14); a renewed session after stale rejection
+    // carries a fresh identity for the re-reviewed plan.
+    await commitVoiceActions(plan.actions, session.operationId, lastSnapshot?.revision);
+    lastSnapshot = await readWorkspace();
+    const pending = pendingDraftSource;
+    voiceSession = null;
+    pendingDraftSource = null;
+    voiceCommitting = false;
+    renderDraft();
+    updateLeaveWarning();
+    await renderWorkspaceView();
+    const summaries = actionSummaries(plan.actions, session.snapshot).join('; ');
+    showActionReceipt(`Cambios guardados: ${summaries}.`, voiceReceipt(session, plan.actions));
+    // A capture that arrived while committing is offered again, not dropped.
+    if (pending) openIncomingCapture(pending.incoming, { source: pending.source, kind: pending.kind });
+  } catch (error) {
+    voiceCommitting = false;
+    if (/actualizó|membresía cambió|ya no existe/i.test(error.message)) {
+      // A18/A13: the workspace or a membership changed mid-review; refresh the
+      // analysis and require fresh confirmation — never commit against stale data.
+      try {
+        const fresh = await readWorkspace();
+        lastSnapshot = fresh;
+        voiceSession = createVoiceSession(analyzeVoiceTranscript(session.transcript, fresh, {
+          collectionId: session.scope.collectionId, audioId: session.audioId ?? undefined,
+        }), { audioId: session.audioId });
+        setStatus('Esto cambió en otra pestaña. Revisa el valor actual y confirma de nuevo.', true);
+      } catch {
+        voiceSession = session;
+        setStatus(`No se pudo guardar: ${error.message}`, true);
+      }
+    } else {
+      // A15: storage failure keeps the review open with its resolutions and offers retry.
+      setStatus(`No se pudo guardar: ${error.message}. La revisión sigue abierta; puedes reintentar.`, true);
+    }
+    renderDraft();
+    if (pendingDraftSource) draftChoice.classList.remove('hidden');
+  }
+});
 
 draftConfirm.addEventListener('click', async () => {
   if (!workspaceDraft || !canConfirm(workspaceDraft) || draftCommitting) return;
@@ -1258,7 +1464,7 @@ function releaseHomeMicrophone() {
 }
 
 async function startHomeRecording() {
-  if (draftCommitting) return;
+  if (draftCommitting || voiceCommitting) return;
   setHomeCaptureStatus(CAPTURE_STATES.requesting);
   if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
     setHomeCaptureStatus('Este navegador no permite dictar. Puedes escribir o subir un audio.', true);
@@ -1316,6 +1522,7 @@ $('#home-cancel-transcription').addEventListener('click', () => {
 });
 
 async function processWorkspaceAudio(blob) {
+  if (voiceCommitting) return;
   const correlationId = `home-audio-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   showHomeProgress(CAPTURE_STATES.processing);
   try {
@@ -1329,6 +1536,17 @@ async function processWorkspaceAudio(blob) {
     hideHomeProgress();
     if (result.empty || !result.text.trim()) {
       setHomeCaptureStatus('No se escuchó nada claro. No se agregó ningún artículo.');
+      return;
+    }
+    // A05/A06: dictation that proposes changes routes through one question at a
+    // time; plain item dictation keeps the inline add draft. The reviewed
+    // command scope is the chosen destination, or the whole workspace.
+    const snapshot = await readWorkspace();
+    lastSnapshot = snapshot;
+    const voice = analyzeVoiceTranscript(result.text, snapshot, { collectionId: captureDestination.value || null });
+    if (voice.commandLike) {
+      openIncomingCapture({ voice }, { source: 'audio', kind: 'voice' });
+      setHomeCaptureStatus('Dictado con cambios. Resuelve una pregunta a la vez.');
       return;
     }
     const incoming = draftFromTranscript(result.text);

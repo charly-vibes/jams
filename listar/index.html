@@ -61,6 +61,17 @@
         <p id="draft-status" class="draft-status" role="status" aria-live="polite"></p>
         <p id="draft-scope" class="subhead"></p>
         <div id="draft-rows" class="draft-rows"></div>
+        <div id="voice-resolution" class="hidden">
+          <p id="voice-scope" class="subhead"></p>
+          <p id="voice-question" class="draft-status" role="status" aria-live="polite"></p>
+          <select id="voice-choices" class="voice-choices" aria-label="Opciones de resolución"></select>
+          <p id="voice-detail" class="subhead"></p>
+          <ul id="voice-summary" class="voice-summary hidden"></ul>
+          <div class="draft-actions">
+            <button id="voice-cancel" class="secondary-button" type="button">Cancelar</button>
+            <button id="voice-confirm" class="primary-button" type="button">Guardar cambios</button>
+          </div>
+        </div>
         <div id="draft-choice" class="draft-choice hidden">
           <p>Ya estás revisando otra captura. Elegí qué hacer.</p>
           <div class="draft-actions">
@@ -68,7 +79,7 @@
             <button id="draft-replace" class="primary-button" type="button">Descartar y reemplazar</button>
           </div>
         </div>
-        <div class="draft-actions">
+        <div id="draft-actions" class="draft-actions">
           <button id="draft-cancel" class="secondary-button" type="button">Cancelar</button>
           <button id="draft-confirm" class="primary-button" type="button">Agregar</button>
         </div>

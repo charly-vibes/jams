@@ -69,7 +69,7 @@ function sourceEvidence(clause, audioId) {
 function cleanTarget(text) {
   return String(text)
     .replace(/^[¿¡?!.]+/u, '')
-    .replace(/^(?:agrega|agregá|agregue|añade|anade|añadí|anadi|compra|comprá|pon|pone|poné|poneme|saca|sacá|quita|quitá|elimina|eliminá)\s+/iu, '')
+    .replace(/^(?:agrega|agregá|agregue|añade|anade|añadí|anadi|compra|comprá|pon|pone|poné|poneme|saca|sacá|quita|quitá|borra|borrá|elimina|eliminá)\s+/iu, '')
     .replace(/^(?:otro|otra)\s+/iu, '')
     .replace(/^(?:ya\s+)?(?:hay|tenemos|tengo)\s+/iu, '')
     .replace(/^(?:la|el|los|las|un|una)\s+/iu, '')
@@ -197,7 +197,7 @@ function candidateFor(clause, fields, audioId) {
 
   const increment = /^(?:otro|otra)\s+/iu.test(raw);
   const set = /^(?:pon|pone|poné|poneme)\s+/iu.test(raw);
-  const remove = /^(?:saca|sacá|quita|quitá|elimina|eliminá)\s+/iu.test(raw);
+  const remove = /^(?:saca|sacá|quita|quitá|borra|borrá|elimina|eliminá)\s+/iu.test(raw);
   const add = /^(?:agrega|agregá|agregue|añade|anade|añadí|anadi|compra|comprá)\s+/iu.test(raw);
   if (increment || set) {
     const quantity = parseQuantity(raw);
