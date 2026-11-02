@@ -21,6 +21,37 @@ test('list operations persist create, rename, delete and cascade items in Indexe
   assert.equal(item.listId, list.id);
 });
 
+test('A10 list removal preserves items and audio, leaving them unassigned instead of erased', async () => {
+  const list = await createList({ name: 'Compras', emoji: '🛒' });
+  const pan = await Item.add({ listId: list.id, label: 'pan', text: 'un pan' });
+  const leche = await Item.add({ listId: list.id, label: 'leche', text: 'dos litros' });
+  const audio = await Audio.add({ listId: list.id, blob: new Blob(['audio']), transcript: 'pan y leche', model: 'tiny' });
+  await deleteList(list.id);
+  assert.equal(await List.get(list.id), undefined);
+  assert.deepEqual(await Item.list(list.id), []);
+  const items = await Item.all();
+  const byId = new Map(items.map((item) => [item.id, item]));
+  for (const id of [pan.id, leche.id]) {
+    assert.ok(byId.has(id), `item ${id} must survive list removal`);
+    assert.ok(!Object.hasOwn(byId.get(id), 'listId'), `item ${id} must be unassigned`);
+  }
+  const audios = await Audio.byList(list.id);
+  assert.equal(audios.length, 0);
+  const storedAudio = await new Promise((resolve, reject) => {
+    const request = indexedDB.open('listar');
+    request.onsuccess = () => {
+      const tx = request.result.transaction('audio', 'readonly');
+      const getAll = tx.objectStore('audio').getAll();
+      getAll.onsuccess = () => { request.result.close(); resolve(getAll.result); };
+      getAll.onerror = () => reject(getAll.error);
+    };
+    request.onerror = () => reject(request.error);
+  });
+  const kept = storedAudio.find((record) => record.id === audio.id);
+  assert.ok(kept, 'audio must survive list removal');
+  assert.ok(!Object.hasOwn(kept, 'listId'), 'audio must be detached, not deleted');
+});
+
 test('item operations toggle, delete and clear completed rows in IndexedDB', async () => {
   const list = await List.add({ name: 'Tareas' });
   const first = await Item.add({ listId: list.id, label: 'leer' });

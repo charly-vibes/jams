@@ -36,7 +36,19 @@
       <button id="receipt-goto" class="secondary-button hidden" type="button">Ver en Pendientes</button>
       <p id="action-receipt" class="capture-receipt hidden" aria-live="polite"></p>
       <button id="action-undo" class="secondary-button hidden" type="button">Deshacer</button>
+      <button id="forget-shortcut" class="text-button hidden" type="button">Quitar acceso directo</button>
       <div id="quick-items" class="items-list" aria-live="polite"></div>
+      <section id="collections-panel" aria-label="Colecciones">
+        <p class="eyebrow">COLECCIONES</p>
+        <form id="collection-form" class="collection-form">
+          <label class="visually-hidden" for="collection-name">Nombre de la colección</label>
+          <input id="collection-name" maxlength="80" required placeholder="Nombre de la colección" autocomplete="off">
+          <label class="visually-hidden" for="collection-emoji">Emoji (opcional)</label>
+          <input id="collection-emoji" maxlength="8" placeholder="Emoji (opcional)" autocomplete="off">
+          <button id="create-collection" class="secondary-button" type="submit">Crear colección</button>
+        </form>
+        <div id="collections-list" class="collections-list" aria-live="polite"></div>
+      </section>
       <div id="lists-grid" class="lists-grid" aria-live="polite"></div>
       <p id="home-empty" class="empty-state hidden">Todavía no hay artículos.</p>
     </section>
@@ -79,6 +91,15 @@
       <label for="list-emoji">Emoji</label><input id="list-emoji" maxlength="8" value="🛒">
       <label for="list-name">Nombre</label><input id="list-name" maxlength="80" required placeholder="Compras">
       <div class="modal-actions"><button id="list-cancel" class="secondary-button" type="button">Cancelar</button><button class="primary-button" type="submit">Guardar</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="collection-dialog" class="modal">
+    <form id="collection-form-dialog" method="dialog">
+      <p class="eyebrow">COLECCIÓN</p><h2>Cambiar nombre de la colección</h2>
+      <label for="collection-dialog-emoji">Emoji (opcional)</label><input id="collection-dialog-emoji" maxlength="8">
+      <label for="collection-dialog-name">Nombre</label><input id="collection-dialog-name" maxlength="80" required>
+      <div class="modal-actions"><button id="collection-dialog-cancel" class="secondary-button" type="button">Cancelar</button><button class="primary-button" type="submit">Guardar</button></div>
     </form>
   </dialog>
 

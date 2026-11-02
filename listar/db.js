@@ -1,6 +1,8 @@
 // db.js — IndexedDB wrapper for Listar. Versioned list state, atomic commands, and connection lifecycle.
-// Responsibilities: own database handles, preserve legacy records, and serialize all governed list writes.
-// Rationale: coherent snapshots and durable operation receipts prevent stale or duplicate command application.
+// Responsibilities: own database handles, preserve legacy records, serialize all governed list writes,
+//   and detach list content without erasing it when a collection is removed.
+// Rationale: coherent snapshots and durable operation receipts prevent stale or duplicate command
+//   application, and A10 requires list removal to unassign items, never delete them.
 
 import { recordDebugEvent } from './debug.mjs';
 export const DB_NAME = 'listar';
@@ -582,6 +584,38 @@ export class Audio {
       request.onerror = () => abort(request.error);
     });
   }
+}
+
+// A10: removing a collection detaches membership instead of deleting content.
+// Every item and audio of the list keeps its record and id, only the listId is
+// stripped, then the list itself is removed — all in one legacy transaction.
+export function detachListContent(listId) {
+  return runTransaction([STORE_LISTS, STORE_ITEMS, STORE_AUDIO], 'readwrite', ({ transaction, setValue, abort }) => {
+    const itemStore = transaction.objectStore(STORE_ITEMS);
+    const itemRequest = itemStore.index('listId').getAll(listId);
+    itemRequest.onsuccess = () => {
+      for (const item of itemRequest.result) {
+        const { listId: _omit, ...detached } = item;
+        itemStore.put(detached);
+      }
+      const audioStore = transaction.objectStore(STORE_AUDIO);
+      const audioRequest = audioStore.index('listId').getAll(listId);
+      audioRequest.onsuccess = () => {
+        for (const audio of audioRequest.result) {
+          const { listId: _omit, ...detached } = audio;
+          audioStore.put(detached);
+        }
+        const listRequest = transaction.objectStore(STORE_LISTS).get(listId);
+        listRequest.onsuccess = () => {
+          if (listRequest.result) transaction.objectStore(STORE_LISTS).delete(listId);
+          setValue(true);
+        };
+        listRequest.onerror = () => abort(listRequest.error);
+      };
+      audioRequest.onerror = () => abort(audioRequest.error);
+    };
+    itemRequest.onerror = () => abort(itemRequest.error);
+  });
 }
 
 function stableSerialize(value) {

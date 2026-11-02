@@ -1,12 +1,14 @@
 // Purpose: provide the checklist workspace persistence boundary.
 // Responsibilities: store unassigned and collected items, collections and memberships;
-//   read a revisioned coherent snapshot merged with legacy data; commit captures and
-//   membership moves idempotently under a revision guard.
+//   read a revisioned coherent snapshot merged with legacy data; commit captures,
+//   membership moves and collection management idempotently under a revision guard.
 // Rationale: first use must work before a collection exists, retries must not duplicate
-//   items, and views need one snapshot where legacy list IDs are collections and legacy
-//   listId is membership — without copying or mutating legacy rows.
+//   items, views need one snapshot where legacy list IDs are collections and legacy
+//   listId is membership, and removing a collection must unassign its items without
+//   ever deleting them — without copying or mutating legacy rows except one explicit
+//   detach when the collection itself is removed.
 
-import { List, Item } from './db.js';
+import { List, Item, detachListContent } from './db.js';
 
 const DB = 'listar-workspace';
 const VERSION = 2;
@@ -314,4 +316,148 @@ export async function moveItem(itemId, collectionId, expectedRevision) {
     tx.oncomplete = () => { db.close(); resolve(result); };
     tx.onabort = () => { db.close(); reject(tx.error ?? new Error('Workspace changed during the move.')); };
   });
+}
+
+export async function createCollection({ name, emoji = '' } = {}, expectedRevision) {
+  const cleanName = String(name ?? '').trim();
+  if (!cleanName) throw new TypeError('La colección necesita un nombre.');
+  const collection = {
+    id: crypto.randomUUID(),
+    name: cleanName,
+    emoji: String(emoji ?? '').trim(),
+    order: Date.now(),
+  };
+  const db = await open();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(['meta', 'collections'], 'readwrite');
+    const meta = tx.objectStore('meta');
+    const revisionRequest = meta.get('revision');
+    revisionRequest.onsuccess = () => {
+      const current = revisionRequest.result.value;
+      if (expectedRevision !== undefined && current !== expectedRevision) { tx.abort(); return; }
+      tx.objectStore('collections').add(collection);
+      meta.put({ key: 'revision', value: current + 1 });
+    };
+    tx.oncomplete = () => { db.close(); resolve(collection); };
+    tx.onabort = () => { db.close(); reject(tx.error ?? new Error('El espacio de trabajo se actualizó durante la creación de la colección.')); };
+  });
+}
+
+export async function renameCollection(id, { name, emoji } = {}, expectedRevision) {
+  if (typeof id !== 'string' || !id.trim()) throw new TypeError('renameCollection needs a collection ID.');
+  const cleanName = name === undefined ? null : String(name).trim();
+  if (cleanName !== null && !cleanName) throw new TypeError('La colección necesita un nombre.');
+  const cleanEmoji = emoji === undefined ? undefined : String(emoji).trim();
+  const db = await open();
+  const workspaceOwned = await new Promise((resolve, reject) => {
+    const request = db.transaction('collections', 'readonly').objectStore('collections').get(id);
+    request.onsuccess = () => resolve(request.result ?? null);
+    request.onerror = () => reject(request.error);
+  });
+  if (workspaceOwned) {
+    const unchanged = (cleanName === null || cleanName === workspaceOwned.name) &&
+      (cleanEmoji === undefined || cleanEmoji === (workspaceOwned.emoji ?? ''));
+    if (unchanged) { db.close(); return workspaceOwned; }
+    const record = {
+      ...workspaceOwned,
+      ...(cleanName !== null ? { name: cleanName } : {}),
+      ...(cleanEmoji !== undefined ? { emoji: cleanEmoji } : {}),
+    };
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(['meta', 'collections'], 'readwrite');
+      const meta = tx.objectStore('meta');
+      let result;
+      const revisionRequest = meta.get('revision');
+      revisionRequest.onsuccess = () => {
+        const current = revisionRequest.result.value;
+        if (expectedRevision !== undefined && current !== expectedRevision) { tx.abort(); return; }
+        tx.objectStore('collections').put(record);
+        meta.put({ key: 'revision', value: current + 1 });
+        result = record;
+      };
+      tx.oncomplete = () => { db.close(); resolve(result); };
+      tx.onabort = () => { db.close(); reject(tx.error ?? new Error('El espacio de trabajo se actualizó durante el cambio de nombre.')); };
+    });
+  }
+  db.close();
+  const current = await List.get(id);
+  if (!current) throw new TypeError(`Unknown collection: ${id}`);
+  const unchanged = (cleanName === null || cleanName === current.name) &&
+    (cleanEmoji === undefined || cleanEmoji === (current.emoji ?? ''));
+  if (unchanged) return current;
+  // Legacy-owned rename delegates to the db.js adapter after a guarded revision
+  // bump; bump-first ordering makes a crash between the two reject later stale
+  // actions instead of allowing lost updates, and the list keeps its identity.
+  await bumpRevision(expectedRevision);
+  return List.put({
+    ...current,
+    ...(cleanName !== null ? { name: cleanName } : {}),
+    ...(cleanEmoji !== undefined ? { emoji: cleanEmoji } : {}),
+  });
+}
+
+export async function removeCollection(id, expectedRevision) {
+  if (typeof id !== 'string' || !id.trim()) throw new TypeError('removeCollection needs a collection ID.');
+  const snapshot = await readWorkspace();
+  const collection = snapshot.collections.find((entry) => entry.id === id);
+  if (!collection) throw new TypeError(`Unknown collection: ${id}`);
+  const db = await open();
+  const workspaceOwned = await new Promise((resolve, reject) => {
+    const request = db.transaction('collections', 'readonly').objectStore('collections').get(id);
+    request.onsuccess = () => resolve(request.result != null);
+    request.onerror = () => reject(request.error);
+  });
+  if (workspaceOwned) {
+    // A10: detach membership and remove the collection in ONE transaction; item
+    // records are never touched, so removal cannot delete or mutate an item.
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(['meta', 'collections', 'memberships'], 'readwrite');
+      const meta = tx.objectStore('meta');
+      const memberships = tx.objectStore('memberships');
+      const revisionRequest = meta.get('revision');
+      revisionRequest.onsuccess = () => {
+        const current = revisionRequest.result.value;
+        if (expectedRevision !== undefined && current !== expectedRevision) { tx.abort(); return; }
+        const all = memberships.getAll();
+        all.onsuccess = () => {
+          for (const record of all.result) {
+            if (record.collectionId === id) memberships.delete(record.itemId);
+          }
+          tx.objectStore('collections').delete(id);
+          meta.put({ key: 'revision', value: current + 1 });
+        };
+        all.onerror = () => { tx.abort(); };
+      };
+      tx.oncomplete = () => { db.close(); resolve(true); };
+      tx.onabort = () => { db.close(); reject(tx.error ?? new Error('El espacio de trabajo se actualizó durante la eliminación de la colección.')); };
+    });
+  }
+  db.close();
+  // Legacy-owned removal: clear workspace membership records that point at the
+  // legacy list under one guarded revision bump, then detach the legacy content.
+  // Items and audio survive without listId; a crash between the transactions
+  // rejects later stale actions instead of losing data.
+  const clearDb = await open();
+  await new Promise((resolve, reject) => {
+    const tx = clearDb.transaction(['meta', 'memberships'], 'readwrite');
+    const meta = tx.objectStore('meta');
+    const memberships = tx.objectStore('memberships');
+    const revisionRequest = meta.get('revision');
+    revisionRequest.onsuccess = () => {
+      const current = revisionRequest.result.value;
+      if (expectedRevision !== undefined && current !== expectedRevision) { tx.abort(); return; }
+      const all = memberships.getAll();
+      all.onsuccess = () => {
+        for (const record of all.result) {
+          if (record.collectionId === id) memberships.delete(record.itemId);
+        }
+        meta.put({ key: 'revision', value: current + 1 });
+      };
+      all.onerror = () => { tx.abort(); };
+    };
+    tx.oncomplete = () => { clearDb.close(); resolve(); };
+    tx.onabort = () => { clearDb.close(); reject(tx.error ?? new Error('El espacio de trabajo se actualizó durante la eliminación de la colección.')); };
+  });
+  await detachListContent(id);
+  return true;
 }

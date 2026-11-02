@@ -1,8 +1,10 @@
 // Purpose: keep durable list actions and audio processing independent of the DOM.
 // Responsibilities: IndexedDB workflows, transcript preview/append, PCM conversion, worker lifecycle.
-// Rationale: these state-changing paths need direct tests and must not depend on UI rendering.
+// Rationale: these state-changing paths need direct tests and must not depend on UI rendering;
+//   removing a list always preserves its items and audio, leaving them unassigned (A10).
 
 import { Audio, Item, List, commitCommands, readSnapshot, setUpgradeBlockedHandler } from './db.js';
+import { removeCollection } from './workspace.mjs';
 import { recordDebugEvent } from './debug.mjs';
 import { split } from './splitter.js';
 
@@ -82,10 +84,9 @@ export async function renameList(id, { name, emoji }) {
 }
 
 export async function deleteList(id) {
-  const [items, audios] = await Promise.all([Item.list(id), Audio.byList(id)]);
-  await Promise.all(items.map(({ id: itemId }) => Item.del(itemId)));
-  await Promise.all(audios.map(({ id: audioId }) => Audio.del(audioId)));
-  await List.del(id);
+  // A10: removal detaches membership, it never deletes items or audio; the
+  // legacy destructive path delegates to the same preserve-items workspace commit.
+  await removeCollection(id);
   recordDebugEvent('list.delete', { listId: id });
 }
 

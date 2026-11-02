@@ -79,6 +79,21 @@ test('home exposes checklist views, destination control, receipt and per-row mov
   assert.match(script, /storeView\(currentView\)/);
 });
 
+test('home manages collections without deleting items and distinguishes shortcuts from collections', () => {
+  const html = read('index.html');
+  for (const id of ['collections-panel', 'collection-form', 'collection-name', 'collection-emoji', 'collections-list', 'collection-dialog', 'forget-shortcut']) {
+    assert.match(html, new RegExp(`id="${id}"`));
+  }
+  const script = read('script.js');
+  assert.ok(script.includes('createCollection('));
+  assert.ok(script.includes('renameCollection('));
+  assert.ok(script.includes('removeCollection('));
+  assert.ok(script.includes('removeSavedView('));
+  assert.match(script, /quedar[aá]n sin lista/);
+  assert.match(script, /sigue disponible en el selector/);
+  assert.match(script, /no se puede deshacer/i);
+});
+
 test('rows expose inline editing, completion, details and archive without per-row delete', () => {
   const html = read('index.html');
   for (const id of ['action-receipt', 'action-undo']) assert.match(html, new RegExp(`id="${id}"`));

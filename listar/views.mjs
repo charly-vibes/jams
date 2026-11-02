@@ -1,6 +1,7 @@
 // Purpose: pure checklist view projection over one coherent workspace snapshot.
 // Responsibilities: filter and sort rows for the standard views and collection
-//   shortcuts, expose creation defaults, and resolve the last valid saved view.
+//   shortcuts, expose creation defaults, resolve the last valid saved view, and drop
+//   saved shortcuts without touching collections or items (A10).
 // Rationale: views are queries, not storage; projection must be deterministic,
 //   mutation-free, and identical for the same item in every view over one snapshot.
 
@@ -60,4 +61,12 @@ export function resolveSavedView(savedId, snapshot) {
     return savedId;
   }
   return DEFAULT_VIEW;
+}
+
+// A10: a saved shortcut is a view definition, never the collection itself.
+// Removing one must leave every collection and item untouched; the collection
+// stays reachable through the selector built from the snapshot.
+export function removeSavedView(savedViews, viewId) {
+  if (!Array.isArray(savedViews)) return [];
+  return savedViews.filter((saved) => saved !== viewId);
 }

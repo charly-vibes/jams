@@ -1,13 +1,17 @@
 // Purpose: connect Listar's IndexedDB state, microphone/upload flow, and review UI.
-// Responsibilities: render and handle list actions, audio capture/transcription, editable append preview.
-// Rationale: voice-derived items stay reviewable and enter the database only after one explicit confirmation.
+// Responsibilities: render and handle list and collection actions, audio capture/transcription,
+//   editable append preview.
+// Rationale: voice-derived items stay reviewable and enter the database only after one explicit
+//   confirmation, and collection removal always preserves items by leaving them unassigned (A10).
 
 import { Item, List } from './db.js';
 import {
   captureItem, moveItem, readWorkspace, applyItemUpdate, toggleDone, setArchived, applyItemFields, removeCapturedItem,
+  createCollection, renameCollection, removeCollection,
 } from './workspace.mjs';
 import { planUndo } from './undo.mjs';
 import { project, defaultDestination, resolveSavedView, STANDARD_VIEWS } from './views.mjs';
+import { removeSavedView } from './views.mjs';
 import {
   bindDatabaseStatus, clearAudioForList, clearDoneItems, copyText, createList, createPreviewSubmission, decodeAudioToMono16k, deleteItem,
   deleteList, formatListExport, loadSettings, makePreview, renameList, saveAudioCapture, saveSettings,
@@ -278,7 +282,99 @@ async function renderWorkspaceView() {
   const rows = project(snapshot, currentView);
   quickItems.replaceChildren(...rows.map((item) => renderRow(item, snapshot)));
   $('#home-empty').classList.toggle('hidden', rows.length > 0);
+  renderCollectionsPanel(snapshot);
+  const forgetShortcut = $('#forget-shortcut');
+  forgetShortcut.classList.toggle('hidden', !currentView.startsWith('collection:'));
 }
+
+function renderCollectionsPanel(snapshot) {
+  const list = $('#collections-list');
+  list.replaceChildren(...snapshot.collections.map((collection) => {
+    const row = document.createElement('div');
+    row.className = 'collection-row';
+    const name = document.createElement('span');
+    name.className = 'collection-name';
+    name.textContent = collection.emoji ? `${collection.emoji} ${collection.name}` : collection.name;
+    const rename = document.createElement('button');
+    rename.type = 'button';
+    rename.className = 'text-button';
+    rename.textContent = 'Renombrar';
+    rename.addEventListener('click', () => showCollectionDialog(collection));
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'text-button danger';
+    remove.textContent = 'Quitar';
+    remove.setAttribute('aria-label', `Quitar la colección ${collection.name}`);
+    remove.addEventListener('click', () => removeCollectionRow(collection));
+    row.append(name, rename, remove);
+    return row;
+  }));
+}
+
+const collectionDialog = $('#collection-dialog');
+let editCollectionId = null;
+
+function showCollectionDialog(collection = null) {
+  editCollectionId = collection?.id ?? null;
+  $('#collection-dialog-name').value = collection?.name ?? '';
+  $('#collection-dialog-emoji').value = collection?.emoji ?? '';
+  collectionDialog.showModal();
+  $('#collection-dialog-name').focus();
+}
+
+$('#collection-form-dialog').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  try {
+    const values = { name: $('#collection-dialog-name').value, emoji: $('#collection-dialog-emoji').value };
+    if (editCollectionId) await renameCollection(editCollectionId, values, lastSnapshot?.revision);
+    else await createCollection(values, lastSnapshot?.revision);
+    collectionDialog.close();
+    await renderWorkspaceView();
+  } catch (error) {
+    setStatus(`No se pudo guardar la colección: ${error.message}`, true);
+  }
+});
+$('#collection-dialog-cancel').addEventListener('click', () => collectionDialog.close());
+
+$('#collection-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  try {
+    await createCollection({ name: $('#collection-name').value, emoji: $('#collection-emoji').value }, lastSnapshot?.revision);
+    $('#collection-name').value = '';
+    $('#collection-emoji').value = '';
+    await renderWorkspaceView();
+  } catch (error) {
+    setStatus(`No se pudo crear la colección: ${error.message}`, true);
+  }
+});
+
+async function removeCollectionRow(collection) {
+  if (!confirm(`¿Quitar la colección “${collection.name}”? Sus artículos quedarán sin lista. Esta acción no se puede deshacer.`)) return;
+  try {
+    await removeCollection(collection.id, lastSnapshot?.revision);
+    if (currentView === `collection:${collection.id}`) {
+      // The saved shortcut of a removed collection falls back to a safe view.
+      currentView = 'pendientes';
+      storeView(currentView);
+    }
+    await renderWorkspaceView();
+    setStatus(`Colección “${collection.name}” quitada; sus artículos quedaron sin lista.`);
+  } catch (error) {
+    setStatus(`No se pudo quitar la colección: ${error.message}`, true);
+    await renderWorkspaceView().catch(() => {});
+  }
+}
+
+$('#forget-shortcut').addEventListener('click', async () => {
+  // A10: removing a saved shortcut deletes only the view definition; the
+  // collection and its items stay intact and remain in the selector.
+  const removed = currentView;
+  const remaining = removeSavedView([savedView()], removed);
+  currentView = remaining[0] ?? 'pendientes';
+  storeView(currentView);
+  await renderWorkspaceView();
+  setStatus('Acceso directo quitado. La colección sigue disponible en el selector.');
+});
 
 viewSelector.addEventListener('change', () => {
   currentView = viewSelector.value;
@@ -662,7 +758,7 @@ $('#settings-button').addEventListener('click', openSettings);
 $('#open-settings').addEventListener('click', openSettings);
 $('#settings-cancel').addEventListener('click', () => settingsDialog.close());
 $('#delete-list').addEventListener('click', async () => {
-  if (!activeList || !confirm(`¿Eliminar la lista “${activeList.name}” y sus artículos?`)) return;
+  if (!activeList || !confirm(`¿Quitar la lista “${activeList.name}”? Sus artículos quedarán sin lista.`)) return;
   try {
     await deleteList(activeList.id);
     goHome();

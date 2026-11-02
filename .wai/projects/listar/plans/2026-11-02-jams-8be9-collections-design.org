@@ -1,0 +1,46 @@
+#+TITLE: jams-8be.9 — Collections: create, rename, shortcut vs removal, preserve items
+#+DATE: 2026-11-02
+
+* Design
+
+**Persistence** — extend =listar/workspace.mjs= (guarded commits, revision guard):
+- =createCollection({name, emoji?}, expectedRevision?)= → workspace-owned record
+  ={id, name, emoji:'', order}=; only name required; one tx (collections + meta).
+- =renameCollection(id, {name?, emoji?}, expectedRevision)= → workspace-owned:
+  one guarded tx; legacy-owned: guarded revision bump, then =List.put= (same ID,
+  membership untouched) — bump-first ordering precedent from =commitItemRecord=.
+- =removeCollection(id, expectedRevision)= → workspace-owned: ONE tx over
+  meta/collections/memberships — guard, delete memberships with that collectionId,
+  delete the collection, bump. Legacy-owned: guarded tx clears membership records
+  pointing at the id + bump, then db.js helper detaches content. Zero item writes.
+- =listar/db.js= +=detachListContent(listId)=: strips =listId= from the list's items
+  and audios (records preserved), then deletes the List — one legacy tx.
+
+**Pure layer** — =listar/views.mjs= +=removeSavedView(savedViews, viewId)=: A10, a
+saved shortcut is a view definition; removing it never touches collections/items.
+
+**App core** — =deleteList= delegates to =removeCollection= (signature unchanged):
+the legacy destructive UI now detaches instead of erasing (A10 preserve-items).
+
+**UI** — home gains =#collections-panel= (name + optional emoji form,
+=#collections-list= with Renombrar/Quitar per collection), =#collection-dialog=,
+=#forget-shortcut= for the saved view (fallback to Pendientes + explanation).
+Spanish strings; wiring pinned by app-shell source assertions. No new module →
+no =CACHE_NAME= bump.
+
+* Fixtures (inputs → required results) — =listar/test/workspace-collections.test.js=
+
+| Tag | Input | Required result |
+| A09 | createCollection({name:'Compras'}, rev) | one workspace collection, emoji '', revision +1; blank name rejects, 0 writes |
+| A09 | renameCollection(workspace id, {name:'Mercado'}) | same id, new name, revision +1; rename of legacy list keeps id + membership |
+| A10 | removeSavedView(['collection:c1'],'collection:c1') | [] and snapshot deep-equal before/after (0 collections/items deleted) |
+| A10 | removeCollection on populated collection after confirm | collection gone; items same IDs, collectionId null, attributes/audio/quantity intact; revision +1 |
+| A15 | removeCollection / renameCollection with stale revision | reject; collection, memberships, revision unchanged (0 partial writes) |
+| A11 | removeCollection on legacy list with items + audio | List gone; items and audio preserved without listId; snapshot shows them unassigned |
+| A10 | deleteList on populated legacy list | List gone; =Item.all()= keeps every item; audio kept (no bypass of preserve-items) |
+
+* Out of slice
+
+- Undo of collection removal (spec: not undoable — confirm dialog covers it).
+- Post-removal editing of detached legacy items (Item.put requires a listId;
+  pre-existing adapter seam, deferred to a compatibility ticket).
