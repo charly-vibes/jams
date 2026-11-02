@@ -3,7 +3,10 @@
 // Rationale: voice-derived items stay reviewable and enter the database only after one explicit confirmation.
 
 import { Item, List } from './db.js';
-import { captureItem, moveItem, readWorkspace, applyItemUpdate, toggleDone, setArchived } from './workspace.mjs';
+import {
+  captureItem, moveItem, readWorkspace, applyItemUpdate, toggleDone, setArchived, applyItemFields, removeCapturedItem,
+} from './workspace.mjs';
+import { planUndo } from './undo.mjs';
 import { project, defaultDestination, resolveSavedView, STANDARD_VIEWS } from './views.mjs';
 import {
   bindDatabaseStatus, clearAudioForList, clearDoneItems, copyText, createList, createPreviewSubmission, decodeAudioToMono16k, deleteItem,
@@ -52,6 +55,7 @@ function collectionOptions(snapshot) {
 let lastCapturedId = null;
 let editing = null;
 let lastReceipt = null;
+let undoAwaitingConfirm = false;
 
 function attributeSummary(item) {
   if (!item.attributes) return '';
@@ -104,6 +108,7 @@ function renderEditorRow(item, snapshot) {
     try {
       const updated = await applyItemUpdate(item.id, patch, lastSnapshot?.revision);
       lastReceipt = { action: isQuantity ? 'quantity' : 'label', itemId: item.id, label: updated.label, before: item, after: updated };
+      undoAwaitingConfirm = false;
       finish();
       showActionReceipt(`${updated.label} guardado.`);
     } catch (error) {
@@ -123,13 +128,50 @@ function showActionReceipt(message) {
   receipt.classList.remove('hidden');
   const undo = $('#action-undo');
   undo.classList.remove('hidden');
-  undo.onclick = () => setStatus('El deshacer todavía no está disponible; llega en una próxima actualización.', true);
+  undo.onclick = () => undoLast().catch((error) => setStatus(error.message, true));
+}
+
+async function undoLast() {
+  if (!lastReceipt) return;
+  const snapshot = await readWorkspace();
+  lastSnapshot = snapshot;
+  const current = snapshot.items.find((entry) => entry.id === lastReceipt.itemId);
+  const plan = planUndo(lastReceipt, current, { confirmStale: undoAwaitingConfirm });
+  if (!plan.ok) {
+    if (plan.stale) {
+      undoAwaitingConfirm = true;
+      const value = plan.current.quantity != null ? `${plan.current.quantity}${plan.current.unit ? ` ${plan.current.unit}` : ''}` : plan.current.label;
+      setStatus(`Esto cambió en otra pestaña. Valor actual: ${value}. Tocá Deshacer de nuevo para confirmar.`, true);
+      return;
+    }
+    setStatus(plan.reason, true);
+    return;
+  }
+  try {
+    if (plan.kind === 'remove') {
+      const { collectionId: _omit, ...expected } = lastReceipt.after;
+      await removeCapturedItem(plan.itemId, snapshot.revision, { expected });
+    } else if (plan.kind === 'membership') {
+      await moveItem(lastReceipt.itemId, plan.collectionId, snapshot.revision);
+    } else {
+      await applyItemFields(lastReceipt.itemId, plan.fields, snapshot.revision);
+    }
+    const label = lastReceipt.label;
+    lastReceipt = null;
+    undoAwaitingConfirm = false;
+    $('#action-undo').classList.add('hidden');
+    await renderWorkspaceView();
+    setStatus(`${label} deshecho.`);
+  } catch (error) {
+    setStatus(`No se pudo deshacer: ${error.message}`, true);
+  }
 }
 
 async function toggleRow(itemId) {
   try {
     const updated = await toggleDone(itemId, lastSnapshot?.revision);
     lastReceipt = { action: 'completion', itemId, label: updated.label, before: lastSnapshot?.items.find((entry) => entry.id === itemId), after: updated };
+    undoAwaitingConfirm = false;
     await renderWorkspaceView();
     showActionReceipt(updated.done ? `${updated.label} completado.` : `${updated.label} reactivado.`);
   } catch (error) {
@@ -142,6 +184,7 @@ async function archiveRow(itemId, archived) {
   try {
     const updated = await setArchived(itemId, archived, lastSnapshot?.revision);
     lastReceipt = { action: archived ? 'archive' : 'restore', itemId, label: updated.label, before: lastSnapshot?.items.find((entry) => entry.id === itemId), after: updated };
+    undoAwaitingConfirm = false;
     if (currentView === 'archivados' && archived) editing = null;
     await renderWorkspaceView();
     showActionReceipt(archived ? `${updated.label} archivado.` : `${updated.label} restaurado.`);
@@ -245,8 +288,13 @@ viewSelector.addEventListener('change', () => {
 
 async function moveRow(itemId, collectionId) {
   try {
+    const before = lastSnapshot?.items.find((entry) => entry.id === itemId);
     const result = await moveItem(itemId, collectionId, lastSnapshot?.revision);
-    if (result.moved) setStatus(collectionId ? 'Movido de colección.' : 'Quitado de la colección.');
+    if (result.moved) {
+      lastReceipt = { action: 'membership', itemId, label: result.item.label, before, after: result.item };
+      undoAwaitingConfirm = false;
+      showActionReceipt(collectionId ? `${result.item.label} movido de colección.` : `${result.item.label} quitado de la colección.`);
+    }
     await renderWorkspaceView();
   } catch (error) {
     setStatus(`No se pudo mover: ${error.message}`, true);
@@ -279,6 +327,8 @@ quickCaptureForm.addEventListener('submit', async (event) => {
     const destinationCollectionId = captureDestination.value || null;
     const captured = await captureItem(label, crypto.randomUUID(), lastSnapshot?.revision, { collectionId: destinationCollectionId });
     lastCapturedId = captured.id;
+    lastReceipt = { action: 'capture', itemId: captured.id, label: captured.label, before: null, after: captured };
+    undoAwaitingConfirm = false;
     quickCaptureInput.value = '';
     const snapshot = await readWorkspace();
     lastSnapshot = snapshot;

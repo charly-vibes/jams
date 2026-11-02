@@ -1,0 +1,44 @@
+#+TITLE: jams-8be.5 — Undo: inverse precondition design
+#+DATE: 2026-11-02
+
+* Design
+
+**Pure layer** — new =listar/undo.mjs=:
+- =planUndo(receipt, currentItem, { confirmStale = false })= →
+  - ={ ok: true, kind: 'fields', fields }= | ={ ok: true, kind: 'remove', itemId }=
+  - ={ ok: false, stale: true, current }= — relevant fields drifted (A13)
+  - ={ ok: false, reason }= — missing/changed target that cannot be recreated
+- Action → relevant fields → inverse:
+  | receipt.action | relevant (after vs current) | inverse |
+  | capture/add | whole item deep-equal | remove item (only if unchanged) |
+  | label | label | label: before.label |
+  | quantity | quantity, unit | before values (null → absent) |
+  | completion | done | done: before.done |
+  | membership | collectionId | membership: before.collectionId (null → detach) |
+  | archive/restore | archived | archived: before.archived ?? false |
+- stale + !confirmStale → report current value, receipt stays; a second
+  explicit click passes =confirmStale: true= and applies =before= values
+  against current state — never a snapshot restore (A13)
+- add-undo with a changed or missing item is refused outright (spec: an added
+  item can be undone only while unchanged; missing targets are never recreated)
+- collection removal and source erasure expose no undo (not implemented in
+  this slice); audio/diagnostic clearing stays outside item undo
+
+**Persistence** (=listar/workspace.mjs=):
+- =applyItemFields(itemId, fields, expectedRevision)= — generic guarded commit
+  (label validation only when label present)
+- =removeCapturedItem(itemId, expectedRevision, { expected })= — workspace-owned
+  only; verifies the stored item still deep-equals =expected= inside the tx,
+  then deletes item + membership and bumps the revision
+
+**UI** (=script.js=): =#action-undo= runs the plan against a fresh snapshot;
+stale reports =Esto cambió en otra pestaña= with the current value and stays
+available for explicit reconfirmation; success clears the receipt; receipts
+already last until the next successful action or reload (jams-8be.3).
+moveRow now records before/after receipts (membership undo).
+
+* Traceability
+
+A12 (completion undo), A13 (interleaved quantity edit: fresh preconditions,
+no old-snapshot restore), A14 receipts reuse identity, A15 failure keeps input.
+Each action gets ≥1 inverse fixture and ≥1 failed-precondition fixture.

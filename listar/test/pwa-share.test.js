@@ -32,7 +32,7 @@ test('service worker stores shared audio locally, redirects, then serves and con
   const caches = {
     async open() { return cache; },
     async match(key) { return cache.match(key); },
-    async keys() { return ['listar-shell-v0', 'listar-shell-v1', 'listar-shell-v2', 'listar-shell-v3', 'listar-shell-v4', 'listar-shell-v5', 'listar-shared-audio-v1', 'transcribir-shell-v1']; },
+    async keys() { return ['listar-shell-v0', 'listar-shell-v1', 'listar-shell-v2', 'listar-shell-v3', 'listar-shell-v4', 'listar-shell-v5', 'listar-shell-v6', 'listar-shared-audio-v1', 'transcribir-shell-v1']; },
     async delete(name) { deletedCaches.push(name); return true; },
   };
   const self = {
@@ -92,7 +92,7 @@ test('service worker stores shared audio locally, redirects, then serves and con
   let activation;
   listeners.get('activate')({ waitUntil(promise) { activation = promise; } });
   await activation;
-  assert.deepEqual(deletedCaches, ['listar-shell-v0', 'listar-shell-v1', 'listar-shell-v2', 'listar-shell-v3', 'listar-shell-v4']);
+  assert.deepEqual(deletedCaches, ['listar-shell-v0', 'listar-shell-v1', 'listar-shell-v2', 'listar-shell-v3', 'listar-shell-v4', 'listar-shell-v5']);
 });
 
 test('offline cache contains the icon and deletes only Listar cache names', () => {

@@ -236,6 +236,54 @@ export async function setArchived(itemId, archived, expectedRevision) {
   return commitItemRecord(item, { ...item, archived: archived === true }, expectedRevision);
 }
 
+export async function applyItemFields(itemId, fields, expectedRevision) {
+  const snapshot = await readWorkspace();
+  const item = await findItem(snapshot, itemId);
+  if (Object.hasOwn(fields, 'label') && !String(fields.label ?? '').trim()) {
+    throw new TypeError('Item label cannot be empty.');
+  }
+  const record = { ...item };
+  for (const [key, value] of Object.entries(fields)) {
+    if (value === null) delete record[key];
+    else record[key] = value;
+  }
+  const same = ['label', 'quantity', 'unit', 'done', 'archived'].every((key) =>
+    !Object.hasOwn(fields, key) || fields[key] === item[key] || (fields[key] === null && item[key] === undefined));
+  if (same) return item;
+  return commitItemRecord(item, record, expectedRevision);
+}
+
+export async function removeCapturedItem(itemId, expectedRevision, { expected } = {}) {
+  if (typeof itemId !== 'string' || !itemId.trim()) throw new TypeError('removeCapturedItem needs an item ID.');
+  const db = await open();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(['meta', 'items', 'memberships'], 'readwrite');
+    const meta = tx.objectStore('meta');
+    const items = tx.objectStore('items');
+    let result = false;
+    const existing = items.get(itemId);
+    existing.onsuccess = () => {
+      if (!existing.result) { tx.abort(); return; }
+      if (expected && JSON.stringify(existing.result) !== JSON.stringify(expected)) { tx.abort(); return; }
+      const revisionRequest = meta.get('revision');
+      revisionRequest.onsuccess = () => {
+        const current = revisionRequest.result.value;
+        if (expectedRevision !== undefined && current !== expectedRevision) { tx.abort(); return; }
+        items.delete(itemId);
+        tx.objectStore('memberships').delete(itemId);
+        meta.put({ key: 'revision', value: current + 1 });
+        result = true;
+      };
+    };
+    existing.onerror = () => { tx.abort(); };
+    tx.oncomplete = () => { db.close(); resolve(result); };
+    tx.onabort = () => {
+      db.close();
+      reject(tx.error ?? new Error('El artículo no existe, cambió desde el agregado, o el espacio de trabajo se actualizó.'));
+    };
+  });
+}
+
 export async function moveItem(itemId, collectionId, expectedRevision) {
   if (typeof itemId !== 'string' || !itemId.trim()) throw new TypeError('moveItem needs an item ID.');
   if (collectionId !== null && (typeof collectionId !== 'string' || !collectionId.trim())) {
