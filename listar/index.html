@@ -43,6 +43,36 @@
         <label class="destination-label" for="capture-destination">Destino</label>
         <select id="capture-destination"></select>
       </div>
+      <section class="capture-card" aria-label="Dictar o pegar varios artículos">
+        <div class="capture-heading"><span class="pulse-dot"></span><span id="home-capture-status">Dicta o pega varias líneas para revisarlas antes de agregar</span></div>
+        <button id="home-record-button" class="record-button" type="button" aria-label="Dictar artículos"><span id="home-record-icon">🎙</span></button>
+        <p id="home-record-timer" class="timer hidden">00:00</p>
+        <div class="capture-tools">
+          <label for="home-audio-file" class="upload-button">↑ Subir audio</label>
+          <input id="home-audio-file" type="file" accept="audio/*" class="visually-hidden">
+        </div>
+        <div id="home-progress-region" class="progress-region hidden" role="status" aria-live="polite">
+          <span id="home-progress-message"></span>
+          <button id="home-cancel-transcription" class="text-button" type="button">Cancelar</button>
+        </div>
+      </section>
+      <section id="draft-card" class="draft-card hidden" aria-label="Revisar antes de agregar">
+        <p class="eyebrow">REVISAR ANTES DE AGREGAR</p>
+        <p id="draft-status" class="draft-status" role="status" aria-live="polite"></p>
+        <p id="draft-scope" class="subhead"></p>
+        <div id="draft-rows" class="draft-rows"></div>
+        <div id="draft-choice" class="draft-choice hidden">
+          <p>Ya estás revisando otra captura. Elegí qué hacer.</p>
+          <div class="draft-actions">
+            <button id="draft-continue" class="secondary-button" type="button">Seguir revisando</button>
+            <button id="draft-replace" class="primary-button" type="button">Descartar y reemplazar</button>
+          </div>
+        </div>
+        <div class="draft-actions">
+          <button id="draft-cancel" class="secondary-button" type="button">Cancelar</button>
+          <button id="draft-confirm" class="primary-button" type="button">Agregar</button>
+        </div>
+      </section>
       <p id="capture-receipt" class="capture-receipt hidden" aria-live="polite"></p>
       <button id="receipt-goto" class="secondary-button hidden" type="button">Ver en Pendientes</button>
       <p id="action-receipt" class="capture-receipt hidden" aria-live="polite"></p>

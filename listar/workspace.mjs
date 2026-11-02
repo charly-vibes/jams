@@ -6,7 +6,8 @@
 //   items, views need one snapshot where legacy list IDs are collections and legacy
 //   listId is membership, and removing a collection must unassign its items without
 //   ever deleting them — without copying or mutating legacy rows except one explicit
-//   detach when the collection itself is removed.
+//   detach when the collection itself is removed. Reviewed drafts commit through one
+//   guarded atomic batch whose identical retry replays the original outcome (A02/A04/A14).
 
 import { List, Item, detachListContent } from './db.js';
 
@@ -129,6 +130,92 @@ export async function captureItem(label, operationId = crypto.randomUUID(), expe
     };
     tx.oncomplete = () => { db.close(); resolve(result); };
     tx.onabort = () => { db.close(); reject(tx.error ?? new Error('Workspace changed or operation ID was reused with different text.')); };
+  });
+}
+
+function normalizeBatchItems(items) {
+  if (!Array.isArray(items)) throw new TypeError('captureBatch needs an array of item proposals.');
+  const normalized = items.map((item, index) => {
+    const label = String(item?.label ?? '').trim();
+    if (!label) throw new TypeError(`Batch item ${index} needs a non-empty label.`);
+    const row = { label, text: String(item.text ?? label) };
+    if (item.quantity !== undefined && item.quantity !== null) {
+      const quantity = Number(item.quantity);
+      if (!Number.isFinite(quantity) || quantity <= 0) {
+        throw new TypeError(`Batch item ${index} needs a finite quantity greater than zero.`);
+      }
+      row.quantity = quantity;
+    }
+    if (item.unit !== undefined && item.unit !== null && String(item.unit).trim()) {
+      row.unit = String(item.unit).trim();
+    }
+    return row;
+  });
+  if (normalized.length === 0) throw new TypeError('captureBatch needs at least one item.');
+  return normalized;
+}
+
+// A02/A04/A14: a reviewed draft commits as ONE atomic batch — every item, one
+// revision bump, destination memberships and the replay receipt in a single
+// transaction. Identical retry (same operation ID and payload, even after the
+// database is reopened or the revision moved on) returns the original outcome;
+// a changed payload with a reused operation ID aborts, and a stale expected
+// revision aborts — both with zero partial writes.
+export async function captureBatch(items, operationId = crypto.randomUUID(), expectedRevision, { collectionId } = {}) {
+  const batch = normalizeBatchItems(items);
+  if (typeof operationId !== 'string' || !operationId.trim()) throw new TypeError('Capture needs a stable operation ID.');
+  const destinationId = collectionId ?? null;
+  const db = await open();
+  if (destinationId !== null && !(await collectionExists(db, destinationId))) {
+    db.close();
+    throw new TypeError(`Unknown collection: ${destinationId}`);
+  }
+  const payload = { items: batch, collectionId: destinationId };
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(['meta', 'items', 'operations', 'memberships'], 'readwrite');
+    const meta = tx.objectStore('meta');
+    const itemsStore = tx.objectStore('items');
+    const operations = tx.objectStore('operations');
+    const memberships = tx.objectStore('memberships');
+    const replay = operations.get(operationId);
+    let result;
+    replay.onsuccess = () => {
+      if (replay.result) {
+        // Replay lookup precedes stale rejection: an identical retry returns the
+        // original outcome; a changed payload with a reused ID never writes.
+        if (JSON.stringify(replay.result.payload) !== JSON.stringify(payload)) { tx.abort(); return; }
+        result = replay.result.items;
+        return;
+      }
+      const revisionRequest = meta.get('revision');
+      revisionRequest.onsuccess = () => {
+        const current = revisionRequest.result.value;
+        if (expectedRevision !== undefined && current !== expectedRevision) { tx.abort(); return; }
+        const revision = current + 1;
+        const createdAt = Date.now();
+        // createdAt advances per row so batches of any size keep dictation order
+        // under the deterministic order → createdAt → id tie-break.
+        const persisted = batch.map((row, index) => ({
+          id: `${operationId}:item:${index}`,
+          ...row,
+          done: false,
+          createdAt: createdAt + index,
+          order: revision,
+        }));
+        for (const item of persisted) itemsStore.add(item);
+        meta.put({ key: 'revision', value: revision });
+        if (destinationId !== null) {
+          for (const item of persisted) memberships.put({ itemId: item.id, collectionId: destinationId });
+        }
+        operations.add({ id: operationId, payload, items: persisted });
+        result = persisted;
+      };
+    };
+    tx.oncomplete = () => { db.close(); resolve(result); };
+    tx.onabort = () => {
+      db.close();
+      reject(tx.error ?? new Error('El espacio de trabajo se actualizó o el ID de operación se reutilizó con un contenido diferente.'));
+    };
   });
 }
 

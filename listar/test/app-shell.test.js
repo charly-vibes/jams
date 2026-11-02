@@ -184,6 +184,33 @@ test('rows expose inline editing, completion, details and archive without per-ro
   assert.doesNotMatch(script, /row-delete/);
 });
 
+test('home offers an inline draft review before one batch commit', () => {
+  const html = read('index.html');
+  for (const id of [
+    'draft-card', 'draft-status', 'draft-scope', 'draft-rows', 'draft-confirm', 'draft-cancel',
+    'draft-choice', 'draft-continue', 'draft-replace',
+    'home-record-button', 'home-audio-file', 'home-capture-status', 'home-progress-region',
+    'home-progress-message', 'home-cancel-transcription',
+  ]) assert.match(html, new RegExp(`id="${id}"`));
+  const script = read('script.js');
+  assert.ok(script.includes("from './draft.mjs'"));
+  for (const operation of ['captureBatch(', 'draftFromText(', 'draftFromTranscript(', 'openDraft(', 'payloadForCommit(']) {
+    assert.ok(script.includes(operation), `expected UI to use ${operation}`);
+  }
+  assert.match(script, /draftConfirm\.textContent = confirmLabel\(workspaceDraft\)/);
+  const draft = read('draft.mjs');
+  assert.match(draft, /Agregar \$\{/);
+  assert.match(draft, /Seguir revisando/);
+  assert.match(draft, /Descartar y reemplazar/);
+  assert.match(script, /Quitar de esta captura/);
+  assert.match(script, /Destino: \$\{/);
+  assert.match(script, /beforeunload/);
+  assert.match(script, /La revisi[oó]n sigue abierta/);
+  assert.match(script, /No se escuch[oó] nada claro/);
+  assert.match(script, /transcribeWithWorker\(worker, audio\.data/);
+  assert.match(script, /home-audio-file/);
+});
+
 test('manifest declares a Spanish standalone app with audio file handling and text share target', () => {
   const manifest = JSON.parse(read('manifest.json'));
   assert.equal(manifest.lang, 'es');
@@ -196,7 +223,7 @@ test('manifest declares a Spanish standalone app with audio file handling and te
 
 test('offline shell precaches worker dependencies and removes only listar-owned caches', () => {
   const worker = read('sw.js');
-  for (const asset of ['./index.html', './style.css', './manifest.json', './script.js', './app-core.mjs', './context-review.mjs', './context-preview.mjs', './undo.mjs', './analysis-router.mjs', './debug.mjs', './db.js', './splitter.js', './transcript-filter.mjs', './analyze.mjs', './command-reducer.mjs', './worker.js', './view-export.mjs']) {
+  for (const asset of ['./index.html', './style.css', './manifest.json', './script.js', './app-core.mjs', './context-review.mjs', './context-preview.mjs', './undo.mjs', './analysis-router.mjs', './debug.mjs', './db.js', './splitter.js', './transcript-filter.mjs', './analyze.mjs', './command-reducer.mjs', './worker.js', './view-export.mjs', './draft.mjs']) {
     assert.ok(worker.includes(asset), `missing precached ${asset}`);
   }
   const cacheAssets = new Set([...worker.matchAll(/'\.\/([^']+)'/gu)].map(([, asset]) => asset));
@@ -212,7 +239,7 @@ test('offline shell precaches worker dependencies and removes only listar-owned 
   };
   for (const entry of ['script.js', 'worker.js', 'analyze.mjs', 'command-reducer.mjs', 'context-review.mjs', 'db.js', 'app-core.mjs']) visitImports(entry);
   assert.match(worker, /key\.startsWith\('listar-'\)/);
-  assert.match(worker, /const CACHE_NAME = 'listar-shell-v7'/);
+  assert.match(worker, /const CACHE_NAME = 'listar-shell-v8'/);
   assert.doesNotMatch(worker, /caches\.delete\(key\)[\s\S]*startsWith\('transcribir-'/);
 });
 

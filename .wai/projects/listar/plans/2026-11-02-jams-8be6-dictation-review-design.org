@@ -1,0 +1,31 @@
+#+TITLE: jams-8be.6 — Inline dictation/line review before one batch commit
+#+DATE: 2026-11-02
+
+* Design
+
+**Pure layer** — new =listar/draft.mjs= (no storage/DOM; frozen inputs):
+- =createDraft(proposals)= → ={ rows: [{ key, label, text, quantity?, unit?, included, editing }] }=
+- =draftFromTranscript(text)= → =createDraft(split(text))= (reuses splitter quantities/merge)
+- =draftFromText(text)= → multiline/pasted input → draft; single line (even with commas) → =null= (stays literal)
+- =setRowIncluded= / =removeRow= / =editRowLabel(draft, i, label)= → new draft; =text= (raw source) never rewritten
+- =confirmCount= / =canConfirm= (0 when all excluded) / =confirmLabel= → =Agregar N= / =payloadForCommit= → included non-empty rows
+- =setEditingRow(draft, i|null)= — only the edited row expands
+- =planSecondCapture(activeDraft)= → ={ kind: 'start' }= | ={ kind: 'choose', keep: 'Seguir revisando', replace: 'Descartar y reemplazar' }=
+- =CAPTURE_STATES= — idle/requesting/recording/processing/draft/committing/failure → visible Spanish text
+
+**Persistence layer** — =captureBatch(items, operationId, expectedRevision, { collectionId })= in workspace.mjs:
+- normalizes/validates rows (non-empty labels, finite qty>0); empty batch → TypeError
+- ONE transaction: all items (=op:item:i= ids), one revision bump, memberships, operation receipt
+- replay-before-stale: identical op id + payload → original items (survives DB reopen, stale revision);
+  changed payload with reused id → abort; stale revision → abort; zero partial writes (A02/A04/A14)
+
+**UI layer** — home gains a capture card (mic/file, reuses worker/decode/transcribe seams) and an
+inline =#draft-card=: editable rows, =Quitar de esta captura=, =Agregar N= (disabled when 0), =Cancelar=
+(0 writes), scope text =Destino: …=, second-capture choice panel, destination pinned while a draft is
+active, =beforeunload= only with unsaved input, failure keeps draft + offers retry/typing. Multiline
+paste opens the same draft; single-line commas stay literal. Legacy list-view modal preview untouched.
+
+* Out of slice
+- Batch undo receipt (single-item undo from jams-8be.5 stays; add-batch inverse is a separate ticket)
+- Audio retention record for workspace dictation (transcript text is kept in row =text=; retention
+  wiring deferred), real-DOM/browser evidence (jams-8be.12), shared-intake queueing (A16 ticket)

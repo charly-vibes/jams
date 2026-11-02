@@ -1,14 +1,19 @@
 // Purpose: connect Listar's IndexedDB state, microphone/upload flow, and review UI.
 // Responsibilities: render and handle list and collection actions, audio capture/transcription,
-//   editable append preview.
+//   editable append preview, and the workspace inline draft reviewed before one atomic batch commit.
 // Rationale: voice-derived items stay reviewable and enter the database only after one explicit
-//   confirmation, and collection removal always preserves items by leaving them unassigned (A10).
+//   confirmation, reviewed drafts commit through one guarded batch with durable retry, and collection
+//   removal always preserves items by leaving them unassigned (A10).
 
 import { Item, List } from './db.js';
 import {
-  captureItem, moveItem, readWorkspace, applyItemUpdate, toggleDone, setArchived, applyItemFields, removeCapturedItem,
+  captureItem, captureBatch, moveItem, readWorkspace, applyItemUpdate, toggleDone, setArchived, applyItemFields, removeCapturedItem,
   createCollection, renameCollection, removeCollection,
 } from './workspace.mjs';
+import {
+  CAPTURE_STATES, canConfirm, confirmLabel, draftFromText, draftFromTranscript,
+  editRowLabel, payloadForCommit, planSecondCapture, removeRow, setEditingRow, setRowIncluded,
+} from './draft.mjs';
 import { planUndo } from './undo.mjs';
 import { project, defaultDestination, resolveSavedView, STANDARD_VIEWS } from './views.mjs';
 import { removeSavedView } from './views.mjs';
@@ -38,9 +43,22 @@ const viewSelector = $('#view-selector');
 const captureDestination = $('#capture-destination');
 const captureReceipt = $('#capture-receipt');
 const receiptGoto = $('#receipt-goto');
+const draftCard = $('#draft-card');
+const draftRows = $('#draft-rows');
+const draftStatus = $('#draft-status');
+const draftScope = $('#draft-scope');
+const draftConfirm = $('#draft-confirm');
+const draftCancel = $('#draft-cancel');
+const draftChoice = $('#draft-choice');
 const VIEW_STORAGE_KEY = 'listar-last-view';
 let currentView = 'pendientes';
 let lastSnapshot = null;
+
+// A02/A04/A14: one active inline draft reviewed before a single guarded batch.
+let workspaceDraft = null;
+let draftCollectionId = null;
+let draftCommitting = false;
+let pendingDraftSource = null;
 
 function savedView() {
   try { return globalThis.localStorage?.getItem(VIEW_STORAGE_KEY) ?? null; } catch { return null; }
@@ -279,7 +297,14 @@ async function renderWorkspaceView() {
   }));
   // An existing draft destination survives rerenders; only an empty control resets to the view defaults.
   const validPrevious = collectionOptions(snapshot).some((option) => option.value === previousDestination);
-  captureDestination.value = validPrevious ? previousDestination : (defaultDestination(currentView).collectionId ?? '');
+  if (workspaceDraft) {
+    // View navigation never retargets an active draft; only an explicit change
+    // of the destination control (below) moves it.
+    const validDraftDestination = collectionOptions(snapshot).some((option) => option.value === (draftCollectionId ?? ''));
+    captureDestination.value = validDraftDestination ? (draftCollectionId ?? '') : '';
+  } else {
+    captureDestination.value = validPrevious ? previousDestination : (defaultDestination(currentView).collectionId ?? '');
+  }
   const rows = project(snapshot, currentView);
   quickItems.replaceChildren(...rows.map((item) => renderRow(item, snapshot)));
   $('#home-empty').classList.toggle('hidden', rows.length > 0);
@@ -381,6 +406,15 @@ viewSelector.addEventListener('change', () => {
   currentView = viewSelector.value;
   storeView(currentView);
   renderWorkspaceView().catch((error) => setStatus(error.message, true));
+});
+
+captureDestination.addEventListener('change', () => {
+  if (workspaceDraft) {
+    // An explicit destination override moves the draft before its confirmation;
+    // view switching never retargets it (renderWorkspaceView pins it).
+    draftCollectionId = captureDestination.value || null;
+    renderDraft();
+  }
 });
 
 // The overflow menu is the single home for secondary actions (spec: one starting
@@ -493,9 +527,178 @@ function showReceipt(message, destinationCollectionId, snapshot) {
   };
 }
 
+function updateLeaveWarning() {
+  // Reload durability is not promised: only unsaved input installs the browser
+  // leave warning, and only while it exists.
+  window.onbeforeunload = workspaceDraft && canConfirm(workspaceDraft) ? (event) => { event.preventDefault(); } : null;
+}
+
+function draftDestinationName() {
+  return lastSnapshot?.collections.find((collection) => collection.id === draftCollectionId)?.name ?? 'Sin lista';
+}
+
+function renderDraft() {
+  if (!workspaceDraft) {
+    draftCard.classList.add('hidden');
+    return;
+  }
+  draftCard.classList.remove('hidden');
+  // A second capture waits for an explicit choice; it never silently replaces
+  // the active draft.
+  draftChoice.classList.toggle('hidden', !pendingDraftSource);
+  draftConfirm.disabled = !canConfirm(workspaceDraft) || draftCommitting;
+  draftCancel.disabled = draftCommitting;
+  draftConfirm.textContent = confirmLabel(workspaceDraft);
+  draftScope.textContent = `Destino: ${draftDestinationName()}. Solo se agregan las propuestas seleccionadas.`;
+  draftRows.replaceChildren(...workspaceDraft.rows.map((row, index) => renderDraftRow(row, index)));
+  // Focus lands on the expanded editor only after its row is attached.
+  draftRows.querySelector('input[type="text"]')?.focus();
+}
+
+function renderDraftRow(row, index) {
+  const element = document.createElement('div');
+  element.className = 'draft-row';
+  const include = document.createElement('input');
+  include.type = 'checkbox';
+  include.checked = row.included;
+  include.setAttribute('aria-label', `Incluir ${row.label}`);
+  include.addEventListener('change', () => {
+    workspaceDraft = setRowIncluded(workspaceDraft, index, include.checked);
+    renderDraft();
+  });
+  element.append(include);
+  if (row.editing) {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = row.label;
+    input.setAttribute('aria-label', `Nombre del artículo ${index + 1}`);
+    const collapseEdit = () => {
+      workspaceDraft = setEditingRow(workspaceDraft, null);
+      renderDraft();
+    };
+    const applyEdit = () => {
+      // A04: the corrected label is saved; the raw source phrase stays untouched.
+      workspaceDraft = editRowLabel(workspaceDraft, index, input.value);
+      collapseEdit();
+    };
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') applyEdit();
+      if (event.key === 'Escape') collapseEdit();
+    });
+    element.append(input);
+  } else {
+    const label = document.createElement('button');
+    label.type = 'button';
+    label.className = 'draft-label';
+    label.textContent = row.label;
+    if (row.quantity != null) {
+      // Rows read "Leche · 2 litros"; quantity fields expand only when edited.
+      const amount = document.createElement('span');
+      amount.className = 'draft-amount';
+      amount.textContent = ` · ${row.quantity}${row.unit ? ` ${row.unit}` : ''}`;
+      label.append(amount);
+    }
+    label.setAttribute('aria-label', `Editar ${row.label}`);
+    label.addEventListener('click', () => {
+      workspaceDraft = setEditingRow(workspaceDraft, index);
+      renderDraft();
+    });
+    element.append(label);
+  }
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.className = 'text-button draft-remove';
+  remove.textContent = 'Quitar de esta captura';
+  remove.setAttribute('aria-label', `Quitar ${row.label} de esta captura`);
+  remove.addEventListener('click', () => {
+    workspaceDraft = removeRow(workspaceDraft, index);
+    renderDraft();
+  });
+  element.append(remove);
+  return element;
+}
+
+function openDraft(incoming, { source } = {}) {
+  const plan = planSecondCapture(workspaceDraft);
+  if (plan.kind === 'choose') {
+    // A second capture never silently overwrites the active draft.
+    pendingDraftSource = { incoming, source };
+    draftChoice.classList.remove('hidden');
+    draftStatus.textContent = 'Hay una captura sin confirmar.';
+    return;
+  }
+  workspaceDraft = incoming;
+  draftCollectionId = captureDestination.value || null;
+  draftStatus.textContent = CAPTURE_STATES.draft;
+  renderDraft();
+  updateLeaveWarning();
+}
+
+function discardDraft(message = 'Captura descartada. No se agregó nada.') {
+  workspaceDraft = null;
+  pendingDraftSource = null;
+  draftCommitting = false;
+  renderDraft();
+  updateLeaveWarning();
+  setStatus(message);
+}
+
+$('#draft-continue').addEventListener('click', () => {
+  pendingDraftSource = null;
+  renderDraft();
+});
+$('#draft-replace').addEventListener('click', () => {
+  const pending = pendingDraftSource;
+  workspaceDraft = null;
+  pendingDraftSource = null;
+  if (pending) openDraft(pending.incoming, { source: pending.source });
+});
+draftCancel.addEventListener('click', () => discardDraft());
+
+draftConfirm.addEventListener('click', async () => {
+  if (!workspaceDraft || !canConfirm(workspaceDraft) || draftCommitting) return;
+  draftCommitting = true;
+  renderDraft();
+  draftStatus.textContent = CAPTURE_STATES.committing;
+  const proposals = payloadForCommit(workspaceDraft);
+  const operationId = crypto.randomUUID();
+  const destinationCollectionId = draftCollectionId;
+  try {
+    const items = await captureBatch(proposals, operationId, lastSnapshot?.revision, { collectionId: destinationCollectionId });
+    lastCapturedId = items[items.length - 1]?.id ?? null;
+    const count = items.length;
+    const pending = pendingDraftSource;
+    workspaceDraft = null;
+    pendingDraftSource = null;
+    draftCommitting = false;
+    renderDraft();
+    updateLeaveWarning();
+    await renderWorkspaceView();
+    const where = destinationCollectionId
+      ? (lastSnapshot?.collections.find((c) => c.id === destinationCollectionId)?.name ?? 'colección')
+      : 'Pendientes';
+    showReceipt(`${count} artículo${count === 1 ? '' : 's'} guardado${count === 1 ? '' : 's'} en ${where}.`, destinationCollectionId, lastSnapshot);
+    // A capture that arrived while committing is offered again, not dropped.
+    if (pending) openDraft(pending.incoming, { source: pending.source });
+  } catch (error) {
+    // A15: storage failure keeps the draft open with its values and offers retry.
+    draftCommitting = false;
+    renderDraft();
+    if (pendingDraftSource) draftChoice.classList.remove('hidden');
+    setStatus(`No se pudo guardar: ${error.message}. La revisión sigue abierta; puedes reintentar.`, true);
+  }
+});
+
 quickCaptureForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const label = quickCaptureInput.value;
+  // Multiline typed/pasted input reviews inline; a single line stays literal.
+  const multilineDraft = draftFromText(label);
+  if (multilineDraft) {
+    quickCaptureInput.value = '';
+    openDraft(multilineDraft, { source: 'text' });
+    return;
+  }
   if (!label.trim()) return;
   quickCaptureInput.disabled = true;
   quickCaptureSubmit.disabled = true;
@@ -1018,6 +1221,132 @@ audioFile.addEventListener('change', async () => {
   audioFile.value = '';
   if (file) await processAudio(file);
 });
+
+// Workspace dictation: record/import → processing → inline draft → Agregar N.
+// The legacy list-view modal preview stays untouched for list-scoped capture.
+const homeRecordButton = $('#home-record-button');
+const homeAudioFile = $('#home-audio-file');
+const homeCaptureStatus = $('#home-capture-status');
+const homeProgressRegion = $('#home-progress-region');
+const homeProgressMessage = $('#home-progress-message');
+let homeMediaRecorder = null;
+let homeMicStream = null;
+let homeRecordingParts = [];
+let homeRecordingStartedAt = 0;
+let homeTimerHandle = null;
+let pendingWorkspaceTranscription = null;
+
+function setHomeCaptureStatus(message, isError = false) {
+  homeCaptureStatus.textContent = message;
+  homeCaptureStatus.classList.toggle('error', isError);
+}
+
+function showHomeProgress(message) {
+  homeProgressMessage.textContent = message;
+  homeProgressRegion.classList.remove('hidden');
+  setHomeCaptureStatus(message);
+}
+
+function hideHomeProgress() {
+  homeProgressRegion.classList.add('hidden');
+}
+
+function releaseHomeMicrophone() {
+  if (homeMicStream) homeMicStream.getTracks().forEach((track) => track.stop());
+  homeMicStream = null;
+  homeMediaRecorder = null;
+}
+
+async function startHomeRecording() {
+  if (draftCommitting) return;
+  setHomeCaptureStatus(CAPTURE_STATES.requesting);
+  if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+    setHomeCaptureStatus('Este navegador no permite dictar. Puedes escribir o subir un audio.', true);
+    return;
+  }
+  try {
+    homeMicStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const mimeType = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/mp4']
+      .find((type) => MediaRecorder.isTypeSupported(type));
+    homeMediaRecorder = new MediaRecorder(homeMicStream, mimeType ? { mimeType } : {});
+    homeRecordingParts = [];
+    homeMediaRecorder.addEventListener('dataavailable', (event) => {
+      if (event.data.size) homeRecordingParts.push(event.data);
+    });
+    homeMediaRecorder.addEventListener('stop', async () => {
+      const blob = new Blob(homeRecordingParts, { type: homeMediaRecorder?.mimeType || mimeType || 'audio/webm' });
+      releaseHomeMicrophone();
+      homeRecordButton.classList.remove('recording');
+      homeRecordButton.setAttribute('aria-label', 'Dictar artículos');
+      $('#home-record-icon').textContent = '🎙';
+      clearInterval(homeTimerHandle);
+      $('#home-record-timer').classList.add('hidden');
+      if (blob.size) await processWorkspaceAudio(blob);
+      else setHomeCaptureStatus('La grabación quedó vacía. Intenta hablar un poco más.', true);
+    }, { once: true });
+    homeMediaRecorder.start(250);
+    homeRecordingStartedAt = Date.now();
+    homeRecordButton.classList.add('recording');
+    homeRecordButton.setAttribute('aria-label', 'Detener dictado');
+    $('#home-record-icon').textContent = '■';
+    $('#home-record-timer').classList.remove('hidden');
+    homeTimerHandle = setInterval(() => {
+      $('#home-record-timer').textContent = formatTime(Math.floor((Date.now() - homeRecordingStartedAt) / 1000));
+    }, 250);
+    setHomeCaptureStatus(CAPTURE_STATES.recording);
+  } catch (error) {
+    releaseHomeMicrophone();
+    setHomeCaptureStatus(`No se pudo iniciar el micrófono: ${error.message}. Puedes escribir o subir un audio.`, true);
+  }
+}
+
+homeRecordButton.addEventListener('click', () => {
+  if (homeMediaRecorder?.state === 'recording') homeMediaRecorder.stop();
+  else startHomeRecording();
+});
+
+homeAudioFile.addEventListener('change', async () => {
+  const file = homeAudioFile.files?.[0];
+  homeAudioFile.value = '';
+  if (file) await processWorkspaceAudio(file);
+});
+
+$('#home-cancel-transcription').addEventListener('click', () => {
+  pendingWorkspaceTranscription?.cancel();
+});
+
+async function processWorkspaceAudio(blob) {
+  const correlationId = `home-audio-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  showHomeProgress(CAPTURE_STATES.processing);
+  try {
+    const audio = await decodeAudioToMono16k(blob, globalThis.AudioContext || globalThis.webkitAudioContext);
+    if (!audio.data.length) throw new Error('El audio no contiene muestras.');
+    const options = { task: 'transcribe' };
+    if (appSettings.language !== 'auto') options.language = appSettings.language;
+    pendingWorkspaceTranscription = transcribeWithWorker(worker, audio.data, appSettings.model, options, ({ message }) => showHomeProgress(message), correlationId);
+    const result = await pendingWorkspaceTranscription;
+    pendingWorkspaceTranscription = null;
+    hideHomeProgress();
+    if (result.empty || !result.text.trim()) {
+      setHomeCaptureStatus('No se escuchó nada claro. No se agregó ningún artículo.');
+      return;
+    }
+    const incoming = draftFromTranscript(result.text);
+    if (!incoming || incoming.rows.length === 0) {
+      setHomeCaptureStatus('No se escuchó nada claro. No se agregó ningún artículo.');
+      return;
+    }
+    // A02/A04: interpreted audio reviews inline; nothing persists until Agregar N.
+    openDraft(incoming, { source: 'audio' });
+    setHomeCaptureStatus('Dictado listo. Revísalo antes de agregar.');
+  } catch (error) {
+    pendingWorkspaceTranscription = null;
+    hideHomeProgress();
+    if (error.name === 'AbortError') setHomeCaptureStatus('Transcripción cancelada.');
+    // A17/A15: never claim success; keep the flow and offer typing/retry.
+    else setHomeCaptureStatus(`No se pudo transcribir: ${error.message}. Puedes escribirlo o reintentar.`, true);
+  }
+}
 
 async function processAudio(blob, { targetListId = activeList?.id, lockAlready = false } = {}) {
   if (captureLocked && !lockAlready) return;
